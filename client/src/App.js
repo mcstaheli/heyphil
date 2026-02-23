@@ -358,3 +358,4 @@ function NewCardModal({ onClose, onCreate }) {
 }
 
 export default App;
+/* Force rebuild Mon Feb 23 16:25:45 MST 2026 */
