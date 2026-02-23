@@ -32,7 +32,9 @@ passport.use(
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL: `${process.env.API_URL || 'http://localhost:3002'}/auth/google/callback`,
-      scope: ['profile', 'email', 'https://www.googleapis.com/auth/spreadsheets']
+      scope: ['profile', 'email', 'https://www.googleapis.com/auth/spreadsheets'],
+      accessType: 'offline',
+      prompt: 'consent'
     },
     (accessToken, refreshToken, profile, done) => {
       const email = profile.emails[0].value;
