@@ -9,21 +9,45 @@ function App() {
   const [currentApp, setCurrentApp] = useState(null);
 
   useEffect(() => {
+    // Check for token in URL (after OAuth callback)
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    
+    if (token) {
+      localStorage.setItem('authToken', token);
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    
     checkAuth();
   }, []);
 
   const checkAuth = async () => {
+    const token = localStorage.getItem('authToken');
+    
+    if (!token) {
+      setAuthenticated(false);
+      return;
+    }
+    
     try {
       const res = await fetch(`${API_BASE_URL}/auth/status`, {
-        credentials: 'include'
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
-      const data = await res.json();
-      setAuthenticated(data.authenticated);
-      if (data.authenticated) {
+      
+      if (res.ok) {
+        const data = await res.json();
+        setAuthenticated(true);
         setUser(data.user);
+      } else {
+        localStorage.removeItem('authToken');
+        setAuthenticated(false);
       }
     } catch (error) {
       console.error('Auth check failed:', error);
+      localStorage.removeItem('authToken');
       setAuthenticated(false);
     }
   };
@@ -32,18 +56,11 @@ function App() {
     window.location.href = `${API_BASE_URL}/auth/google`;
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch(`${API_BASE_URL}/auth/logout`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-      setAuthenticated(false);
-      setUser(null);
-      setCurrentApp(null);
-    } catch (error) {
-      console.error('Logout failed:', error);
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('authToken');
+    setAuthenticated(false);
+    setUser(null);
+    setCurrentApp(null);
   };
 
   // Login screen
@@ -126,11 +143,19 @@ function OriginationBoard({ user, onBack, onLogout }) {
     loadBoard();
   }, []);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('authToken');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
   const loadBoard = async () => {
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/origination/board`, {
-        credentials: 'include'
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       setCards(data.cards || []);
@@ -144,8 +169,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
     try {
       await fetch(`${API_BASE_URL}/api/origination/card`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(),
         body: JSON.stringify(cardData)
       });
       await loadBoard();
@@ -162,8 +186,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
     try {
       await fetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(),
         body: JSON.stringify({ ...card, column: newColumn })
       });
       await loadBoard();

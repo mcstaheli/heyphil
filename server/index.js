@@ -2,7 +2,7 @@
 
 import express from 'express';
 import cors from 'cors';
-import session from 'express-session';
+import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { google } from 'googleapis';
@@ -14,17 +14,7 @@ const PORT = process.env.PORT || 3002;
 // Allowed users
 const ALLOWED_EMAILS = ['chad@philo.ventures', 'greg@example.com', 'scott@example.com'];
 
-// Configure session
-const sessionMiddleware = session({
-  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: true,
-    sameSite: 'none',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
-});
+const JWT_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
 
 // Configure Google OAuth
 passport.use(
@@ -58,52 +48,71 @@ passport.use(
   )
 );
 
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((user, done) => done(null, user));
-
 // Middleware
 app.use(cors({
   origin: process.env.APP_URL || 'http://localhost:3000',
   credentials: true
 }));
 app.use(express.json());
-app.use(sessionMiddleware);
 app.use(passport.initialize());
-app.use(passport.session());
 
-// Auth middleware
+// JWT verification middleware
 const requireAuth = (req, res, next) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: 'Not authenticated' });
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided' });
   }
-  next();
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 };
 
 // Routes
 app.get('/auth/google', passport.authenticate('google'));
 
 app.get('/auth/google/callback',
-  passport.authenticate('google', { failureRedirect: '/auth/failed' }),
+  passport.authenticate('google', { session: false, failureRedirect: '/auth/failed' }),
   (req, res) => {
-    res.redirect(process.env.APP_URL || 'http://localhost:3000');
+    // Generate JWT
+    const token = jwt.sign(
+      {
+        id: req.user.id,
+        email: req.user.email,
+        name: req.user.name,
+        picture: req.user.picture,
+        accessToken: req.user.accessToken,
+        refreshToken: req.user.refreshToken
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    
+    // Redirect to frontend with token
+    const redirectUrl = `${process.env.APP_URL || 'http://localhost:3000'}?token=${token}`;
+    res.redirect(redirectUrl);
   }
 );
 
-app.get('/auth/status', (req, res) => {
+app.get('/auth/status', requireAuth, (req, res) => {
   res.json({
-    authenticated: req.isAuthenticated(),
-    user: req.user ? {
+    authenticated: true,
+    user: {
       email: req.user.email,
       name: req.user.name,
       picture: req.user.picture
-    } : null
+    }
   });
 });
 
 app.post('/auth/logout', (req, res) => {
-  req.logout(() => {
-    res.json({ success: true });
-  });
+  res.json({ success: true });
 });
 
 // Google Sheets API
