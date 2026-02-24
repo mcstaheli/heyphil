@@ -7,6 +7,7 @@ function App() {
   const [authenticated, setAuthenticated] = useState(null);
   const [user, setUser] = useState(null);
   const [currentApp, setCurrentApp] = useState(null);
+  const [showDevTools, setShowDevTools] = useState(false);
 
   useEffect(() => {
     // Check for token in URL (after OAuth callback)
@@ -92,38 +93,57 @@ function App() {
   // App launcher
   if (!currentApp) {
     return (
-      <div className="app-container">
-        <header className="app-header">
-          <h1>🤖 HeyPhil</h1>
-          <div className="user-info">
-            {user?.picture && <img src={user.picture} alt={user.name} />}
-            <span>{user?.name}</span>
-            <button className="btn-secondary" onClick={handleLogout}>Logout</button>
-          </div>
-        </header>
-        <div className="app-launcher">
-          <h2>Your Apps</h2>
-          <div className="app-grid">
-            <div className="app-card" onClick={() => setCurrentApp('origination')}>
-              <div className="app-icon">📋</div>
-              <h3>Origination Board</h3>
-              <p>Manage projects with your team</p>
+      <>
+        <div className="app-container">
+          <header className="app-header">
+            <h1>🤖 HeyPhil</h1>
+            <div className="user-info">
+              {user?.picture && <img src={user.picture} alt={user.name} />}
+              <span>{user?.name}</span>
+              <button className="btn-secondary" onClick={handleLogout}>Logout</button>
             </div>
-            <div className="app-card disabled">
-              <div className="app-icon">📧</div>
-              <h3>Email Triage</h3>
-              <p>Coming soon...</p>
+          </header>
+          <div className="app-launcher">
+            <h2>Your Apps</h2>
+            <div className="app-grid">
+              <div className="app-card" onClick={() => setCurrentApp('origination')}>
+                <div className="app-icon">📋</div>
+                <h3>Origination Board</h3>
+                <p>Manage projects with your team</p>
+              </div>
+              <div className="app-card disabled">
+                <div className="app-icon">📧</div>
+                <h3>Email Triage</h3>
+                <p>Coming soon...</p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
+        {!showDevTools && (
+          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
+            🔧 Dev Tools
+          </button>
+        )}
+      </>
     );
   }
 
   // Origination Board app
   if (currentApp === 'origination') {
-    return <OriginationBoard user={user} onBack={() => setCurrentApp(null)} onLogout={handleLogout} />;
+    return (
+      <>
+        <OriginationBoard user={user} onBack={() => setCurrentApp(null)} onLogout={handleLogout} />
+        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
+        {!showDevTools && (
+          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
+            🔧 Dev Tools
+          </button>
+        )}
+      </>
+    );
   }
+
 }
 
 function OriginationBoard({ user, onBack, onLogout }) {
@@ -352,6 +372,109 @@ function NewCardModal({ onClose, onCreate }) {
             <button type="submit" className="btn-primary">Create Project</button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function DevTools({ user, onClose }) {
+  const [logs, setLogs] = useState([]);
+  const [apiStatus, setApiStatus] = useState(null);
+
+  useEffect(() => {
+    // Capture console logs
+    const originalLog = console.log;
+    const originalError = console.error;
+    
+    console.log = (...args) => {
+      setLogs(prev => [...prev.slice(-50), { type: 'log', msg: args.join(' '), time: new Date().toLocaleTimeString() }]);
+      originalLog(...args);
+    };
+    
+    console.error = (...args) => {
+      setLogs(prev => [...prev.slice(-50), { type: 'error', msg: args.join(' '), time: new Date().toLocaleTimeString() }]);
+      originalError(...args);
+    };
+
+    return () => {
+      console.log = originalLog;
+      console.error = originalError;
+    };
+  }, []);
+
+  const checkAPIStatus = async () => {
+    try {
+      const start = Date.now();
+      const res = await fetch(`${API_BASE_URL}/auth/status`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+      });
+      const duration = Date.now() - start;
+      setApiStatus({ ok: res.ok, status: res.status, duration: `${duration}ms` });
+    } catch (error) {
+      setApiStatus({ ok: false, error: error.message });
+    }
+  };
+
+  const clearStorage = () => {
+    if (window.confirm('Clear localStorage and reload?')) {
+      localStorage.clear();
+      window.location.reload();
+    }
+  };
+
+  const token = localStorage.getItem('authToken');
+
+  return (
+    <div className="devtools-panel">
+      <div className="devtools-header">
+        <h3>🔧 Dev Tools</h3>
+        <button onClick={onClose}>✕</button>
+      </div>
+      
+      <div className="devtools-content">
+        <div className="devtools-section">
+          <h4>Auth Info</h4>
+          <div className="devtools-info">
+            <strong>User:</strong> {user?.email || 'Not authenticated'}
+          </div>
+          <div className="devtools-info">
+            <strong>Token:</strong> {token ? `${token.substring(0, 20)}...` : 'None'}
+          </div>
+        </div>
+
+        <div className="devtools-section">
+          <h4>API Status</h4>
+          <button className="devtools-btn" onClick={checkAPIStatus}>Check API</button>
+          {apiStatus && (
+            <div className="devtools-info" style={{ color: apiStatus.ok ? 'green' : 'red' }}>
+              {apiStatus.ok ? `✓ ${apiStatus.status} (${apiStatus.duration})` : `✗ ${apiStatus.error || apiStatus.status}`}
+            </div>
+          )}
+        </div>
+
+        <div className="devtools-section">
+          <h4>Quick Actions</h4>
+          <button className="devtools-btn" onClick={clearStorage}>Clear Storage</button>
+          <button className="devtools-btn" onClick={() => window.open('https://railway.app/', '_blank')}>
+            Railway Logs
+          </button>
+          <button className="devtools-btn" onClick={() => window.open('https://dash.cloudflare.com/', '_blank')}>
+            Cloudflare Pages
+          </button>
+        </div>
+
+        <div className="devtools-section">
+          <h4>Console Logs ({logs.length})</h4>
+          <div className="devtools-logs">
+            {logs.slice(-10).map((log, i) => (
+              <div key={i} className={`devtools-log ${log.type}`}>
+                <span className="devtools-log-time">{log.time}</span>
+                <span className="devtools-log-msg">{log.msg}</span>
+              </div>
+            ))}
+            {logs.length === 0 && <div className="devtools-log">No logs yet...</div>}
+          </div>
+        </div>
       </div>
     </div>
   );
