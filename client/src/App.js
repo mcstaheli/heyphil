@@ -313,26 +313,41 @@ function OriginationBoard({ user, onBack, onLogout }) {
         body: JSON.stringify({ rowIndex, completed, cardId, cardTitle })
       });
       
-      if (response.ok && editingCard) {
-        // Update the editing card locally
-        const updatedCard = {
-          ...editingCard,
-          actions: editingCard.actions.map(action => 
-            action.rowIndex === rowIndex
-              ? {
-                  ...action,
-                  completedOn: completed ? new Date().toISOString() : null,
-                  completedBy: completed ? user?.name || user?.email : null
-                }
-              : action
-          )
-        };
-        setEditingCard(updatedCard);
+      if (response.ok) {
+        // Update all cards with this action
+        setCards(prevCards => prevCards.map(card => {
+          if (card.id === cardId) {
+            return {
+              ...card,
+              actions: card.actions.map(action => 
+                action.rowIndex === rowIndex
+                  ? {
+                      ...action,
+                      completedOn: completed ? new Date().toISOString() : null,
+                      completedBy: completed ? user?.name || user?.email : null
+                    }
+                  : action
+              )
+            };
+          }
+          return card;
+        }));
         
-        // Update cards array for card view
-        setCards(prevCards => prevCards.map(c => 
-          c.id === cardId ? updatedCard : c
-        ));
+        // Update editing card if open
+        if (editingCard && editingCard.id === cardId) {
+          setEditingCard(prev => ({
+            ...prev,
+            actions: prev.actions.map(action => 
+              action.rowIndex === rowIndex
+                ? {
+                    ...action,
+                    completedOn: completed ? new Date().toISOString() : null,
+                    completedBy: completed ? user?.name || user?.email : null
+                  }
+                : action
+            )
+          }));
+        }
       }
     } catch (error) {
       console.error('Failed to toggle action:', error);
@@ -542,6 +557,9 @@ function OriginationBoard({ user, onBack, onLogout }) {
                       )}
                       <div className="card-content">
                         <h4>{card.title}</h4>
+                        {card.dealValue > 0 && (
+                          <div className="card-deal-value">${card.dealValue.toLocaleString()}</div>
+                        )}
                         {!isIdeation && card.description && <p>{card.description}</p>}
                       </div>
                     </div>
