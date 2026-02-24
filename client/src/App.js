@@ -303,10 +303,12 @@ function OriginationBoard({ user, onBack, onLogout }) {
             return true;
           });
           
+          const isEmpty = filteredCards.length === 0;
+          
           return (
           <div
             key={column.id}
-            className="kanban-column"
+            className={`kanban-column ${isEmpty ? 'column-empty' : ''}`}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, column.id)}
           >

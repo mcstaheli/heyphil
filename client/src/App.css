@@ -694,3 +694,48 @@ body {
 .board-filters select:hover {
   border-color: #2196f3;
 }
+
+/* Empty column collapsed state */
+.kanban-column.column-empty {
+  min-width: 80px;
+  max-width: 80px;
+  background: #f5f5f5;
+}
+
+.column-empty .column-header {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  padding: 16px 8px;
+  height: 200px;
+  justify-content: flex-start;
+}
+
+.column-empty .column-header h3 {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.column-empty .column-header-actions {
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.column-empty .card-count {
+  display: none;
+}
+
+.column-empty .column-add-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+}
+
+.column-empty .column-cards {
+  display: none;
+}
+
+/* Smooth transition when column becomes populated */
+.kanban-column {
+  transition: all 0.3s ease;
+}
