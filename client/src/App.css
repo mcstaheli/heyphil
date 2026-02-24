@@ -1202,35 +1202,18 @@ body {
 /* Ideation and Closed - Pre/Post activity areas */
 .column-ideation,
 .column-closed {
-  background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
-  border: 2px dashed #ccc;
-  opacity: 0.95;
   max-width: 280px;
 }
 
 .column-ideation .column-header,
 .column-closed .column-header {
   background: transparent !important;
-  color: #666;
+  color: #999;
   font-style: italic;
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  border-bottom: 2px solid #ddd;
 }
 
 
-.column-ideation .column-cards,
-.column-closed .column-cards {
-  opacity: 0.9;
-}
 
-.column-ideation .kanban-card,
-.column-closed .kanban-card {
-  background: white;
-  border: 1px solid #ddd;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
 
 /* Pre/Post cards (Ideation & Closed) - minimal display */
 .kanban-card.card-prepost {

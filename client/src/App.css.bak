@@ -185,9 +185,7 @@ body {
   overflow-y: hidden;
   height: calc(100vh - 250px);
   min-height: 600px;
-  max-width: 1900px;
-  margin: 0 auto;
-  justify-content: center;
+  width: 100%;
 }
 
 .kanban-column {
@@ -707,13 +705,16 @@ body {
 .column-empty .column-header {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
-  padding: 16px 8px;
-  height: 200px;
+  padding: 20px 8px;
+  height: 240px;
   justify-content: flex-start;
+  border-bottom: none;
 }
 
 .column-empty .column-header h3 {
-  font-size: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
   white-space: nowrap;
 }
 
@@ -1201,9 +1202,6 @@ body {
 /* Ideation and Closed - Pre/Post activity areas */
 .column-ideation,
 .column-closed {
-  background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
-  border: 2px dashed #ccc;
-  opacity: 0.95;
   max-width: 280px;
 }
 
@@ -1218,14 +1216,7 @@ body {
   border-bottom: 2px solid #ddd;
 }
 
-.column-ideation .column-header::before {
-  content: '💡 ';
-}
 
-.column-ideation .column-cards,
-.column-closed .column-cards {
-  opacity: 0.9;
-}
 
 .column-ideation .kanban-card,
 .column-closed .kanban-card {
@@ -1273,4 +1264,13 @@ body {
 
 .btn-remove-action:hover {
   color: #f44336;
+}
+
+/* Extra spacing to separate Ideation and Closed from workflow */
+.column-ideation {
+  margin-right: 32px;
+}
+
+.column-closed {
+  margin-left: 32px;
 }
