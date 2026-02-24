@@ -193,9 +193,9 @@ function OriginationBoard({ user, onBack, onLogout }) {
       console.error('Failed to load board:', error);
     }
     
-    // Ensure loading screen shows for at least 3 seconds
+    // Ensure loading screen shows for at least 1.5 seconds
     const elapsed = Date.now() - startTime;
-    const remaining = Math.max(0, 3000 - elapsed);
+    const remaining = Math.max(0, 1500 - elapsed);
     setTimeout(() => setLoading(false), remaining);
   };
 
@@ -441,16 +441,20 @@ function OriginationBoard({ user, onBack, onLogout }) {
                     <div className="card-content">
                       <h4>{card.title}</h4>
                       {!isIdeation && card.description && <p>{card.description}</p>}
-                      {card.actions && card.actions.filter(a => !a.completedOn).slice(0, 3).map((action, idx) => (
-                        <div key={idx} className="card-action-item" onClick={(e) => {
-                          e.stopPropagation();
-                          toggleAction(action.rowIndex, true, action.cardId, action.cardTitle);
-                        }}>
-                          <input type="checkbox" checked={false} readOnly />
-                          <span>{action.text}</span>
-                        </div>
-                      ))}
                     </div>
+                    {card.actions && card.actions.filter(a => !a.completedOn).length > 0 && (
+                      <div className="card-actions-section">
+                        {card.actions.filter(a => !a.completedOn).slice(0, 3).map((action, idx) => (
+                          <div key={idx} className="card-action-item" onClick={(e) => {
+                            e.stopPropagation();
+                            toggleAction(action.rowIndex, true, action.cardId, action.cardTitle);
+                          }}>
+                            <input type="checkbox" checked={false} readOnly />
+                            <span>{action.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
