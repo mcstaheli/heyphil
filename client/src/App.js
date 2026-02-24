@@ -157,9 +157,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [filterOwner, setFilterOwner] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('dateCreated');
-  const [selectedCards, setSelectedCards] = useState(new Set());
   const [showMetrics, setShowMetrics] = useState(false);
-  const [showBulkActions, setShowBulkActions] = useState(false);
 
   const columns = [
     { id: 'ideation', title: 'Ideation', color: '#bbdefb' },
@@ -360,21 +358,6 @@ function OriginationBoard({ user, onBack, onLogout }) {
     }
   };
   
-  const bulkUpdateCards = async (updates) => {
-    try {
-      await fetch(`${API_BASE_URL}/api/origination/bulk-update`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ cardIds: Array.from(selectedCards), updates })
-      });
-      setSelectedCards(new Set());
-      setShowBulkActions(false);
-      await loadBoard();
-    } catch (error) {
-      console.error('Failed bulk update:', error);
-    }
-  };
-  
   const addAction = async (cardId, cardTitle, text) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/origination/action`, {
@@ -468,11 +451,6 @@ function OriginationBoard({ user, onBack, onLogout }) {
           <button className="btn-secondary" onClick={() => setShowMetrics(!showMetrics)}>
             📊 {showMetrics ? 'Hide' : 'Show'} Metrics
           </button>
-          {selectedCards.size > 0 && (
-            <button className="btn-primary" onClick={() => setShowBulkActions(true)}>
-              ⚡ Bulk Actions ({selectedCards.size})
-            </button>
-          )}
           <button className="btn-secondary" onClick={exportToCSV}>
             📥 Export CSV
           </button>
@@ -550,30 +528,11 @@ function OriginationBoard({ user, onBack, onLogout }) {
                 return (
                   <div
                     key={card.id}
-                    className={`kanban-card ${isIdeation ? 'card-ideation' : ''} ${card.daysInStage > 30 ? 'stale-deal' : ''} ${selectedCards.has(card.id) ? 'selected' : ''}`}
+                    className={`kanban-card ${isIdeation ? 'card-ideation' : ''} ${card.daysInStage > 30 ? 'stale-deal' : ''}`}
                     draggable
                     onDragStart={(e) => handleDragStart(e, card)}
-                    onClick={(e) => {
-                      if (e.target.type === 'checkbox') return;
-                      setEditingCard(card);
-                    }}
+                    onClick={() => setEditingCard(card)}
                   >
-                    <input
-                      type="checkbox"
-                      className="card-select-checkbox"
-                      checked={selectedCards.has(card.id)}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        const newSelected = new Set(selectedCards);
-                        if (e.target.checked) {
-                          newSelected.add(card.id);
-                        } else {
-                          newSelected.delete(card.id);
-                        }
-                        setSelectedCards(newSelected);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    />
                     {card.daysInStage > 30 && <div className="stale-indicator" title={`${card.daysInStage} days in stage`}>⚠️</div>}
                     <div className="card-main">
                       {card.owner && people[card.owner] && (
@@ -647,15 +606,6 @@ function OriginationBoard({ user, onBack, onLogout }) {
         />
       )}
       
-      {showBulkActions && (
-        <BulkActionsModal
-          selectedCount={selectedCards.size}
-          columns={columns}
-          people={Object.keys(people)}
-          onClose={() => setShowBulkActions(false)}
-          onApply={bulkUpdateCards}
-        />
-      )}
     </div>
   );
 }
@@ -840,72 +790,6 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
             </div>
           </div>
         </form>
-      </div>
-    </div>
-  );
-}
-
-function BulkActionsModal({ selectedCount, columns, people, onClose, onApply }) {
-  const [bulkAction, setBulkAction] = useState('');
-  const [bulkValue, setBulkValue] = useState('');
-  
-  const handleApply = () => {
-    if (!bulkAction || !bulkValue) return;
-    const updates = {};
-    if (bulkAction === 'move') updates.column = bulkValue;
-    if (bulkAction === 'assign') updates.owner = bulkValue;
-    onApply(updates);
-  };
-  
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content bulk-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>⚡ Bulk Actions</h2>
-        <p>{selectedCount} deals selected</p>
-        
-        <div className="form-group">
-          <label>Action</label>
-          <select value={bulkAction} onChange={(e) => setBulkAction(e.target.value)}>
-            <option value="">Choose action...</option>
-            <option value="move">Move to Stage</option>
-            <option value="assign">Assign Owner</option>
-          </select>
-        </div>
-        
-        {bulkAction === 'move' && (
-          <div className="form-group">
-            <label>Target Stage</label>
-            <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
-              <option value="">Choose stage...</option>
-              {columns.map(col => (
-                <option key={col.id} value={col.id}>{col.title}</option>
-              ))}
-            </select>
-          </div>
-        )}
-        
-        {bulkAction === 'assign' && (
-          <div className="form-group">
-            <label>Assign To</label>
-            <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
-              <option value="">Choose owner...</option>
-              {people.map(person => (
-                <option key={person} value={person}>{person}</option>
-              ))}
-            </select>
-          </div>
-        )}
-        
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button 
-            className="btn-primary" 
-            onClick={handleApply}
-            disabled={!bulkAction || !bulkValue}
-          >
-            Apply to {selectedCount} Deals
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -1061,6 +1061,10 @@ body {
   border-left: 4px solid #ff9800;
 }
 
+/* ===== BULK ACTIONS MODAL ===== */
+.bulk-modal {
+  max-width: 500px;
+}
 
 .bulk-modal h2 {
   color: #2196f3;
