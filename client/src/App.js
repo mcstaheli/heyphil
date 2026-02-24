@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import './Loading.css';
 import Landing from './Landing';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -72,7 +73,23 @@ function App() {
 
   // Loading
   if (authenticated === null) {
-    return <div className="loading">Loading...</div>;
+    return (
+      <div className="loading">
+        <div className="loading-content">
+          <div className="loading-icon">⚙️</div>
+          <h2 className="loading-text">Initializing</h2>
+          <p className="loading-subtext">System Authentication</p>
+          <div className="loading-spinner">
+            <div className="spinner-dot"></div>
+            <div className="spinner-dot"></div>
+            <div className="spinner-dot"></div>
+          </div>
+          <div className="steam"></div>
+          <div className="steam"></div>
+          <div className="steam"></div>
+        </div>
+      </div>
+    );
   }
 
   // App launcher
@@ -264,7 +281,23 @@ function OriginationBoard({ user, onBack, onLogout }) {
   };
 
   if (loading) {
-    return <div className="loading">Loading board...</div>;
+    return (
+      <div className="loading">
+        <div className="loading-content">
+          <div className="loading-icon">⚙️</div>
+          <h2 className="loading-text">Loading</h2>
+          <p className="loading-subtext">Project Board</p>
+          <div className="loading-spinner">
+            <div className="spinner-dot"></div>
+            <div className="spinner-dot"></div>
+            <div className="spinner-dot"></div>
+          </div>
+          <div className="steam"></div>
+          <div className="steam"></div>
+          <div className="steam"></div>
+        </div>
+      </div>
+    );
   }
 
   return (
