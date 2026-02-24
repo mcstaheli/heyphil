@@ -279,6 +279,19 @@ function OriginationBoard({ user, onBack, onLogout }) {
       console.error('Failed to toggle action:', error);
     }
   };
+  
+  const addAction = async (cardId, cardTitle, text) => {
+    try {
+      await fetch(`${API_BASE_URL}/api/origination/action`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ cardId, cardTitle, text })
+      });
+      await loadBoard();
+    } catch (error) {
+      console.error('Failed to add action:', error);
+    }
+  };
 
   if (loading) {
     return (
@@ -418,13 +431,14 @@ function OriginationBoard({ user, onBack, onLogout }) {
           onSave={(data) => updateCard(editingCard.id, data)}
           columns={columns}
           toggleAction={toggleAction}
+          onAddAction={addAction}
         />
       )}
     </div>
   );
 }
 
-function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction }) {
+function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction, onAddAction }) {
   const [formData, setFormData] = useState(card || {
     title: '',
     description: '',
@@ -433,6 +447,14 @@ function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction
     notes: ''
   });
   const [newActionText, setNewActionText] = useState('');
+  
+  const handleAddAction = async () => {
+    if (!newActionText.trim() || !card) return;
+    if (onAddAction) {
+      await onAddAction(card.id, card.title, newActionText.trim());
+      setNewActionText('');
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -484,25 +506,49 @@ function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction
               <option value="Scott">Scott</option>
             </select>
           </div>
-          {card && card.actions && card.actions.length > 0 && (
+          {card && (
             <div className="form-group">
               <label>Next Actions</label>
-              <div className="modal-actions-list">
-                {card.actions.map((action, idx) => (
-                  <div key={idx} className={`modal-action-item ${action.completedOn ? 'completed' : ''}`}>
-                    <input
-                      type="checkbox"
-                      checked={!!action.completedOn}
-                      onChange={() => toggleAction && toggleAction(action.rowIndex, !action.completedOn, action.cardId, action.cardTitle)}
-                    />
-                    <span className="action-text">{action.text}</span>
-                    {action.completedOn && (
-                      <span className="action-meta">
-                        ✓ {action.completedBy} • {new Date(action.completedOn).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-                ))}
+              {card.actions && card.actions.length > 0 && (
+                <div className="modal-actions-list">
+                  {card.actions.map((action, idx) => (
+                    <div key={idx} className={`modal-action-item ${action.completedOn ? 'completed' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={!!action.completedOn}
+                        onChange={() => toggleAction && toggleAction(action.rowIndex, !action.completedOn, action.cardId, action.cardTitle)}
+                      />
+                      <span className="action-text">{action.text}</span>
+                      {action.completedOn && (
+                        <span className="action-meta">
+                          ✓ {action.completedBy} • {new Date(action.completedOn).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="add-action-input">
+                <input
+                  type="text"
+                  placeholder="Add a next action..."
+                  value={newActionText}
+                  onChange={(e) => setNewActionText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddAction();
+                    }
+                  }}
+                />
+                <button 
+                  type="button" 
+                  className="btn-add-action"
+                  onClick={handleAddAction}
+                  disabled={!newActionText.trim()}
+                >
+                  + Add
+                </button>
               </div>
             </div>
           )}

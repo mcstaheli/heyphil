@@ -845,3 +845,58 @@ body {
 .kanban-card.card-ideation .card-content h4 {
   font-size: 15px;
 }
+
+/* Add action input */
+.add-action-input {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  background: #f0f8ff;
+  border-radius: 6px;
+  border: 2px dashed #2196f3;
+}
+
+.add-action-input input[type="text"] {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.add-action-input input[type="text"]:focus {
+  outline: none;
+  border-color: #2196f3;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+}
+
+.btn-add-action {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-add-action:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+}
+
+.btn-add-action:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-add-action:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
