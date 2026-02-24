@@ -522,3 +522,40 @@ body {
   flex: 1;
   word-break: break-word;
 }
+
+/* Card with photo layout */
+.kanban-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.card-photo {
+  flex: 0 0 20%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-photo img {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #ddd;
+}
+
+.card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-content h4 {
+  margin: 0 0 8px 0;
+}
+
+.card-content p {
+  margin: 0 0 12px 0;
+  color: #666;
+  font-size: 14px;
+}

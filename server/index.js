@@ -132,16 +132,33 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     if (!spreadsheetId) {
-      return res.json({ columns: [], cards: [] });
+      return res.json({ columns: [], cards: [], people: {} });
     }
     
-    const response = await sheets.spreadsheets.values.get({
+    // Fetch board data
+    const boardResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: 'Board!A:F'
     });
     
-    const rows = response.data.values || [];
-    const cards = rows.slice(1).map((row, idx) => ({
+    // Fetch people photos
+    const backendResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Backend!A:B'
+    });
+    
+    const boardRows = boardResponse.data.values || [];
+    const backendRows = backendResponse.data.values || [];
+    
+    // Build people photo mapping
+    const people = {};
+    backendRows.slice(1).forEach(row => {
+      if (row[0] && row[1]) {
+        people[row[0]] = row[1]; // person name -> photo URL
+      }
+    });
+    
+    const cards = boardRows.slice(1).map((row, idx) => ({
       id: idx + 1,
       title: row[0] || '',
       description: row[1] || '',
@@ -151,7 +168,7 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       notes: row[5] || ''
     }));
     
-    res.json({ cards });
+    res.json({ cards, people });
   } catch (error) {
     console.error('Failed to fetch board:', error);
     res.status(500).json({ error: 'Failed to fetch board data' });

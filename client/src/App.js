@@ -148,6 +148,7 @@ function App() {
 
 function OriginationBoard({ user, onBack, onLogout }) {
   const [cards, setCards] = useState([]);
+  const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
   const [showNewCard, setShowNewCard] = useState(false);
   const [draggedCard, setDraggedCard] = useState(null);
@@ -179,6 +180,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
       });
       const data = await res.json();
       setCards(data.cards || []);
+      setPeople(data.people || {});
     } catch (error) {
       console.error('Failed to load board:', error);
     }
@@ -279,11 +281,18 @@ function OriginationBoard({ user, onBack, onLogout }) {
                     draggable
                     onDragStart={(e) => handleDragStart(e, card)}
                   >
-                    <h4>{card.title}</h4>
-                    {card.description && <p>{card.description}</p>}
-                    <div className="card-meta">
-                      {card.owner && <span className="card-owner">👤 {card.owner}</span>}
-                      {card.dueDate && <span className="card-due">📅 {card.dueDate}</span>}
+                    {card.owner && people[card.owner] && (
+                      <div className="card-photo">
+                        <img src={people[card.owner]} alt={card.owner} />
+                      </div>
+                    )}
+                    <div className="card-content">
+                      <h4>{card.title}</h4>
+                      {card.description && <p>{card.description}</p>}
+                      <div className="card-meta">
+                        {card.owner && <span className="card-owner">👤 {card.owner}</span>}
+                        {card.dueDate && <span className="card-due">📅 {card.dueDate}</span>}
+                      </div>
                     </div>
                   </div>
                 ))}
