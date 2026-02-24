@@ -1267,13 +1267,18 @@ body {
   margin-left: 32px;
 }
 
-/* Ideation, Closed, Abandoned - borderless floating cards */
+/* Ideation, Closed, Abandoned - blend column container into page background */
+.column-ideation,
+.column-closed,
+.column-abandoned {
+  background: transparent;
+  box-shadow: none;
+}
+
 .column-ideation .column-cards,
 .column-closed .column-cards,
 .column-abandoned .column-cards {
-  background: #f5f5f5;
-  border: none;
-  border-radius: 0;
+  background: transparent;
 }
 
 .column-abandoned {
