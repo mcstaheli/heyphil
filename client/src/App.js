@@ -154,6 +154,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [newCardColumn, setNewCardColumn] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
   const [draggedCard, setDraggedCard] = useState(null);
+  const [filterOwner, setFilterOwner] = useState('');
 
   const columns = [
     { id: 'ideation', title: 'Ideation', color: '#bbdefb' },
@@ -282,8 +283,27 @@ function OriginationBoard({ user, onBack, onLogout }) {
         </div>
       </header>
 
+      <div className="board-filters">
+        <label>
+          Filter by Owner:
+          <select value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)}>
+            <option value="">All People</option>
+            {Object.keys(people).map(person => (
+              <option key={person} value={person}>{person}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       <div className="kanban-board">
-        {columns.map(column => (
+        {columns.map(column => {
+          const filteredCards = cards.filter(c => {
+            if (c.column !== column.id) return false;
+            if (filterOwner && c.owner !== filterOwner) return false;
+            return true;
+          });
+          
+          return (
           <div
             key={column.id}
             className="kanban-column"
@@ -294,7 +314,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
               <h3>{column.title}</h3>
               <div className="column-header-actions">
                 <span className="card-count">
-                  {cards.filter(c => c.column === column.id).length}
+                  {filteredCards.length}
                 </span>
                 <button 
                   className="column-add-btn"
@@ -309,9 +329,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
               </div>
             </div>
             <div className="column-cards">
-              {cards
-                .filter(card => card.column === column.id)
-                .map(card => (
+              {filteredCards.map(card => (
                   <div
                     key={card.id}
                     className="kanban-card"
@@ -336,7 +354,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
                 ))}
             </div>
           </div>
-        ))}
+        );
+        })}
       </div>
 
       {showNewCard && (

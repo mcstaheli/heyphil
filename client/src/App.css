@@ -646,3 +646,36 @@ body {
   min-width: 300px;
   flex-shrink: 0;
 }
+
+/* Board filters */
+.board-filters {
+  padding: 16px 32px;
+  background: white;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.board-filters label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.board-filters select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+  min-width: 150px;
+}
+
+.board-filters select:hover {
+  border-color: #2196f3;
+}
