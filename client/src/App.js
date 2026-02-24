@@ -180,6 +180,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
 
   const loadBoard = async () => {
     setLoading(true);
+    const startTime = Date.now();
+    
     try {
       const res = await fetch(`${API_BASE_URL}/api/origination/board`, {
         headers: getAuthHeaders()
@@ -190,7 +192,11 @@ function OriginationBoard({ user, onBack, onLogout }) {
     } catch (error) {
       console.error('Failed to load board:', error);
     }
-    setLoading(false);
+    
+    // Ensure loading screen shows for at least 3 seconds
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, 3000 - elapsed);
+    setTimeout(() => setLoading(false), remaining);
   };
 
   const createCard = async (cardData) => {
@@ -214,7 +220,11 @@ function OriginationBoard({ user, onBack, onLogout }) {
         headers: getAuthHeaders(),
         body: JSON.stringify(cardData)
       });
-      await loadBoard();
+      
+      // Update locally without loading screen
+      setCards(prevCards => prevCards.map(c => 
+        c.id === cardId ? { ...c, ...cardData } : c
+      ));
       setEditingCard(null);
     } catch (error) {
       console.error('Failed to update card:', error);
@@ -544,8 +554,18 @@ function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction
               <option value="Scott">Scott</option>
             </select>
           </div>
+          <div className="form-group">
+            <label>Notes</label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              rows="2"
+              placeholder="Additional notes..."
+            />
+          </div>
+          
           {card && (
-            <div className="form-group">
+            <div className="action-items-section">
               <label>Next Actions</label>
               {card.actions && card.actions.length > 0 && (
                 <div className="modal-actions-list">
@@ -590,15 +610,6 @@ function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction
               </div>
             </div>
           )}
-          <div className="form-group">
-            <label>Notes</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              rows="2"
-              placeholder="Additional notes..."
-            />
-          </div>
           <div className="modal-actions">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn-primary">Save</button>
