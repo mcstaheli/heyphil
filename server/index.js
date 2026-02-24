@@ -310,7 +310,11 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to create card:', error);
-    res.status(500).json({ error: 'Failed to create card' });
+    res.status(500).json({ 
+      error: 'Failed to create card',
+      details: error.message,
+      stack: error.stack 
+    });
   }
 });
 

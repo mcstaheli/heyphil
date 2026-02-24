@@ -220,7 +220,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
       
       if (!response.ok) {
         console.error('Create card failed:', result);
-        alert(`Failed to create card: ${result.error || 'Unknown error'}`);
+        const errorMsg = result.details || result.error || 'Unknown error';
+        alert(`Failed to create card:\n\n${errorMsg}`);
         return;
       }
       
