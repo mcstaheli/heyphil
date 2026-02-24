@@ -540,16 +540,16 @@ function OriginationBoard({ user, onBack, onLogout }) {
             </div>
             <div className="column-cards">
               {filteredCards.map(card => {
-                const isIdeation = column.id === 'ideation';
+                const isPrePost = column.id === 'ideation' || column.id === 'closed';
                 return (
                   <div
                     key={card.id}
-                    className={`kanban-card ${isIdeation ? 'card-ideation' : ''} ${card.daysInStage > 30 ? 'stale-deal' : ''}`}
+                    className={`kanban-card ${isPrePost ? 'card-prepost' : ''} ${card.daysInStage > 30 ? 'stale-deal' : ''}`}
                     draggable
                     onDragStart={(e) => handleDragStart(e, card)}
                     onClick={() => setEditingCard(card)}
                   >
-                    {card.daysInStage > 30 && <div className="stale-indicator" title={`${card.daysInStage} days in stage`}>⚠️</div>}
+                    {!isPrePost && card.daysInStage > 30 && <div className="stale-indicator" title={`${card.daysInStage} days in stage`}>⚠️</div>}
                     <div className="card-main">
                       {card.owner && people[card.owner] && (
                         <div className="card-photo">
@@ -558,13 +558,13 @@ function OriginationBoard({ user, onBack, onLogout }) {
                       )}
                       <div className="card-content">
                         <h4>{card.title}</h4>
-                        {card.dealValue > 0 && (
+                        {!isPrePost && card.dealValue > 0 && (
                           <div className="card-deal-value">${card.dealValue.toLocaleString()}</div>
                         )}
-                        {!isIdeation && card.description && <p>{card.description}</p>}
+                        {!isPrePost && card.description && <p>{card.description}</p>}
                       </div>
                     </div>
-                    {card.actions && card.actions.filter(a => !a.completedOn).length > 0 && (
+                    {!isPrePost && card.actions && card.actions.filter(a => !a.completedOn).length > 0 && (
                       <div className="card-actions-section">
                         {card.actions.filter(a => !a.completedOn).slice(0, 3).map((action) => (
                           <div key={action.rowIndex} className="card-action-item" onClick={(e) => {
