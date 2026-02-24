@@ -185,19 +185,25 @@ function OriginationBoard({ user, onBack, onLogout }) {
     loadBoard();
   }, []);
   
-  // Recalculate metrics whenever cards change (exclude Ideation and Closed)
+  // Recalculate metrics based on filtered cards (exclude Ideation and Closed)
   useEffect(() => {
     if (cards.length === 0) return;
     
-    const activeCards = cards.filter(c => c.column !== 'ideation' && c.column !== 'closed');
+    // Apply same filters as the board view
+    const filteredCards = cards.filter(c => {
+      if (c.column === 'ideation' || c.column === 'closed') return false;
+      if (filterOwner && c.owner !== filterOwner) return false;
+      if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    });
     
     const newMetrics = {
-      totalDeals: activeCards.length,
-      totalValue: activeCards.reduce((sum, c) => sum + (c.dealValue || 0), 0),
+      totalDeals: filteredCards.length,
+      totalValue: filteredCards.reduce((sum, c) => sum + (c.dealValue || 0), 0),
       byStage: {}
     };
     
-    activeCards.forEach(card => {
+    filteredCards.forEach(card => {
       if (!newMetrics.byStage[card.column]) {
         newMetrics.byStage[card.column] = { count: 0, value: 0 };
       }
@@ -206,7 +212,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
     });
     
     setMetrics(newMetrics);
-  }, [cards]);
+  }, [cards, filterOwner, searchQuery]);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
