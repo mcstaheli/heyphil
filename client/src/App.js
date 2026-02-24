@@ -185,17 +185,19 @@ function OriginationBoard({ user, onBack, onLogout }) {
     loadBoard();
   }, []);
   
-  // Recalculate metrics whenever cards change
+  // Recalculate metrics whenever cards change (exclude Ideation and Closed)
   useEffect(() => {
     if (cards.length === 0) return;
     
+    const activeCards = cards.filter(c => c.column !== 'ideation' && c.column !== 'closed');
+    
     const newMetrics = {
-      totalDeals: cards.length,
-      totalValue: cards.reduce((sum, c) => sum + (c.dealValue || 0), 0),
+      totalDeals: activeCards.length,
+      totalValue: activeCards.reduce((sum, c) => sum + (c.dealValue || 0), 0),
       byStage: {}
     };
     
-    cards.forEach(card => {
+    activeCards.forEach(card => {
       if (!newMetrics.byStage[card.column]) {
         newMetrics.byStage[card.column] = { count: 0, value: 0 };
       }
