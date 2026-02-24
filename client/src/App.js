@@ -249,6 +249,19 @@ function OriginationBoard({ user, onBack, onLogout }) {
       setDraggedCard(null);
     }
   };
+  
+  const toggleAction = async (rowIndex, completed, cardId, cardTitle) => {
+    try {
+      await fetch(`${API_BASE_URL}/api/origination/action/toggle`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ rowIndex, completed, cardId, cardTitle })
+      });
+      await loadBoard();
+    } catch (error) {
+      console.error('Failed to toggle action:', error);
+    }
+  };
 
   if (loading) {
     return <div className="loading">Loading board...</div>;
@@ -334,6 +347,15 @@ function OriginationBoard({ user, onBack, onLogout }) {
                     <div className="card-content">
                       <h4>{card.title}</h4>
                       {!isIdeation && card.description && <p>{card.description}</p>}
+                      {card.actions && card.actions.filter(a => !a.completedOn).slice(0, 3).map((action, idx) => (
+                        <div key={idx} className="card-action-item" onClick={(e) => {
+                          e.stopPropagation();
+                          toggleAction(action.rowIndex, true, action.cardId, action.cardTitle);
+                        }}>
+                          <input type="checkbox" checked={false} readOnly />
+                          <span>{action.text}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );
@@ -362,13 +384,14 @@ function OriginationBoard({ user, onBack, onLogout }) {
           onClose={() => setEditingCard(null)}
           onSave={(data) => updateCard(editingCard.id, data)}
           columns={columns}
+          toggleAction={toggleAction}
         />
       )}
     </div>
   );
 }
 
-function CardModal({ card, onClose, onSave, columns, initialColumn }) {
+function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction }) {
   const [formData, setFormData] = useState(card || {
     title: '',
     description: '',
@@ -376,6 +399,7 @@ function CardModal({ card, onClose, onSave, columns, initialColumn }) {
     owner: '',
     notes: ''
   });
+  const [newActionText, setNewActionText] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -427,13 +451,35 @@ function CardModal({ card, onClose, onSave, columns, initialColumn }) {
               <option value="Scott">Scott</option>
             </select>
           </div>
+          {card && card.actions && card.actions.length > 0 && (
+            <div className="form-group">
+              <label>Next Actions</label>
+              <div className="modal-actions-list">
+                {card.actions.map((action, idx) => (
+                  <div key={idx} className={`modal-action-item ${action.completedOn ? 'completed' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={!!action.completedOn}
+                      onChange={() => toggleAction && toggleAction(action.rowIndex, !action.completedOn, action.cardId, action.cardTitle)}
+                    />
+                    <span className="action-text">{action.text}</span>
+                    {action.completedOn && (
+                      <span className="action-meta">
+                        ✓ {action.completedBy} • {new Date(action.completedOn).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="form-group">
-            <label>Next Actions</label>
+            <label>Notes</label>
             <textarea
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              rows="4"
-              placeholder="Enter action items (one per line)"
+              rows="2"
+              placeholder="Additional notes..."
             />
           </div>
           <div className="modal-actions">

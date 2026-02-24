@@ -176,13 +176,37 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       }
     });
     
+    // Fetch actions
+    const actionsResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Actions!A:E'
+    });
+    const actionsRows = actionsResponse.data.values || [];
+    const actionsByCard = {};
+    
+    actionsRows.slice(1).forEach((row, idx) => {
+      const cardId = row[0];
+      if (cardId) {
+        if (!actionsByCard[cardId]) actionsByCard[cardId] = [];
+        actionsByCard[cardId].push({
+          rowIndex: idx + 2, // 1-indexed + header row
+          cardId: row[0],
+          cardTitle: row[1] || '',
+          text: row[2] || '',
+          completedOn: row[3] || null,
+          completedBy: row[4] || null
+        });
+      }
+    });
+    
     const cards = boardRows.slice(1).map((row) => ({
       id: row[5] || '', // Card ID from column F
       title: row[0] || '',
       description: row[1] || '',
       column: row[2] || 'ideation',
       owner: row[3] || '',
-      notes: row[4] || ''
+      notes: row[4] || '',
+      actions: actionsByCard[row[5]] || []
     })).filter(card => card.id); // Only include cards with IDs
     
     res.json({ cards, people });
@@ -330,4 +354,64 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
 const host = process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : 'localhost';
 app.listen(PORT, host, () => {
   console.log(`🚀 HeyPhil API running on http://${host}:${PORT}`);
+});
+
+// Toggle action item completion
+app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
+  try {
+    const { rowIndex, completed, cardId, cardTitle } = req.body;
+    const sheets = getSheets(req.user);
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    const user = req.user.name || req.user.email;
+    
+    const timestamp = completed ? new Date().toISOString() : '';
+    const completedBy = completed ? user : '';
+    
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `Actions!D${rowIndex}:E${rowIndex}`,
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[timestamp, completedBy]]
+      }
+    });
+    
+    // Log activity
+    await logActivity(
+      sheets,
+      spreadsheetId,
+      cardTitle,
+      completed ? 'Action Completed' : 'Action Uncompleted',
+      user,
+      `Row ${rowIndex}`
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to toggle action:', error);
+    res.status(500).json({ error: 'Failed to toggle action' });
+  }
+});
+
+// Add new action item
+app.post('/api/origination/action', requireAuth, async (req, res) => {
+  try {
+    const { cardId, cardTitle, text } = req.body;
+    const sheets = getSheets(req.user);
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'Actions!A:E',
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[cardId, cardTitle, text, '', '']]
+      }
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to add action:', error);
+    res.status(500).json({ error: 'Failed to add action' });
+  }
 });
