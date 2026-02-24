@@ -565,8 +565,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
                     </div>
                     {card.actions && card.actions.filter(a => !a.completedOn).length > 0 && (
                       <div className="card-actions-section">
-                        {card.actions.filter(a => !a.completedOn).slice(0, 3).map((action, idx) => (
-                          <div key={idx} className="card-action-item" onClick={(e) => {
+                        {card.actions.filter(a => !a.completedOn).slice(0, 3).map((action) => (
+                          <div key={action.rowIndex} className="card-action-item" onClick={(e) => {
                             e.stopPropagation();
                             toggleAction(action.rowIndex, true, action.cardId, action.cardTitle);
                           }}>
@@ -701,12 +701,13 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
           <div className="form-group">
             <label>Deal Value ($)</label>
             <input
-              type="number"
-              min="0"
-              step="1000"
-              value={formData.dealValue || ''}
-              onChange={(e) => setFormData({ ...formData, dealValue: parseFloat(e.target.value) || 0 })}
-              placeholder="e.g., 500000"
+              type="text"
+              value={formData.dealValue ? formData.dealValue.toLocaleString() : ''}
+              onChange={(e) => {
+                const numericValue = e.target.value.replace(/,/g, '');
+                setFormData({ ...formData, dealValue: parseFloat(numericValue) || 0 });
+              }}
+              placeholder="e.g., 500,000"
             />
           </div>
           <div className="form-group">

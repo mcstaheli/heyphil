@@ -125,16 +125,16 @@ const getSheets = (user) => {
   return google.sheets({ version: 'v4', auth });
 };
 
-// Log activity to Log sheet
-const logActivity = async (sheets, spreadsheetId, cardTitle, action, user, details) => {
+// Log activity to Log sheet (now includes Card ID)
+const logActivity = async (sheets, spreadsheetId, cardTitle, action, user, details, cardId = null) => {
   try {
     const timestamp = new Date().toISOString();
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: 'Log!A:E',
+      range: 'Log!A:F',
       valueInputOption: 'RAW',
       resource: {
-        values: [[timestamp, cardTitle, action, user, details]]
+        values: [[timestamp, cardTitle, action, user, details, cardId || '']]
       }
     });
   } catch (error) {
@@ -200,20 +200,21 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       }
     });
     
-    // Fetch activity log
+    // Fetch activity log (now includes Card ID in column F)
     const logResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Log!A:E'
+      range: 'Log!A:F'
     });
     const logRows = logResponse.data.values || [];
     const logsByCard = {};
     
     logRows.slice(1).forEach(row => {
-      const cardTitle = row[1];
-      if (cardTitle) {
-        if (!logsByCard[cardTitle]) logsByCard[cardTitle] = [];
-        logsByCard[cardTitle].push({
+      const cardId = row[5] || row[1]; // Try Card ID first, fallback to title for old logs
+      if (cardId) {
+        if (!logsByCard[cardId]) logsByCard[cardId] = [];
+        logsByCard[cardId].push({
           timestamp: row[0],
+          cardTitle: row[1],
           action: row[2],
           user: row[3],
           details: row[4]
@@ -231,7 +232,7 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       dealValue: parseFloat(row[6]) || 0,
       dateCreated: row[7] || new Date().toISOString(),
       actions: actionsByCard[row[5]] || [],
-      activity: logsByCard[row[0]] || []
+      activity: logsByCard[row[5]] || [] // Use Card ID for activity lookup
     })).filter(card => card.id); // Only include cards with IDs
     
     // Calculate metrics
@@ -304,7 +305,8 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
       title,
       'Created',
       req.user.email,
-      `New card in ${column}. Owner: ${owner || 'Unassigned'}`
+      `New card in ${column}. Owner: ${owner || 'Unassigned'}`,
+      cardId
     );
     
     res.json({ success: true });
@@ -368,7 +370,8 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
         title,
         'Updated',
         req.user.email,
-        changes.join(', ')
+        changes.join(', '),
+        id
       );
     }
     
@@ -453,7 +456,8 @@ app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
       cardTitle,
       completed ? 'Action Completed' : 'Action Uncompleted',
       user,
-      `Row ${rowIndex}`
+      `Row ${rowIndex}`,
+      cardId
     );
     
     res.json({ success: true });
@@ -540,7 +544,8 @@ app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
           row[0],
           'Bulk Update',
           req.user.email,
-          changes.join(', ')
+          changes.join(', '),
+          cardId
         );
       }
     }
