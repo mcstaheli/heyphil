@@ -268,8 +268,24 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
-    // Generate unique ID (timestamp + random)
-    const cardId = `card_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // Get all existing cards to find highest ID
+    const allData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Board!F:F'
+    });
+    const rows = allData.data.values || [];
+    
+    // Find highest numeric ID (skip header row)
+    let maxId = 999;
+    rows.slice(1).forEach(row => {
+      const id = parseInt(row[0]);
+      if (!isNaN(id) && id > maxId) {
+        maxId = id;
+      }
+    });
+    
+    // Increment for new card
+    const cardId = maxId + 1;
     const dateCreated = new Date().toISOString();
     
     await sheets.spreadsheets.values.append({
@@ -300,7 +316,7 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
 
 app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params; // This is now the cardId, not row index
+    const { id } = req.params; // Numeric card ID
     const { title, description, column, owner, notes, dealValue } = req.body;
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
@@ -311,7 +327,7 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
       range: 'Board!A:H'
     });
     const rows = allData.data.values || [];
-    const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[5] === id);
+    const rowIndex = rows.findIndex((row, idx) => idx > 0 && String(row[5]) === String(id));
     
     if (rowIndex === -1) {
       return res.status(404).json({ error: 'Card not found' });
@@ -361,7 +377,7 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
 
 app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params; // This is now the cardId
+    const { id } = req.params; // Numeric card ID
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
@@ -371,7 +387,7 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
       range: 'Board!A:H'
     });
     const rows = allData.data.values || [];
-    const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[5] === id);
+    const rowIndex = rows.findIndex((row, idx) => idx > 0 && String(row[5]) === String(id));
     
     if (rowIndex === -1) {
       return res.status(404).json({ error: 'Card not found' });

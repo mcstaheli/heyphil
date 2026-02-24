@@ -225,9 +225,10 @@ function OriginationBoard({ user, onBack, onLogout }) {
       }
       
       // Add card locally without loading screen
+      const tempId = Math.max(...cards.map(c => parseInt(c.id) || 0), 999) + 1;
       const newCard = {
         ...cardData,
-        id: `card_${Date.now()}_temp`,
+        id: tempId,
         actions: [],
         activity: [],
         daysInStage: 0,
@@ -236,8 +237,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
       setCards(prevCards => [...prevCards, newCard]);
       setShowNewCard(false);
       
-      // Refresh in background to get real ID (no loading screen)
-      setTimeout(() => loadBoard(false), 1000);
+      // Refresh in background to sync (no loading screen)
+      setTimeout(() => loadBoard(false), 2000);
     } catch (error) {
       console.error('Failed to create card:', error);
       alert('Failed to create card - check console for details');
