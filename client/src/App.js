@@ -84,9 +84,6 @@ function App() {
             <div className="spinner-dot"></div>
             <div className="spinner-dot"></div>
           </div>
-          <div className="steam"></div>
-          <div className="steam"></div>
-          <div className="steam"></div>
         </div>
       </div>
     );
@@ -269,12 +266,33 @@ function OriginationBoard({ user, onBack, onLogout }) {
   
   const toggleAction = async (rowIndex, completed, cardId, cardTitle) => {
     try {
-      await fetch(`${API_BASE_URL}/api/origination/action/toggle`, {
+      const response = await fetch(`${API_BASE_URL}/api/origination/action/toggle`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ rowIndex, completed, cardId, cardTitle })
       });
-      await loadBoard();
+      
+      if (response.ok && editingCard) {
+        // Update the editing card locally
+        const updatedCard = {
+          ...editingCard,
+          actions: editingCard.actions.map(action => 
+            action.rowIndex === rowIndex
+              ? {
+                  ...action,
+                  completedOn: completed ? new Date().toISOString() : null,
+                  completedBy: completed ? user?.name || user?.email : null
+                }
+              : action
+          )
+        };
+        setEditingCard(updatedCard);
+        
+        // Update cards array for card view
+        setCards(prevCards => prevCards.map(c => 
+          c.id === cardId ? updatedCard : c
+        ));
+      }
     } catch (error) {
       console.error('Failed to toggle action:', error);
     }
@@ -282,12 +300,35 @@ function OriginationBoard({ user, onBack, onLogout }) {
   
   const addAction = async (cardId, cardTitle, text) => {
     try {
-      await fetch(`${API_BASE_URL}/api/origination/action`, {
+      const response = await fetch(`${API_BASE_URL}/api/origination/action`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ cardId, cardTitle, text })
       });
-      await loadBoard();
+      
+      if (response.ok && editingCard) {
+        // Update the editing card locally without full reload
+        const updatedCard = {
+          ...editingCard,
+          actions: [
+            ...(editingCard.actions || []),
+            {
+              cardId,
+              cardTitle,
+              text,
+              completedOn: null,
+              completedBy: null,
+              rowIndex: -1 // Will be updated on next full refresh
+            }
+          ]
+        };
+        setEditingCard(updatedCard);
+        
+        // Update cards array in background for card view
+        setCards(prevCards => prevCards.map(c => 
+          c.id === cardId ? updatedCard : c
+        ));
+      }
     } catch (error) {
       console.error('Failed to add action:', error);
     }
@@ -305,9 +346,6 @@ function OriginationBoard({ user, onBack, onLogout }) {
             <div className="spinner-dot"></div>
             <div className="spinner-dot"></div>
           </div>
-          <div className="steam"></div>
-          <div className="steam"></div>
-          <div className="steam"></div>
         </div>
       </div>
     );

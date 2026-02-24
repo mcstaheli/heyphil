@@ -1,171 +1,102 @@
-/* Steampunk loading screen */
+/* Dystopian loading screen - matches landing page */
 .loading {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: 
-    linear-gradient(135deg, #2c1810 0%, #3d2817 25%, #4a3520 50%, #3d2817 75%, #2c1810 100%),
-    repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(139, 69, 19, 0.1) 2px, rgba(139, 69, 19, 0.1) 4px),
-    repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139, 69, 19, 0.1) 2px, rgba(139, 69, 19, 0.1) 4px);
-  background-size: 100% 100%, 50px 50px, 50px 50px;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
   position: relative;
   overflow: hidden;
-  font-family: 'Rajdhani', 'Georgia', serif;
+  font-family: 'Rajdhani', sans-serif;
 }
 
-/* Brass gears decoration */
+/* Animated background grid */
 .loading::before {
-  content: '⚙️';
+  content: '';
   position: absolute;
-  font-size: 200px;
-  opacity: 0.08;
-  top: 10%;
-  right: 15%;
-  animation: rotateGear 20s linear infinite;
-  filter: sepia(1) saturate(3) hue-rotate(10deg);
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  animation: gridMove 20s linear infinite;
+  pointer-events: none;
 }
 
+@keyframes gridMove {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(50px, 50px); }
+}
+
+/* Glowing orb */
 .loading::after {
-  content: '⚙️';
+  content: '';
   position: absolute;
-  font-size: 150px;
-  opacity: 0.06;
-  bottom: 15%;
+  top: 20%;
   left: 10%;
-  animation: rotateGearReverse 15s linear infinite;
-  filter: sepia(1) saturate(3) hue-rotate(10deg);
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(0, 255, 255, 0.1) 0%, transparent 70%);
+  border-radius: 50%;
+  animation: pulse 8s ease-in-out infinite;
+  pointer-events: none;
 }
 
-@keyframes rotateGear {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@keyframes rotateGearReverse {
-  from { transform: rotate(360deg); }
-  to { transform: rotate(0deg); }
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.2); opacity: 0.8; }
 }
 
 .loading-content {
   z-index: 10;
   text-align: center;
   padding: 60px;
-  background: rgba(61, 40, 23, 0.8);
-  border: 3px solid #8b6914;
+  background: rgba(26, 26, 46, 0.9);
+  border: 2px solid rgba(0, 245, 255, 0.3);
   border-radius: 12px;
   box-shadow: 
-    0 0 30px rgba(139, 105, 20, 0.4),
-    inset 0 0 20px rgba(0, 0, 0, 0.3),
-    0 10px 40px rgba(0, 0, 0, 0.6);
+    0 0 40px rgba(0, 245, 255, 0.2),
+    inset 0 0 30px rgba(0, 0, 0, 0.5),
+    0 10px 40px rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(10px);
   position: relative;
-}
-
-/* Brass corner decorations */
-.loading-content::before,
-.loading-content::after {
-  content: '';
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  border: 3px solid #cd7f32;
-  background: radial-gradient(circle, #cd7f32, #8b6914);
-}
-
-.loading-content::before {
-  top: -3px;
-  left: -3px;
-  border-right: none;
-  border-bottom: none;
-  border-radius: 8px 0 0 0;
-}
-
-.loading-content::after {
-  bottom: -3px;
-  right: -3px;
-  border-left: none;
-  border-top: none;
-  border-radius: 0 0 8px 0;
 }
 
 .loading-icon {
   font-size: 80px;
   margin-bottom: 20px;
-  animation: steamFloat 2s ease-in-out infinite;
-  filter: drop-shadow(0 0 15px rgba(205, 127, 50, 0.6));
+  animation: float 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(0, 245, 255, 0.6));
 }
 
-@keyframes steamFloat {
-  0%, 100% { transform: translateY(0px) rotate(0deg); }
-  25% { transform: translateY(-10px) rotate(-5deg); }
-  50% { transform: translateY(0px) rotate(0deg); }
-  75% { transform: translateY(-10px) rotate(5deg); }
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-15px); }
 }
 
 .loading-text {
   font-size: 32px;
   font-weight: 700;
-  color: #cd7f32;
-  text-shadow: 
-    0 0 10px rgba(205, 127, 50, 0.8),
-    2px 2px 4px rgba(0, 0, 0, 0.8);
+  background: linear-gradient(135deg, #00f5ff 0%, #00d4ff 50%, #0095ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 30px rgba(0, 245, 255, 0.5);
   letter-spacing: 3px;
   text-transform: uppercase;
   margin: 0;
-  font-family: 'Orbitron', 'Georgia', serif;
+  font-family: 'Orbitron', sans-serif;
 }
 
 .loading-subtext {
   font-size: 16px;
-  color: #d4a574;
+  color: #00d4ff;
   margin-top: 10px;
   letter-spacing: 2px;
-  opacity: 0.9;
-  font-style: italic;
-}
-
-/* Steam puffs */
-.steam {
-  position: absolute;
-  bottom: -20px;
-  left: 50%;
-  width: 60px;
-  height: 60px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  animation: steamRise 4s ease-out infinite;
-  opacity: 0;
-}
-
-.steam:nth-child(2) {
-  animation-delay: 1s;
-  left: 40%;
-}
-
-.steam:nth-child(3) {
-  animation-delay: 2s;
-  left: 60%;
-}
-
-@keyframes steamRise {
-  0% {
-    bottom: -20px;
-    opacity: 0;
-    transform: scale(0.5) translateX(0);
-  }
-  25% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 0.3;
-    transform: scale(1) translateX(-10px);
-  }
-  100% {
-    bottom: 200px;
-    opacity: 0;
-    transform: scale(1.5) translateX(20px);
-  }
+  opacity: 0.8;
 }
 
 /* Spinner dots */
@@ -179,9 +110,9 @@
 .spinner-dot {
   width: 12px;
   height: 12px;
-  background: #cd7f32;
+  background: #00f5ff;
   border-radius: 50%;
-  box-shadow: 0 0 10px rgba(205, 127, 50, 0.8);
+  box-shadow: 0 0 10px rgba(0, 245, 255, 0.8);
   animation: dotPulse 1.5s ease-in-out infinite;
 }
 
