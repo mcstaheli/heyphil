@@ -236,7 +236,7 @@ body {
   border: 1px solid #e3e3e3;
   border-radius: 8px;
   padding: 16px;
-  cursor: move;
+  cursor: pointer;
   transition: all 0.2s;
 }
 
@@ -593,3 +593,13 @@ body {
 }
 
 /* Horizontal scrolling Kanban board */
+
+/* Card clickable with hover effect */
+.kanban-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+.kanban-card:active {
+  cursor: grabbing;
+}

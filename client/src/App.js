@@ -308,6 +308,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
                     className="kanban-card"
                     draggable
                     onDragStart={(e) => handleDragStart(e, card)}
+                    onClick={() => setEditingCard(card)}
                   >
                     {card.owner && people[card.owner] && (
                       <div className="card-photo">
@@ -315,18 +316,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
                       </div>
                     )}
                     <div className="card-content">
-                      <div className="card-header">
-                        <h4>{card.title}</h4>
-                        <button 
-                          className="card-edit-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingCard(card);
-                          }}
-                        >
-                          ✏️
-                        </button>
-                      </div>
+                      <h4>{card.title}</h4>
                       {card.description && <p>{card.description}</p>}
                       <div className="card-meta">
                         {card.owner && <span className="card-owner">👤 {card.owner}</span>}
