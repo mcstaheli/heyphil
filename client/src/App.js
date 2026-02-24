@@ -148,12 +148,18 @@ function App() {
 function OriginationBoard({ user, onBack, onLogout }) {
   const [cards, setCards] = useState([]);
   const [people, setPeople] = useState({});
+  const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showNewCard, setShowNewCard] = useState(false);
   const [newCardColumn, setNewCardColumn] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
   const [draggedCard, setDraggedCard] = useState(null);
   const [filterOwner, setFilterOwner] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('dateCreated');
+  const [selectedCards, setSelectedCards] = useState(new Set());
+  const [showMetrics, setShowMetrics] = useState(false);
+  const [showBulkActions, setShowBulkActions] = useState(false);
 
   const columns = [
     { id: 'ideation', title: 'Ideation', color: '#bbdefb' },
@@ -189,6 +195,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
       const data = await res.json();
       setCards(data.cards || []);
       setPeople(data.people || {});
+      setMetrics(data.metrics || null);
     } catch (error) {
       console.error('Failed to load board:', error);
     }
@@ -308,6 +315,40 @@ function OriginationBoard({ user, onBack, onLogout }) {
     }
   };
   
+  const exportToCSV = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/origination/export`, {
+        headers: getAuthHeaders()
+      });
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `origination-board-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export:', error);
+    }
+  };
+  
+  const bulkUpdateCards = async (updates) => {
+    try {
+      await fetch(`${API_BASE_URL}/api/origination/bulk-update`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ cardIds: Array.from(selectedCards), updates })
+      });
+      setSelectedCards(new Set());
+      setShowBulkActions(false);
+      await loadBoard();
+    } catch (error) {
+      console.error('Failed bulk update:', error);
+    }
+  };
+  
   const addAction = async (cardId, cardTitle, text) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/origination/action`, {
@@ -375,24 +416,79 @@ function OriginationBoard({ user, onBack, onLogout }) {
         </div>
       </header>
 
-      <div className="board-filters">
-        <label>
-          Filter by Owner:
+      <div className="board-toolbar">
+        <div className="board-filters">
+          <input
+            type="text"
+            placeholder="🔍 Search deals..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="search-input"
+          />
           <select value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)}>
-            <option value="">All People</option>
+            <option value="">All Owners</option>
             {Object.keys(people).map(person => (
               <option key={person} value={person}>{person}</option>
             ))}
           </select>
-        </label>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <option value="dateCreated">Newest First</option>
+            <option value="title">Alphabetical</option>
+            <option value="dealValue">Deal Size</option>
+            <option value="daysInStage">Time in Stage</option>
+          </select>
+        </div>
+        <div className="board-actions">
+          <button className="btn-secondary" onClick={() => setShowMetrics(!showMetrics)}>
+            📊 {showMetrics ? 'Hide' : 'Show'} Metrics
+          </button>
+          {selectedCards.size > 0 && (
+            <button className="btn-primary" onClick={() => setShowBulkActions(true)}>
+              ⚡ Bulk Actions ({selectedCards.size})
+            </button>
+          )}
+          <button className="btn-secondary" onClick={exportToCSV}>
+            📥 Export CSV
+          </button>
+        </div>
       </div>
+
+      {showMetrics && metrics && (
+        <div className="metrics-dashboard">
+          <div className="metric-card">
+            <h3>{metrics.totalDeals}</h3>
+            <p>Total Deals</p>
+          </div>
+          <div className="metric-card">
+            <h3>${(metrics.totalValue / 1000000).toFixed(1)}M</h3>
+            <p>Total Value</p>
+          </div>
+          {Object.entries(metrics.byStage).map(([stage, data]) => (
+            <div key={stage} className="metric-card">
+              <h3>{data.count}</h3>
+              <p>{stage.replace('-', ' ')}</p>
+              <small>${(data.value / 1000).toFixed(0)}K</small>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="kanban-board">
         {columns.map(column => {
-          const filteredCards = cards.filter(c => {
+          let filteredCards = cards.filter(c => {
             if (c.column !== column.id) return false;
             if (filterOwner && c.owner !== filterOwner) return false;
+            if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
             return true;
+          });
+          
+          // Sort cards
+          filteredCards.sort((a, b) => {
+            if (sortBy === 'dateCreated') return new Date(b.dateCreated) - new Date(a.dateCreated);
+            if (sortBy === 'title') return a.title.localeCompare(b.title);
+            if (sortBy === 'dealValue') return (b.dealValue || 0) - (a.dealValue || 0);
+            if (sortBy === 'daysInStage') return (b.daysInStage || 0) - (a.daysInStage || 0);
+            return 0;
           });
           
           const isEmpty = filteredCards.length === 0;
@@ -428,11 +524,31 @@ function OriginationBoard({ user, onBack, onLogout }) {
                 return (
                   <div
                     key={card.id}
-                    className={`kanban-card ${isIdeation ? 'card-ideation' : ''}`}
+                    className={`kanban-card ${isIdeation ? 'card-ideation' : ''} ${card.daysInStage > 30 ? 'stale-deal' : ''} ${selectedCards.has(card.id) ? 'selected' : ''}`}
                     draggable
                     onDragStart={(e) => handleDragStart(e, card)}
-                    onClick={() => setEditingCard(card)}
+                    onClick={(e) => {
+                      if (e.target.type === 'checkbox') return;
+                      setEditingCard(card);
+                    }}
                   >
+                    <input
+                      type="checkbox"
+                      className="card-select-checkbox"
+                      checked={selectedCards.has(card.id)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        const newSelected = new Set(selectedCards);
+                        if (e.target.checked) {
+                          newSelected.add(card.id);
+                        } else {
+                          newSelected.delete(card.id);
+                        }
+                        setSelectedCards(newSelected);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    {card.daysInStage > 30 && <div className="stale-indicator" title={`${card.daysInStage} days in stage`}>⚠️</div>}
                     <div className="card-main">
                       {card.owner && people[card.owner] && (
                         <div className="card-photo">
@@ -483,24 +599,50 @@ function OriginationBoard({ user, onBack, onLogout }) {
           card={editingCard}
           onClose={() => setEditingCard(null)}
           onSave={(data) => updateCard(editingCard.id, data)}
+          onDelete={async (id) => {
+            if (window.confirm('Are you sure you want to delete this deal? This cannot be undone.')) {
+              try {
+                await fetch(`${API_BASE_URL}/api/origination/card/${id}`, {
+                  method: 'DELETE',
+                  headers: getAuthHeaders()
+                });
+                setEditingCard(null);
+                await loadBoard();
+              } catch (error) {
+                console.error('Failed to delete:', error);
+              }
+            }
+          }}
           columns={columns}
           toggleAction={toggleAction}
           onAddAction={addAction}
+        />
+      )}
+      
+      {showBulkActions && (
+        <BulkActionsModal
+          selectedCount={selectedCards.size}
+          columns={columns}
+          people={Object.keys(people)}
+          onClose={() => setShowBulkActions(false)}
+          onApply={bulkUpdateCards}
         />
       )}
     </div>
   );
 }
 
-function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction, onAddAction }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction }) {
   const [formData, setFormData] = useState(card || {
     title: '',
     description: '',
     column: initialColumn || columns[0].id,
     owner: '',
-    notes: ''
+    notes: '',
+    dealValue: 0
   });
   const [newActionText, setNewActionText] = useState('');
+  const [showActivity, setShowActivity] = useState(false);
   
   const handleAddAction = async () => {
     if (!newActionText.trim() || !card) return;
@@ -561,6 +703,17 @@ function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction
             </select>
           </div>
           <div className="form-group">
+            <label>Deal Value ($)</label>
+            <input
+              type="number"
+              min="0"
+              step="1000"
+              value={formData.dealValue || ''}
+              onChange={(e) => setFormData({ ...formData, dealValue: parseFloat(e.target.value) || 0 })}
+              placeholder="e.g., 500000"
+            />
+          </div>
+          <div className="form-group">
             <label>Notes</label>
             <textarea
               value={formData.notes}
@@ -616,11 +769,115 @@ function CardModal({ card, onClose, onSave, columns, initialColumn, toggleAction
               </div>
             </div>
           )}
+          
+          {card && card.activity && card.activity.length > 0 && (
+            <div className="activity-section">
+              <button 
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowActivity(!showActivity)}
+              >
+                📅 {showActivity ? 'Hide' : 'Show'} Activity ({card.activity.length})
+              </button>
+              {showActivity && (
+                <div className="activity-timeline">
+                  {card.activity.slice().reverse().map((log, idx) => (
+                    <div key={idx} className="activity-item">
+                      <span className="activity-time">{new Date(log.timestamp).toLocaleString()}</span>
+                      <span className="activity-action">{log.action}</span>
+                      <span className="activity-user">{log.user}</span>
+                      {log.details && <span className="activity-details">{log.details}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
           <div className="modal-actions">
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">Save</button>
+            <div>
+              {card && onDelete && (
+                <button 
+                  type="button" 
+                  className="btn-danger"
+                  onClick={() => onDelete(card.id)}
+                >
+                  🗑️ Delete
+                </button>
+              )}
+            </div>
+            <div>
+              <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn-primary">Save</button>
+            </div>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function BulkActionsModal({ selectedCount, columns, people, onClose, onApply }) {
+  const [bulkAction, setBulkAction] = useState('');
+  const [bulkValue, setBulkValue] = useState('');
+  
+  const handleApply = () => {
+    if (!bulkAction || !bulkValue) return;
+    const updates = {};
+    if (bulkAction === 'move') updates.column = bulkValue;
+    if (bulkAction === 'assign') updates.owner = bulkValue;
+    onApply(updates);
+  };
+  
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content bulk-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>⚡ Bulk Actions</h2>
+        <p>{selectedCount} deals selected</p>
+        
+        <div className="form-group">
+          <label>Action</label>
+          <select value={bulkAction} onChange={(e) => setBulkAction(e.target.value)}>
+            <option value="">Choose action...</option>
+            <option value="move">Move to Stage</option>
+            <option value="assign">Assign Owner</option>
+          </select>
+        </div>
+        
+        {bulkAction === 'move' && (
+          <div className="form-group">
+            <label>Target Stage</label>
+            <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+              <option value="">Choose stage...</option>
+              {columns.map(col => (
+                <option key={col.id} value={col.id}>{col.title}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        
+        {bulkAction === 'assign' && (
+          <div className="form-group">
+            <label>Assign To</label>
+            <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+              <option value="">Choose owner...</option>
+              {people.map(person => (
+                <option key={person} value={person}>{person}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        
+        <div className="modal-actions">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button 
+            className="btn-primary" 
+            onClick={handleApply}
+            disabled={!bulkAction || !bulkValue}
+          >
+            Apply to {selectedCount} Deals
+          </button>
+        </div>
       </div>
     </div>
   );

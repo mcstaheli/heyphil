@@ -153,10 +153,11 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       return res.json({ columns: [], cards: [], people: {} });
     }
     
-    // Fetch board data (Card ID in column F, removed Due Date)
+    // Fetch board data (expanded to include deal value and date created)
+    // A: Title, B: Description, C: Column, D: Owner, E: Notes, F: Card ID, G: Deal Value, H: Date Created
     const boardResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:F'
+      range: 'Board!A:H'
     });
     
     // Fetch people photos
@@ -199,6 +200,27 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       }
     });
     
+    // Fetch activity log
+    const logResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Log!A:E'
+    });
+    const logRows = logResponse.data.values || [];
+    const logsByCard = {};
+    
+    logRows.slice(1).forEach(row => {
+      const cardTitle = row[1];
+      if (cardTitle) {
+        if (!logsByCard[cardTitle]) logsByCard[cardTitle] = [];
+        logsByCard[cardTitle].push({
+          timestamp: row[0],
+          action: row[2],
+          user: row[3],
+          details: row[4]
+        });
+      }
+    });
+    
     const cards = boardRows.slice(1).map((row) => ({
       id: row[5] || '', // Card ID from column F
       title: row[0] || '',
@@ -206,10 +228,34 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       column: row[2] || 'ideation',
       owner: row[3] || '',
       notes: row[4] || '',
-      actions: actionsByCard[row[5]] || []
+      dealValue: parseFloat(row[6]) || 0,
+      dateCreated: row[7] || new Date().toISOString(),
+      actions: actionsByCard[row[5]] || [],
+      activity: logsByCard[row[0]] || []
     })).filter(card => card.id); // Only include cards with IDs
     
-    res.json({ cards, people });
+    // Calculate metrics
+    const metrics = {
+      totalDeals: cards.length,
+      totalValue: cards.reduce((sum, c) => sum + c.dealValue, 0),
+      byStage: {},
+      avgTimeInStage: {}
+    };
+    
+    cards.forEach(card => {
+      if (!metrics.byStage[card.column]) {
+        metrics.byStage[card.column] = { count: 0, value: 0 };
+      }
+      metrics.byStage[card.column].count++;
+      metrics.byStage[card.column].value += card.dealValue;
+      
+      // Calculate days in current stage
+      const created = new Date(card.dateCreated);
+      const daysInStage = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24));
+      card.daysInStage = daysInStage;
+    });
+    
+    res.json({ cards, people, metrics });
   } catch (error) {
     console.error('Failed to fetch board:', error);
     res.status(500).json({ error: 'Failed to fetch board data' });
@@ -218,19 +264,20 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
 
 app.post('/api/origination/card', requireAuth, async (req, res) => {
   try {
-    const { title, description, column, owner, notes } = req.body;
+    const { title, description, column, owner, notes, dealValue } = req.body;
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     // Generate unique ID (timestamp + random)
     const cardId = `card_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const dateCreated = new Date().toISOString();
     
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: 'Board!A:F',
+      range: 'Board!A:H',
       valueInputOption: 'RAW',
       resource: {
-        values: [[title, description, column, owner, notes, cardId]]
+        values: [[title, description, column, owner, notes, cardId, dealValue || 0, dateCreated]]
       }
     });
     
@@ -254,14 +301,14 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
 app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params; // This is now the cardId, not row index
-    const { title, description, column, owner, notes } = req.body;
+    const { title, description, column, owner, notes, dealValue } = req.body;
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     // Find the row by Card ID
     const allData = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:F'
+      range: 'Board!A:H'
     });
     const rows = allData.data.values || [];
     const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[5] === id);
@@ -272,14 +319,14 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     
     const actualRow = rowIndex + 1; // Convert to 1-indexed
     const oldRow = rows[rowIndex];
-    const [oldTitle, oldDesc, oldColumn, oldOwner, oldNotes] = oldRow;
+    const [oldTitle, oldDesc, oldColumn, oldOwner, oldNotes, cardId, oldDealValue, dateCreated] = oldRow;
     
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Board!A${actualRow}:F${actualRow}`,
+      range: `Board!A${actualRow}:H${actualRow}`,
       valueInputOption: 'RAW',
       resource: {
-        values: [[title, description, column, owner, notes, id]]
+        values: [[title, description, column, owner, notes, id, dealValue || 0, dateCreated || new Date().toISOString()]]
       }
     });
     
@@ -289,7 +336,10 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     if (oldOwner !== owner) changes.push(`Owner: ${oldOwner || 'Unassigned'} → ${owner || 'Unassigned'}`);
     if (oldTitle !== title) changes.push(`Title changed`);
     if (oldDesc !== description) changes.push(`Description updated`);
-    if (oldNotes !== notes) changes.push(`Actions updated`);
+    if (oldNotes !== notes) changes.push(`Notes updated`);
+    if (parseFloat(oldDealValue || 0) !== parseFloat(dealValue || 0)) {
+      changes.push(`Deal value: $${oldDealValue || 0} → $${dealValue || 0}`);
+    }
     
     if (changes.length > 0) {
       await logActivity(
@@ -318,7 +368,7 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
     // Find the row by Card ID
     const allData = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:F'
+      range: 'Board!A:H'
     });
     const rows = allData.data.values || [];
     const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[5] === id);
@@ -413,5 +463,117 @@ app.post('/api/origination/action', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to add action:', error);
     res.status(500).json({ error: 'Failed to add action' });
+  }
+});
+
+// Bulk update cards
+app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
+  try {
+    const { cardIds, updates } = req.body; // updates: { column?, owner? }
+    const sheets = getSheets(req.user);
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    
+    const allData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Board!A:H'
+    });
+    const rows = allData.data.values || [];
+    
+    for (const cardId of cardIds) {
+      const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[5] === cardId);
+      if (rowIndex === -1) continue;
+      
+      const actualRow = rowIndex + 1;
+      const row = rows[rowIndex];
+      
+      const updatedRow = [
+        row[0], // title
+        row[1], // description
+        updates.column !== undefined ? updates.column : row[2],
+        updates.owner !== undefined ? updates.owner : row[3],
+        row[4], // notes
+        row[5], // card ID
+        row[6], // deal value
+        row[7]  // date created
+      ];
+      
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `Board!A${actualRow}:H${actualRow}`,
+        valueInputOption: 'RAW',
+        resource: { values: [updatedRow] }
+      });
+      
+      // Log bulk update
+      const changes = [];
+      if (updates.column && row[2] !== updates.column) {
+        changes.push(`Bulk moved: ${row[2]} → ${updates.column}`);
+      }
+      if (updates.owner && row[3] !== updates.owner) {
+        changes.push(`Bulk assigned: ${updates.owner}`);
+      }
+      
+      if (changes.length > 0) {
+        await logActivity(
+          sheets,
+          spreadsheetId,
+          row[0],
+          'Bulk Update',
+          req.user.email,
+          changes.join(', ')
+        );
+      }
+    }
+    
+    res.json({ success: true, updated: cardIds.length });
+  } catch (error) {
+    console.error('Failed bulk update:', error);
+    res.status(500).json({ error: 'Failed to bulk update cards' });
+  }
+});
+
+// Export to CSV
+app.get('/api/origination/export', requireAuth, async (req, res) => {
+  try {
+    const sheets = getSheets(req.user);
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    
+    const boardResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Board!A:H'
+    });
+    const rows = boardResponse.data.values || [];
+    
+    // CSV header
+    const csv = [
+      'Title,Description,Stage,Owner,Notes,Card ID,Deal Value,Date Created'
+    ];
+    
+    // Add data rows
+    rows.slice(1).forEach(row => {
+      const escapeCsv = (val) => {
+        if (!val) return '';
+        const str = String(val).replace(/"/g, '""');
+        return str.includes(',') || str.includes('"') ? `"${str}"` : str;
+      };
+      
+      csv.push([
+        escapeCsv(row[0]),
+        escapeCsv(row[1]),
+        escapeCsv(row[2]),
+        escapeCsv(row[3]),
+        escapeCsv(row[4]),
+        escapeCsv(row[5]),
+        escapeCsv(row[6]),
+        escapeCsv(row[7])
+      ].join(','));
+    });
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=origination-board-${new Date().toISOString().split('T')[0]}.csv`);
+    res.send(csv.join('\n'));
+  } catch (error) {
+    console.error('Failed to export:', error);
+    res.status(500).json({ error: 'Failed to export data' });
   }
 });
