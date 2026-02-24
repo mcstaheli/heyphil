@@ -1263,3 +1263,20 @@ body {
 .kanban-card.card-prepost .card-main {
   gap: 8px;
 }
+
+/* Remove action button for pending actions */
+.btn-remove-action {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+  transition: color 0.2s;
+}
+
+.btn-remove-action:hover {
+  color: #f44336;
+}

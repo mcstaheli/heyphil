@@ -206,7 +206,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
     }
   };
 
-  const createCard = async (cardData) => {
+  const createCard = async (cardData, pendingActions = []) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/origination/card`, {
         method: 'POST',
@@ -235,6 +235,13 @@ function OriginationBoard({ user, onBack, onLogout }) {
       };
       setCards(prevCards => [...prevCards, newCard]);
       setShowNewCard(false);
+      
+      // Add pending actions if any
+      if (pendingActions.length > 0) {
+        for (const actionText of pendingActions) {
+          await addAction(tempId, cardData.title, actionText);
+        }
+      }
       
       // Refresh in background to sync (no loading screen)
       setTimeout(() => loadBoard(false), 2000);
@@ -639,19 +646,28 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
     dealValue: card?.dealValue || 0
   });
   const [newActionText, setNewActionText] = useState('');
+  const [pendingActions, setPendingActions] = useState([]);
   const [showActivity, setShowActivity] = useState(false);
   
   const handleAddAction = async () => {
-    if (!newActionText.trim() || !card) return;
-    if (onAddAction) {
-      await onAddAction(card.id, card.title, newActionText.trim());
+    if (!newActionText.trim()) return;
+    
+    if (card) {
+      // Existing card - add directly
+      if (onAddAction) {
+        await onAddAction(card.id, card.title, newActionText.trim());
+        setNewActionText('');
+      }
+    } else {
+      // New card - add to pending list
+      setPendingActions([...pendingActions, newActionText.trim()]);
       setNewActionText('');
     }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave(formData);
+    onSave(formData, pendingActions);
   };
 
   return (
@@ -721,29 +737,44 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
             />
           </div>
           
-          {card && (
-            <div className="action-items-section">
-              <label>Next Actions</label>
-              {card.actions && card.actions.length > 0 && (
-                <div className="modal-actions-list">
-                  {card.actions.map((action, idx) => (
-                    <div key={idx} className={`modal-action-item ${action.completedOn ? 'completed' : ''}`}>
-                      <input
-                        type="checkbox"
-                        checked={!!action.completedOn}
-                        onChange={() => toggleAction && toggleAction(action.rowIndex, !action.completedOn, action.cardId, action.cardTitle)}
-                      />
-                      <span className="action-text">{action.text}</span>
-                      {action.completedOn && (
-                        <span className="action-meta">
-                          ✓ {action.completedBy} • {new Date(action.completedOn).toLocaleDateString()}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="add-action-input">
+          <div className="action-items-section">
+            <label>Next Actions</label>
+            {card && card.actions && card.actions.length > 0 && (
+              <div className="modal-actions-list">
+                {[...card.actions].reverse().map((action, idx) => (
+                  <div key={idx} className={`modal-action-item ${action.completedOn ? 'completed' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={!!action.completedOn}
+                      onChange={() => toggleAction && toggleAction(action.rowIndex, !action.completedOn, action.cardId, action.cardTitle)}
+                    />
+                    <span className="action-text">{action.text}</span>
+                    {action.completedOn && (
+                      <span className="action-meta">
+                        ✓ {action.completedBy} • {new Date(action.completedOn).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!card && pendingActions.length > 0 && (
+              <div className="modal-actions-list">
+                {[...pendingActions].reverse().map((text, idx) => (
+                  <div key={idx} className="modal-action-item">
+                    <span className="action-text">{text}</span>
+                    <button 
+                      type="button"
+                      className="btn-remove-action"
+                      onClick={() => setPendingActions(pendingActions.filter((_, i) => i !== pendingActions.length - 1 - idx))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="add-action-input">
                 <input
                   type="text"
                   placeholder="Add a next action..."
@@ -765,8 +796,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                   + Add
                 </button>
               </div>
-            </div>
-          )}
+          </div>
           
           {card && card.activity && card.activity.length > 0 && (
             <div className="activity-section">
