@@ -3,6 +3,7 @@ import './App.css';
 import './Loading.css';
 import Landing from './Landing';
 import HotelTycoon from './HotelTycoon';
+import HotelPaperclips from './HotelPaperclips';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -124,8 +125,8 @@ function App() {
               </div>
               <div className="app-card" onClick={() => setCurrentApp('hotel-tycoon')}>
                 <div className="app-icon">🏨</div>
-                <h3>Hotel Tycoon</h3>
-                <p>Build your hotel empire</p>
+                <h3>Hotel Paperclips</h3>
+                <p>Universal hospitality optimization</p>
               </div>
               <div className="app-card disabled">
                 <div className="app-icon">📧</div>
@@ -145,11 +146,11 @@ function App() {
     );
   }
 
-  // Hotel Tycoon app
+  // Hotel Paperclips app
   if (currentApp === 'hotel-tycoon') {
     return (
       <>
-        <HotelTycoon user={user} onBack={() => setCurrentApp(null)} />
+        <HotelPaperclips user={user} onBack={() => setCurrentApp(null)} />
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
