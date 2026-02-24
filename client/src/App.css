@@ -559,3 +559,38 @@ body {
   color: #666;
   font-size: 14px;
 }
+
+/* Card header with edit button */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.card-header h4 {
+  margin: 0;
+  flex: 1;
+}
+
+.card-edit-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: all 0.2s;
+}
+
+.card-edit-btn:hover {
+  opacity: 1;
+  background: rgba(0,0,0,0.05);
+}
+
+/* Wider kanban board for more columns */
+.kanban-board {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}

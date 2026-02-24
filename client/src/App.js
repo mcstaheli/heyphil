@@ -151,13 +151,18 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
   const [showNewCard, setShowNewCard] = useState(false);
+  const [editingCard, setEditingCard] = useState(null);
   const [draggedCard, setDraggedCard] = useState(null);
 
   const columns = [
-    { id: 'backlog', title: 'Backlog', color: '#e3e3e3' },
-    { id: 'in-progress', title: 'In Progress', color: '#fff3cd' },
-    { id: 'review', title: 'Review', color: '#d1ecf1' },
-    { id: 'done', title: 'Done', color: '#d4edda' }
+    { id: 'ideation', title: 'Ideation', color: '#f0f0f0' },
+    { id: 'on-deck', title: 'On Deck', color: '#e3f2fd' },
+    { id: 'ic-diligence', title: 'IC - Diligence', color: '#fff3cd' },
+    { id: 'due-diligence', title: 'Due Diligence', color: '#fff9c4' },
+    { id: 'ic-capitalization', title: 'IC - Capitalization', color: '#e1bee7' },
+    { id: 'capitalization', title: 'Capitalization', color: '#f3e5f5' },
+    { id: 'ic-close', title: 'IC - Close', color: '#c8e6c9' },
+    { id: 'closed', title: 'Closed', color: '#d4edda' }
   ];
 
   useEffect(() => {
@@ -198,6 +203,20 @@ function OriginationBoard({ user, onBack, onLogout }) {
       setShowNewCard(false);
     } catch (error) {
       console.error('Failed to create card:', error);
+    }
+  };
+
+  const updateCard = async (cardId, cardData) => {
+    try {
+      await fetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(cardData)
+      });
+      await loadBoard();
+      setEditingCard(null);
+    } catch (error) {
+      console.error('Failed to update card:', error);
     }
   };
 
@@ -287,7 +306,18 @@ function OriginationBoard({ user, onBack, onLogout }) {
                       </div>
                     )}
                     <div className="card-content">
-                      <h4>{card.title}</h4>
+                      <div className="card-header">
+                        <h4>{card.title}</h4>
+                        <button 
+                          className="card-edit-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingCard(card);
+                          }}
+                        >
+                          ✏️
+                        </button>
+                      </div>
                       {card.description && <p>{card.description}</p>}
                       <div className="card-meta">
                         {card.owner && <span className="card-owner">👤 {card.owner}</span>}
@@ -302,20 +332,30 @@ function OriginationBoard({ user, onBack, onLogout }) {
       </div>
 
       {showNewCard && (
-        <NewCardModal
+        <CardModal
           onClose={() => setShowNewCard(false)}
-          onCreate={createCard}
+          onSave={createCard}
+          columns={columns}
+        />
+      )}
+
+      {editingCard && (
+        <CardModal
+          card={editingCard}
+          onClose={() => setEditingCard(null)}
+          onSave={(data) => updateCard(editingCard.id, data)}
+          columns={columns}
         />
       )}
     </div>
   );
 }
 
-function NewCardModal({ onClose, onCreate }) {
-  const [formData, setFormData] = useState({
+function CardModal({ card, onClose, onSave, columns }) {
+  const [formData, setFormData] = useState(card || {
     title: '',
     description: '',
-    column: 'backlog',
+    column: columns[0].id,
     owner: '',
     dueDate: '',
     notes: ''
@@ -323,13 +363,13 @@ function NewCardModal({ onClose, onCreate }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onCreate(formData);
+    onSave(formData);
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <h2>New Project</h2>
+        <h2>{card ? 'Edit Project' : 'New Project'}</h2>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Title *</label>
@@ -347,6 +387,17 @@ function NewCardModal({ onClose, onCreate }) {
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows="3"
             />
+          </div>
+          <div className="form-group">
+            <label>Status</label>
+            <select
+              value={formData.column}
+              onChange={(e) => setFormData({ ...formData, column: e.target.value })}
+            >
+              {columns.map(col => (
+                <option key={col.id} value={col.id}>{col.title}</option>
+              ))}
+            </select>
           </div>
           <div className="form-group">
             <label>Owner</label>
