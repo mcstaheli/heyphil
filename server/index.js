@@ -125,6 +125,24 @@ const getSheets = (user) => {
   return google.sheets({ version: 'v4', auth });
 };
 
+// Log activity to Log sheet
+const logActivity = async (sheets, spreadsheetId, cardTitle, action, user, details) => {
+  try {
+    const timestamp = new Date().toISOString();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'Log!A:E',
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[timestamp, cardTitle, action, user, details]]
+      }
+    });
+  } catch (error) {
+    console.error('Failed to log activity:', error);
+    // Don't throw - logging failure shouldn't break the main action
+  }
+};
+
 // Origination board endpoints
 app.get('/api/origination/board', requireAuth, async (req, res) => {
   try {
@@ -190,6 +208,16 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
       }
     });
     
+    // Log creation
+    await logActivity(
+      sheets,
+      spreadsheetId,
+      title,
+      'Created',
+      req.user.email,
+      `New card in ${column}. Owner: ${owner || 'Unassigned'}`
+    );
+    
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to create card:', error);
@@ -206,6 +234,14 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     
     const rowIndex = parseInt(id) + 1; // +1 for header row
     
+    // Get old values to detect changes
+    const oldData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `Board!A${rowIndex}:F${rowIndex}`
+    });
+    const oldRow = oldData.data.values?.[0] || [];
+    const [oldTitle, oldDesc, oldColumn, oldOwner, oldDue, oldNotes] = oldRow;
+    
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `Board!A${rowIndex}:F${rowIndex}`,
@@ -214,6 +250,26 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
         values: [[title, description, column, owner, dueDate, notes]]
       }
     });
+    
+    // Log changes
+    const changes = [];
+    if (oldColumn !== column) changes.push(`Status: ${oldColumn} → ${column}`);
+    if (oldOwner !== owner) changes.push(`Owner: ${oldOwner || 'Unassigned'} → ${owner || 'Unassigned'}`);
+    if (oldDue !== dueDate) changes.push(`Due: ${oldDue || 'None'} → ${dueDate || 'None'}`);
+    if (oldTitle !== title) changes.push(`Title changed`);
+    if (oldDesc !== description) changes.push(`Description updated`);
+    if (oldNotes !== notes) changes.push(`Notes updated`);
+    
+    if (changes.length > 0) {
+      await logActivity(
+        sheets,
+        spreadsheetId,
+        title,
+        'Updated',
+        req.user.email,
+        changes.join(', ')
+      );
+    }
     
     res.json({ success: true });
   } catch (error) {
