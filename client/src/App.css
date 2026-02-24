@@ -529,6 +529,12 @@ body {
 /* Card with photo layout */
 .kanban-card {
   display: flex;
+  flex-direction: column;
+}
+
+.card-main {
+  display: flex;
+  gap: 12px;
   gap: 12px;
   align-items: flex-start;
 }

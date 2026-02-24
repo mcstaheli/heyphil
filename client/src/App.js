@@ -433,14 +433,16 @@ function OriginationBoard({ user, onBack, onLogout }) {
                     onDragStart={(e) => handleDragStart(e, card)}
                     onClick={() => setEditingCard(card)}
                   >
-                    {card.owner && people[card.owner] && (
-                      <div className="card-photo">
-                        <img src={people[card.owner]} alt={card.owner} />
+                    <div className="card-main">
+                      {card.owner && people[card.owner] && (
+                        <div className="card-photo">
+                          <img src={people[card.owner]} alt={card.owner} />
+                        </div>
+                      )}
+                      <div className="card-content">
+                        <h4>{card.title}</h4>
+                        {!isIdeation && card.description && <p>{card.description}</p>}
                       </div>
-                    )}
-                    <div className="card-content">
-                      <h4>{card.title}</h4>
-                      {!isIdeation && card.description && <p>{card.description}</p>}
                     </div>
                     {card.actions && card.actions.filter(a => !a.completedOn).length > 0 && (
                       <div className="card-actions-section">
