@@ -157,25 +157,30 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
     // A: Title, B: Description, C: Column, D: Owner, E: Notes, F: Card ID, G: Deal Value, H: Date Created
     const boardResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:H'
+      range: 'Board!A:I'
     });
     
-    // Fetch people photos and colors
+    // Fetch people photos/colors and project type colors
     const backendResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Backend!A:C'
+      range: 'Backend!A:F'
     });
     
     const boardRows = boardResponse.data.values || [];
     const backendRows = backendResponse.data.values || [];
     
-    // Build people photo and color mapping
+    // Build people photo and color mapping + project type colors
     const people = {};
     const ownerColors = {};
+    const projectTypeColors = {};
+    
     backendRows.slice(1).forEach(row => {
       if (row[0]) {
         if (row[1]) people[row[0]] = row[1]; // person name -> photo URL
-        if (row[2]) ownerColors[row[0]] = row[2]; // person name -> color hex
+        if (row[2]) ownerColors[row[0]] = row[2]; // person name -> border color hex
+      }
+      if (row[4] && row[5]) { // Column E = project type, F = hex color
+        projectTypeColors[row[4]] = row[5];
       }
     });
     
@@ -233,6 +238,7 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       notes: row[4] || '',
       dealValue: parseFloat(row[6]) || 0,
       dateCreated: row[7] || new Date().toISOString(),
+      projectType: row[8] || '', // Project Type from column I
       actions: actionsByCard[row[5]] || [],
       activity: logsByCard[row[5]] || [] // Use Card ID for activity lookup
     })).filter(card => card.id); // Only include cards with IDs
@@ -258,7 +264,7 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       card.daysInStage = daysInStage;
     });
     
-    res.json({ cards, people, ownerColors, metrics });
+    res.json({ cards, people, ownerColors, projectTypeColors, metrics });
   } catch (error) {
     console.error('Failed to fetch board:', error);
     res.status(500).json({ error: 'Failed to fetch board data' });
@@ -267,7 +273,7 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
 
 app.post('/api/origination/card', requireAuth, async (req, res) => {
   try {
-    const { title, description, column, owner, notes, dealValue } = req.body;
+    const { title, description, column, owner, notes, dealValue, projectType } = req.body;
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
@@ -293,10 +299,10 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
     
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: 'Board!A:H',
+      range: 'Board!A:I',
       valueInputOption: 'RAW',
       resource: {
-        values: [[title, description, column, owner, notes, cardId, dealValue || 0, dateCreated]]
+        values: [[title, description, column, owner, notes, cardId, dealValue || 0, dateCreated, projectType || '']]
       }
     });
     
@@ -325,14 +331,14 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
 app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params; // Numeric card ID
-    const { title, description, column, owner, notes, dealValue } = req.body;
+    const { title, description, column, owner, notes, dealValue, projectType } = req.body;
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     // Find the row by Card ID
     const allData = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:H'
+      range: 'Board!A:I'
     });
     const rows = allData.data.values || [];
     const rowIndex = rows.findIndex((row, idx) => idx > 0 && String(row[5]) === String(id));
@@ -343,14 +349,14 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     
     const actualRow = rowIndex + 1; // Convert to 1-indexed
     const oldRow = rows[rowIndex];
-    const [oldTitle, oldDesc, oldColumn, oldOwner, oldNotes, cardId, oldDealValue, dateCreated] = oldRow;
+    const [oldTitle, oldDesc, oldColumn, oldOwner, oldNotes, cardId, oldDealValue, dateCreated, oldProjectType] = oldRow;
     
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Board!A${actualRow}:H${actualRow}`,
+      range: `Board!A${actualRow}:I${actualRow}`,
       valueInputOption: 'RAW',
       resource: {
-        values: [[title, description, column, owner, notes, id, dealValue || 0, dateCreated || new Date().toISOString()]]
+        values: [[title, description, column, owner, notes, id, dealValue || 0, dateCreated || new Date().toISOString(), projectType || '']]
       }
     });
     
@@ -363,6 +369,9 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     if (oldNotes !== notes) changes.push(`Notes updated`);
     if (parseFloat(oldDealValue || 0) !== parseFloat(dealValue || 0)) {
       changes.push(`Deal value: $${oldDealValue || 0} → $${dealValue || 0}`);
+    }
+    if ((oldProjectType || '') !== (projectType || '')) {
+      changes.push(`Project type: ${oldProjectType || 'None'} → ${projectType || 'None'}`);
     }
     
     if (changes.length > 0) {
@@ -393,7 +402,7 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
     // Find the row by Card ID
     const allData = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:H'
+      range: 'Board!A:I'
     });
     const rows = allData.data.values || [];
     const rowIndex = rows.findIndex((row, idx) => idx > 0 && String(row[5]) === String(id));

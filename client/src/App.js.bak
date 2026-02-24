@@ -563,7 +563,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
           });
           
           const isEmpty = filteredCards.length === 0;
-          const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned';
+          const isPrePost = column.id === 'ideation' || column.id === 'closed';
           
           return (
           <div
@@ -592,7 +592,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
             </div>
             <div className="column-cards">
               {filteredCards.map(card => {
-                const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned';
+                const isPrePost = column.id === 'ideation' || column.id === 'closed';
                 return (
                   <div
                     key={card.id}
