@@ -8,8 +8,19 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 function App() {
   const [authenticated, setAuthenticated] = useState(null);
   const [user, setUser] = useState(null);
-  const [currentApp, setCurrentApp] = useState(null);
+  const [currentApp, setCurrentAppState] = useState(() => {
+    return localStorage.getItem('currentApp') || null;
+  });
   const [showDevTools, setShowDevTools] = useState(false);
+  
+  const setCurrentApp = (app) => {
+    setCurrentAppState(app);
+    if (app) {
+      localStorage.setItem('currentApp', app);
+    } else {
+      localStorage.removeItem('currentApp');
+    }
+  };
 
   useEffect(() => {
     // Check for token in URL (after OAuth callback)
