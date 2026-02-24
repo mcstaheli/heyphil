@@ -653,8 +653,10 @@ function OriginationBoard({ user, onBack, onLogout }) {
                   method: 'DELETE',
                   headers: getAuthHeaders()
                 });
+                
+                // Remove card locally without loading screen
+                setCards(prevCards => prevCards.filter(c => c.id !== id));
                 setEditingCard(null);
-                await loadBoard();
               } catch (error) {
                 console.error('Failed to delete:', error);
               }
