@@ -153,10 +153,10 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       return res.json({ columns: [], cards: [], people: {} });
     }
     
-    // Fetch board data (now includes Card ID in column G)
+    // Fetch board data (Card ID in column F, removed Due Date)
     const boardResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:G'
+      range: 'Board!A:F'
     });
     
     // Fetch people photos
@@ -177,13 +177,12 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
     });
     
     const cards = boardRows.slice(1).map((row) => ({
-      id: row[6] || '', // Card ID from column G
+      id: row[5] || '', // Card ID from column F
       title: row[0] || '',
       description: row[1] || '',
       column: row[2] || 'ideation',
       owner: row[3] || '',
-      dueDate: row[4] || '',
-      notes: row[5] || ''
+      notes: row[4] || ''
     })).filter(card => card.id); // Only include cards with IDs
     
     res.json({ cards, people });
@@ -195,7 +194,7 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
 
 app.post('/api/origination/card', requireAuth, async (req, res) => {
   try {
-    const { title, description, column, owner, dueDate, notes } = req.body;
+    const { title, description, column, owner, notes } = req.body;
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
@@ -204,10 +203,10 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
     
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: 'Board!A:G',
+      range: 'Board!A:F',
       valueInputOption: 'RAW',
       resource: {
-        values: [[title, description, column, owner, dueDate, notes, cardId]]
+        values: [[title, description, column, owner, notes, cardId]]
       }
     });
     
@@ -231,17 +230,17 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
 app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params; // This is now the cardId, not row index
-    const { title, description, column, owner, dueDate, notes } = req.body;
+    const { title, description, column, owner, notes } = req.body;
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     // Find the row by Card ID
     const allData = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:G'
+      range: 'Board!A:F'
     });
     const rows = allData.data.values || [];
-    const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[6] === id);
+    const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[5] === id);
     
     if (rowIndex === -1) {
       return res.status(404).json({ error: 'Card not found' });
@@ -249,14 +248,14 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     
     const actualRow = rowIndex + 1; // Convert to 1-indexed
     const oldRow = rows[rowIndex];
-    const [oldTitle, oldDesc, oldColumn, oldOwner, oldDue, oldNotes] = oldRow;
+    const [oldTitle, oldDesc, oldColumn, oldOwner, oldNotes] = oldRow;
     
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Board!A${actualRow}:G${actualRow}`,
+      range: `Board!A${actualRow}:F${actualRow}`,
       valueInputOption: 'RAW',
       resource: {
-        values: [[title, description, column, owner, dueDate, notes, id]]
+        values: [[title, description, column, owner, notes, id]]
       }
     });
     
@@ -264,10 +263,9 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     const changes = [];
     if (oldColumn !== column) changes.push(`Status: ${oldColumn} → ${column}`);
     if (oldOwner !== owner) changes.push(`Owner: ${oldOwner || 'Unassigned'} → ${owner || 'Unassigned'}`);
-    if (oldDue !== dueDate) changes.push(`Due: ${oldDue || 'None'} → ${dueDate || 'None'}`);
     if (oldTitle !== title) changes.push(`Title changed`);
     if (oldDesc !== description) changes.push(`Description updated`);
-    if (oldNotes !== notes) changes.push(`Notes updated`);
+    if (oldNotes !== notes) changes.push(`Actions updated`);
     
     if (changes.length > 0) {
       await logActivity(
@@ -296,10 +294,10 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
     // Find the row by Card ID
     const allData = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:G'
+      range: 'Board!A:F'
     });
     const rows = allData.data.values || [];
-    const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[6] === id);
+    const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[5] === id);
     
     if (rowIndex === -1) {
       return res.status(404).json({ error: 'Card not found' });

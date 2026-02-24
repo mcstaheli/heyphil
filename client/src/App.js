@@ -331,7 +331,9 @@ function OriginationBoard({ user, onBack, onLogout }) {
               </div>
             </div>
             <div className="column-cards">
-              {filteredCards.map(card => (
+              {filteredCards.map(card => {
+                const isIdeation = column.id === 'ideation';
+                return (
                   <div
                     key={card.id}
                     className="kanban-card"
@@ -346,14 +348,11 @@ function OriginationBoard({ user, onBack, onLogout }) {
                     )}
                     <div className="card-content">
                       <h4>{card.title}</h4>
-                      {card.description && <p>{card.description}</p>}
-                      <div className="card-meta">
-                        {card.owner && <span className="card-owner">👤 {card.owner}</span>}
-                        {card.dueDate && <span className="card-due">📅 {card.dueDate}</span>}
-                      </div>
+                      {!isIdeation && card.description && <p>{card.description}</p>}
                     </div>
                   </div>
-                ))}
+                );
+              })}
             </div>
           </div>
         );
@@ -390,7 +389,6 @@ function CardModal({ card, onClose, onSave, columns, initialColumn }) {
     description: '',
     column: initialColumn || columns[0].id,
     owner: '',
-    dueDate: '',
     notes: ''
   });
 
@@ -445,24 +443,17 @@ function CardModal({ card, onClose, onSave, columns, initialColumn }) {
             </select>
           </div>
           <div className="form-group">
-            <label>Due Date</label>
-            <input
-              type="date"
-              value={formData.dueDate}
-              onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-            />
-          </div>
-          <div className="form-group">
-            <label>Notes</label>
+            <label>Next Actions</label>
             <textarea
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              rows="2"
+              rows="4"
+              placeholder="Enter action items (one per line)"
             />
           </div>
           <div className="modal-actions">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary">Create Project</button>
+            <button type="submit" className="btn-primary">Save</button>
           </div>
         </form>
       </div>
