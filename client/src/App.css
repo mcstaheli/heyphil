@@ -203,17 +203,22 @@ body {
 }
 
 .column-header {
-  padding: 16px;
+  padding: 18px 16px;
   border-radius: 8px 8px 0 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 3px solid rgba(0,0,0,0.1);
 }
 
 .column-header h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
+  margin: 0;
+  flex: 1;
+  font-size: 17px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #1a1a1a;
 }
 
 .card-count {
@@ -614,17 +619,6 @@ body {
 }
 
 /* Column header with + button */
-.column-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.column-header h3 {
-  margin: 0;
-  flex: 1;
-}
-
 .column-header-actions {
   display: flex;
   align-items: center;
