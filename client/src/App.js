@@ -224,15 +224,24 @@ function OriginationBoard({ user, onBack, onLogout }) {
     const card = cards.find(c => c.id === cardId);
     if (!card || card.column === newColumn) return;
 
+    // Optimistic update - update UI immediately
+    setCards(prevCards => 
+      prevCards.map(c => 
+        c.id === cardId ? { ...c, column: newColumn } : c
+      )
+    );
+
+    // Update backend in background
     try {
       await fetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({ ...card, column: newColumn })
       });
-      await loadBoard();
     } catch (error) {
       console.error('Failed to move card:', error);
+      // Revert on error
+      await loadBoard();
     }
   };
 
