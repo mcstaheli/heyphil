@@ -623,9 +623,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
                             src={people[card.owner]} 
                             alt={card.owner}
                             style={{
-                              border: ownerColors[card.owner] 
-                                ? `2px solid ${ownerColors[card.owner]}` 
-                                : '2px solid #ddd'
+                              border: '2px solid #555'
                             }}
                           />
                         </div>
