@@ -334,7 +334,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
                 return (
                   <div
                     key={card.id}
-                    className="kanban-card"
+                    className={`kanban-card ${isIdeation ? 'card-ideation' : ''}`}
                     draggable
                     onDragStart={(e) => handleDragStart(e, card)}
                     onClick={() => setEditingCard(card)}

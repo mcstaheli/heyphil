@@ -826,3 +826,22 @@ body {
   color: #999;
   white-space: nowrap;
 }
+
+/* Ideation cards - smaller photos, more compact */
+.kanban-card.card-ideation {
+  padding: 12px;
+}
+
+.kanban-card.card-ideation .card-photo {
+  width: 32px;
+  height: 32px;
+}
+
+.kanban-card.card-ideation .card-photo img {
+  width: 32px;
+  height: 32px;
+}
+
+.kanban-card.card-ideation .card-content h4 {
+  font-size: 15px;
+}
