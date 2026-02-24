@@ -213,8 +213,21 @@ function OriginationBoard({ user, onBack, onLogout }) {
         headers: getAuthHeaders(),
         body: JSON.stringify(cardData)
       });
-      await loadBoard();
+      
+      // Add card locally without loading screen
+      const newCard = {
+        ...cardData,
+        id: `card_${Date.now()}_temp`,
+        actions: [],
+        activity: [],
+        daysInStage: 0,
+        dateCreated: new Date().toISOString()
+      };
+      setCards(prevCards => [...prevCards, newCard]);
       setShowNewCard(false);
+      
+      // Refresh in background to get real ID
+      setTimeout(() => loadBoard(), 1000);
     } catch (error) {
       console.error('Failed to create card:', error);
     }
