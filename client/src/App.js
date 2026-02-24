@@ -184,8 +184,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
     };
   };
 
-  const loadBoard = async () => {
-    setLoading(true);
+  const loadBoard = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     const startTime = Date.now();
     
     try {
@@ -200,10 +200,12 @@ function OriginationBoard({ user, onBack, onLogout }) {
       console.error('Failed to load board:', error);
     }
     
-    // Ensure loading screen shows for at least 1.5 seconds
-    const elapsed = Date.now() - startTime;
-    const remaining = Math.max(0, 1500 - elapsed);
-    setTimeout(() => setLoading(false), remaining);
+    if (showLoading) {
+      // Ensure loading screen shows for at least 1.5 seconds
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, 1500 - elapsed);
+      setTimeout(() => setLoading(false), remaining);
+    }
   };
 
   const createCard = async (cardData) => {
@@ -226,8 +228,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
       setCards(prevCards => [...prevCards, newCard]);
       setShowNewCard(false);
       
-      // Refresh in background to get real ID
-      setTimeout(() => loadBoard(), 1000);
+      // Refresh in background to get real ID (no loading screen)
+      setTimeout(() => loadBoard(false), 1000);
     } catch (error) {
       console.error('Failed to create card:', error);
     }
