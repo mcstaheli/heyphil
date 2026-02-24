@@ -178,11 +178,13 @@ body {
 
 .kanban-board {
   display: flex;
+  flex-direction: column;
   gap: 16px;
   padding: 0 32px 32px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  height: calc(100vh - 200px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-width: 1200px;
+  margin: 0 auto;
   margin: 0 auto;
 }
 
@@ -190,12 +192,9 @@ body {
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  min-width: 300px;
-  max-width: 300px;
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 120px;
 }
 
 .column-header {
@@ -222,13 +221,12 @@ body {
 
 .column-cards {
   padding: 16px;
-  flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 12px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
 }
 
 .kanban-card {
@@ -602,4 +600,49 @@ body {
 
 .kanban-card:active {
   cursor: grabbing;
+}
+
+/* Column header with + button */
+.column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.column-header h3 {
+  margin: 0;
+  flex: 1;
+}
+
+.column-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.column-add-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.2);
+  background: white;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.column-add-btn:hover {
+  background: rgba(255,255,255,0.9);
+  transform: scale(1.1);
+  border-color: rgba(0,0,0,0.4);
+}
+
+/* Vertical kanban - cards need min width */
+.kanban-card {
+  min-width: 300px;
+  flex-shrink: 0;
 }

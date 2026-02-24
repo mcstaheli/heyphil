@@ -151,18 +151,19 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
   const [showNewCard, setShowNewCard] = useState(false);
+  const [newCardColumn, setNewCardColumn] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
   const [draggedCard, setDraggedCard] = useState(null);
 
   const columns = [
-    { id: 'ideation', title: 'Ideation', color: '#f0f0f0' },
-    { id: 'on-deck', title: 'On Deck', color: '#e3f2fd' },
-    { id: 'ic-diligence', title: 'IC - Diligence', color: '#fff3cd' },
-    { id: 'due-diligence', title: 'Due Diligence', color: '#fff9c4' },
-    { id: 'ic-capitalization', title: 'IC - Capitalization', color: '#e1bee7' },
-    { id: 'capitalization', title: 'Capitalization', color: '#f3e5f5' },
-    { id: 'ic-close', title: 'IC - Close', color: '#c8e6c9' },
-    { id: 'closed', title: 'Closed', color: '#d4edda' }
+    { id: 'ideation', title: 'Ideation', color: '#bbdefb' },
+    { id: 'on-deck', title: 'On Deck', color: '#90caf9' },
+    { id: 'ic-diligence', title: 'IC - Diligence', color: '#e0e0e0' },
+    { id: 'due-diligence', title: 'Due Diligence', color: '#64b5f6' },
+    { id: 'ic-capitalization', title: 'IC - Capitalization', color: '#bdbdbd' },
+    { id: 'capitalization', title: 'Capitalization', color: '#42a5f5' },
+    { id: 'ic-close', title: 'IC - Close', color: '#9e9e9e' },
+    { id: 'closed', title: 'Closed', color: '#2196f3' }
   ];
 
   useEffect(() => {
@@ -281,10 +282,6 @@ function OriginationBoard({ user, onBack, onLogout }) {
         </div>
       </header>
 
-      <div className="board-controls">
-        <button className="btn-primary" onClick={() => setShowNewCard(true)}>+ New Project</button>
-      </div>
-
       <div className="kanban-board">
         {columns.map(column => (
           <div
@@ -295,9 +292,21 @@ function OriginationBoard({ user, onBack, onLogout }) {
           >
             <div className="column-header" style={{ backgroundColor: column.color }}>
               <h3>{column.title}</h3>
-              <span className="card-count">
-                {cards.filter(c => c.column === column.id).length}
-              </span>
+              <div className="column-header-actions">
+                <span className="card-count">
+                  {cards.filter(c => c.column === column.id).length}
+                </span>
+                <button 
+                  className="column-add-btn"
+                  onClick={() => {
+                    setShowNewCard(true);
+                    setNewCardColumn(column.id);
+                  }}
+                  title="Add card"
+                >
+                  +
+                </button>
+              </div>
             </div>
             <div className="column-cards">
               {cards
@@ -332,9 +341,13 @@ function OriginationBoard({ user, onBack, onLogout }) {
 
       {showNewCard && (
         <CardModal
-          onClose={() => setShowNewCard(false)}
+          onClose={() => {
+            setShowNewCard(false);
+            setNewCardColumn(null);
+          }}
           onSave={createCard}
           columns={columns}
+          initialColumn={newCardColumn}
         />
       )}
 
@@ -350,11 +363,11 @@ function OriginationBoard({ user, onBack, onLogout }) {
   );
 }
 
-function CardModal({ card, onClose, onSave, columns }) {
+function CardModal({ card, onClose, onSave, columns, initialColumn }) {
   const [formData, setFormData] = useState(card || {
     title: '',
     description: '',
-    column: columns[0].id,
+    column: initialColumn || columns[0].id,
     owner: '',
     dueDate: '',
     notes: ''
