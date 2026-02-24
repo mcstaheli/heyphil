@@ -153,10 +153,10 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       return res.json({ columns: [], cards: [], people: {} });
     }
     
-    // Fetch board data
+    // Fetch board data (now includes Card ID in column G)
     const boardResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Board!A:F'
+      range: 'Board!A:G'
     });
     
     // Fetch people photos
@@ -176,15 +176,15 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       }
     });
     
-    const cards = boardRows.slice(1).map((row, idx) => ({
-      id: idx + 1,
+    const cards = boardRows.slice(1).map((row) => ({
+      id: row[6] || '', // Card ID from column G
       title: row[0] || '',
       description: row[1] || '',
-      column: row[2] || 'backlog',
+      column: row[2] || 'ideation',
       owner: row[3] || '',
       dueDate: row[4] || '',
       notes: row[5] || ''
-    }));
+    })).filter(card => card.id); // Only include cards with IDs
     
     res.json({ cards, people });
   } catch (error) {
@@ -199,12 +199,15 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
+    // Generate unique ID (timestamp + random)
+    const cardId = `card_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: 'Board!A:F',
+      range: 'Board!A:G',
       valueInputOption: 'RAW',
       resource: {
-        values: [[title, description, column, owner, dueDate, notes]]
+        values: [[title, description, column, owner, dueDate, notes, cardId]]
       }
     });
     
@@ -227,27 +230,33 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
 
 app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = req.params; // This is now the cardId, not row index
     const { title, description, column, owner, dueDate, notes } = req.body;
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
-    const rowIndex = parseInt(id) + 1; // +1 for header row
-    
-    // Get old values to detect changes
-    const oldData = await sheets.spreadsheets.values.get({
+    // Find the row by Card ID
+    const allData = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `Board!A${rowIndex}:F${rowIndex}`
+      range: 'Board!A:G'
     });
-    const oldRow = oldData.data.values?.[0] || [];
+    const rows = allData.data.values || [];
+    const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[6] === id);
+    
+    if (rowIndex === -1) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+    
+    const actualRow = rowIndex + 1; // Convert to 1-indexed
+    const oldRow = rows[rowIndex];
     const [oldTitle, oldDesc, oldColumn, oldOwner, oldDue, oldNotes] = oldRow;
     
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Board!A${rowIndex}:F${rowIndex}`,
+      range: `Board!A${actualRow}:G${actualRow}`,
       valueInputOption: 'RAW',
       resource: {
-        values: [[title, description, column, owner, dueDate, notes]]
+        values: [[title, description, column, owner, dueDate, notes, id]]
       }
     });
     
@@ -280,11 +289,21 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
 
 app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = req.params; // This is now the cardId
     const sheets = getSheets(req.user);
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
-    const rowIndex = parseInt(id) + 1;
+    // Find the row by Card ID
+    const allData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Board!A:G'
+    });
+    const rows = allData.data.values || [];
+    const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[6] === id);
+    
+    if (rowIndex === -1) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
     
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
