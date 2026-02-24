@@ -185,9 +185,7 @@ body {
   overflow-y: hidden;
   height: calc(100vh - 250px);
   min-height: 600px;
-  max-width: 1900px;
-  margin: 0 auto;
-  justify-content: center;
+  width: 100%;
 }
 
 .kanban-column {
