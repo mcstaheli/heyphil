@@ -210,11 +210,19 @@ function OriginationBoard({ user, onBack, onLogout }) {
 
   const createCard = async (cardData) => {
     try {
-      await fetch(`${API_BASE_URL}/api/origination/card`, {
+      const response = await fetch(`${API_BASE_URL}/api/origination/card`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(cardData)
       });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        console.error('Create card failed:', result);
+        alert(`Failed to create card: ${result.error || 'Unknown error'}`);
+        return;
+      }
       
       // Add card locally without loading screen
       const newCard = {
@@ -232,6 +240,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
       setTimeout(() => loadBoard(false), 1000);
     } catch (error) {
       console.error('Failed to create card:', error);
+      alert('Failed to create card - check console for details');
     }
   };
 
