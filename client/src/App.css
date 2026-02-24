@@ -1218,9 +1218,6 @@ body {
   border-bottom: 2px solid #ddd;
 }
 
-.column-ideation .column-header::before {
-  content: '💡 ';
-}
 
 .column-ideation .column-cards,
 .column-closed .column-cards {

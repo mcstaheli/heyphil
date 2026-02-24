@@ -179,13 +179,15 @@ body {
 .kanban-board {
   display: flex;
   flex-direction: row;
-  gap: 16px;
-  padding: 0 32px 32px;
+  gap: 20px;
+  padding: 24px 32px 32px;
   overflow-x: auto;
   overflow-y: hidden;
   height: calc(100vh - 250px);
   min-height: 600px;
+  max-width: 1900px;
   margin: 0 auto;
+  justify-content: center;
 }
 
 .kanban-column {
@@ -201,17 +203,22 @@ body {
 }
 
 .column-header {
-  padding: 16px;
+  padding: 18px 16px;
   border-radius: 8px 8px 0 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 3px solid rgba(0,0,0,0.1);
 }
 
 .column-header h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
+  margin: 0;
+  flex: 1;
+  font-size: 17px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #1a1a1a;
 }
 
 .card-count {
@@ -612,17 +619,6 @@ body {
 }
 
 /* Column header with + button */
-.column-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.column-header h3 {
-  margin: 0;
-  flex: 1;
-}
-
 .column-header-actions {
   display: flex;
   align-items: center;
@@ -703,8 +699,8 @@ body {
 
 /* Empty column collapsed state */
 .kanban-column.column-empty {
-  min-width: 80px;
-  max-width: 80px;
+  min-width: 96px;
+  max-width: 96px;
   background: #f5f5f5;
 }
 
@@ -1061,10 +1057,6 @@ body {
   border-left: 4px solid #ff9800;
 }
 
-/* ===== BULK ACTIONS MODAL ===== */
-.bulk-modal {
-  max-width: 500px;
-}
 
 .bulk-modal h2 {
   color: #2196f3;
@@ -1188,4 +1180,97 @@ body {
   .metric-card {
     min-width: 120px;
   }
+}
+
+/* Deal value on cards */
+.card-deal-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: #4caf50;
+  margin: 4px 0 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.card-deal-value::before {
+  content: '💰';
+  font-size: 12px;
+}
+
+/* Ideation and Closed - Pre/Post activity areas */
+.column-ideation,
+.column-closed {
+  background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+  border: 2px dashed #ccc;
+  opacity: 0.95;
+  max-width: 280px;
+}
+
+.column-ideation .column-header,
+.column-closed .column-header {
+  background: transparent !important;
+  color: #666;
+  font-style: italic;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 2px solid #ddd;
+}
+
+.column-ideation .column-header::before {
+  content: '💡 ';
+}
+
+.column-ideation .column-cards,
+.column-closed .column-cards {
+  opacity: 0.9;
+}
+
+.column-ideation .kanban-card,
+.column-closed .kanban-card {
+  background: white;
+  border: 1px solid #ddd;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* Pre/Post cards (Ideation & Closed) - minimal display */
+.kanban-card.card-prepost {
+  padding: 10px;
+}
+
+.kanban-card.card-prepost .card-photo {
+  width: 28px;
+  height: 28px;
+}
+
+.kanban-card.card-prepost .card-photo img {
+  width: 28px;
+  height: 28px;
+}
+
+.kanban-card.card-prepost .card-content h4 {
+  font-size: 14px;
+  margin: 0;
+}
+
+.kanban-card.card-prepost .card-main {
+  gap: 8px;
+}
+
+/* Remove action button for pending actions */
+.btn-remove-action {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+  transition: color 0.2s;
+}
+
+.btn-remove-action:hover {
+  color: #f44336;
 }
