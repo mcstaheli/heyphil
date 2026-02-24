@@ -168,6 +168,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [editingCard, setEditingCard] = useState(null);
   const [draggedCard, setDraggedCard] = useState(null);
   const [filterOwner, setFilterOwner] = useState('');
+  const [filterProjectType, setFilterProjectType] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('dateCreated');
   const [showMetrics, setShowMetrics] = useState(false);
@@ -196,6 +197,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
     const filteredCards = cards.filter(c => {
       if (c.column === 'ideation' || c.column === 'closed' || c.column === 'abandoned') return false;
       if (filterOwner && c.owner !== filterOwner) return false;
+      if (filterProjectType && c.projectType !== filterProjectType) return false;
       if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
@@ -215,7 +217,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
     });
     
     setMetrics(newMetrics);
-  }, [cards, filterOwner, searchQuery]);
+  }, [cards, filterOwner, filterProjectType, searchQuery]);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
@@ -507,6 +509,12 @@ function OriginationBoard({ user, onBack, onLogout }) {
               <option key={person} value={person}>{person}</option>
             ))}
           </select>
+          <select value={filterProjectType} onChange={(e) => setFilterProjectType(e.target.value)}>
+            <option value="">All Project Types</option>
+            {projectTypeColors && Object.keys(projectTypeColors).map(type => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
             <option value="dateCreated">Newest First</option>
             <option value="title">Alphabetical</option>
@@ -549,6 +557,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
           let filteredCards = cards.filter(c => {
             if (c.column !== column.id) return false;
             if (filterOwner && c.owner !== filterOwner) return false;
+            if (filterProjectType && c.projectType !== filterProjectType) return false;
             if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
             return true;
           });
@@ -598,9 +607,9 @@ function OriginationBoard({ user, onBack, onLogout }) {
                     key={card.id}
                     className={`kanban-card ${isPrePost ? 'card-prepost' : ''} ${card.daysInStage > 30 ? 'stale-deal' : ''}`}
                     style={{
-                      backgroundColor: card.projectType && projectTypeColors[card.projectType] 
-                        ? `${projectTypeColors[card.projectType]}15` 
-                        : 'transparent'
+                      borderLeft: card.projectType && projectTypeColors[card.projectType] 
+                        ? `4px solid ${projectTypeColors[card.projectType]}` 
+                        : '4px solid transparent'
                     }}
                     draggable
                     onDragStart={(e) => handleDragStart(e, card)}

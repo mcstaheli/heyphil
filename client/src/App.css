@@ -1300,3 +1300,8 @@ body {
   color: #999;
   font-style: italic;
 }
+
+/* Project type border - adjust padding to compensate */
+.kanban-card {
+  padding-left: 12px; /* Reduce from 16px to account for border */
+}
