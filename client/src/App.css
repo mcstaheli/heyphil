@@ -1274,3 +1274,12 @@ body {
 .btn-remove-action:hover {
   color: #f44336;
 }
+
+/* Extra spacing to separate Ideation and Closed from workflow */
+.column-ideation {
+  margin-right: 32px;
+}
+
+.column-closed {
+  margin-left: 32px;
+}
