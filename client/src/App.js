@@ -173,6 +173,27 @@ function OriginationBoard({ user, onBack, onLogout }) {
   useEffect(() => {
     loadBoard();
   }, []);
+  
+  // Recalculate metrics whenever cards change
+  useEffect(() => {
+    if (cards.length === 0) return;
+    
+    const newMetrics = {
+      totalDeals: cards.length,
+      totalValue: cards.reduce((sum, c) => sum + (c.dealValue || 0), 0),
+      byStage: {}
+    };
+    
+    cards.forEach(card => {
+      if (!newMetrics.byStage[card.column]) {
+        newMetrics.byStage[card.column] = { count: 0, value: 0 };
+      }
+      newMetrics.byStage[card.column].count++;
+      newMetrics.byStage[card.column].value += (card.dealValue || 0);
+    });
+    
+    setMetrics(newMetrics);
+  }, [cards]);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
