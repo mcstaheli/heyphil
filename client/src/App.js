@@ -591,6 +591,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
           onSave={createCard}
           columns={columns}
           initialColumn={newCardColumn}
+          toggleAction={toggleAction}
+          onAddAction={addAction}
         />
       )}
 
@@ -633,13 +635,13 @@ function OriginationBoard({ user, onBack, onLogout }) {
 }
 
 function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction }) {
-  const [formData, setFormData] = useState(card || {
-    title: '',
-    description: '',
-    column: initialColumn || columns[0].id,
-    owner: '',
-    notes: '',
-    dealValue: 0
+  const [formData, setFormData] = useState({
+    title: card?.title || '',
+    description: card?.description || '',
+    column: card?.column || initialColumn || columns[0].id,
+    owner: card?.owner || '',
+    notes: card?.notes || '',
+    dealValue: card?.dealValue || 0
   });
   const [newActionText, setNewActionText] = useState('');
   const [showActivity, setShowActivity] = useState(false);
