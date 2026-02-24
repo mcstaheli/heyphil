@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 import './Loading.css';
 import Landing from './Landing';
+import HotelTycoon from './HotelTycoon';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -121,6 +122,11 @@ function App() {
                 <h3>Origination Board</h3>
                 <p>Manage projects with your team</p>
               </div>
+              <div className="app-card" onClick={() => setCurrentApp('hotel-tycoon')}>
+                <div className="app-icon">🏨</div>
+                <h3>Hotel Tycoon</h3>
+                <p>Build your hotel empire</p>
+              </div>
               <div className="app-card disabled">
                 <div className="app-icon">📧</div>
                 <h3>Email Triage</h3>
@@ -129,6 +135,21 @@ function App() {
             </div>
           </div>
         </div>
+        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
+        {!showDevTools && (
+          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
+            🔧 Dev Tools
+          </button>
+        )}
+      </>
+    );
+  }
+
+  // Hotel Tycoon app
+  if (currentApp === 'hotel-tycoon') {
+    return (
+      <>
+        <HotelTycoon user={user} onBack={() => setCurrentApp(null)} />
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
