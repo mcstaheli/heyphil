@@ -159,6 +159,7 @@ function App() {
 function OriginationBoard({ user, onBack, onLogout }) {
   const [cards, setCards] = useState([]);
   const [people, setPeople] = useState({});
+  const [ownerColors, setOwnerColors] = useState({});
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showNewCard, setShowNewCard] = useState(false);
@@ -233,6 +234,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
       const data = await res.json();
       setCards(data.cards || []);
       setPeople(data.people || {});
+      setOwnerColors(data.ownerColors || {});
       setMetrics(data.metrics || null);
     } catch (error) {
       console.error('Failed to load board:', error);
@@ -592,6 +594,11 @@ function OriginationBoard({ user, onBack, onLogout }) {
                   <div
                     key={card.id}
                     className={`kanban-card ${isPrePost ? 'card-prepost' : ''} ${card.daysInStage > 30 ? 'stale-deal' : ''}`}
+                    style={{
+                      backgroundColor: card.owner && ownerColors[card.owner] 
+                        ? `${ownerColors[card.owner]}15` 
+                        : 'transparent'
+                    }}
                     draggable
                     onDragStart={(e) => handleDragStart(e, card)}
                     onClick={() => setEditingCard(card)}

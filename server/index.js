@@ -160,20 +160,22 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       range: 'Board!A:H'
     });
     
-    // Fetch people photos
+    // Fetch people photos and colors
     const backendResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Backend!A:B'
+      range: 'Backend!A:C'
     });
     
     const boardRows = boardResponse.data.values || [];
     const backendRows = backendResponse.data.values || [];
     
-    // Build people photo mapping
+    // Build people photo and color mapping
     const people = {};
+    const ownerColors = {};
     backendRows.slice(1).forEach(row => {
-      if (row[0] && row[1]) {
-        people[row[0]] = row[1]; // person name -> photo URL
+      if (row[0]) {
+        if (row[1]) people[row[0]] = row[1]; // person name -> photo URL
+        if (row[2]) ownerColors[row[0]] = row[2]; // person name -> color hex
       }
     });
     
@@ -256,7 +258,7 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       card.daysInStage = daysInStage;
     });
     
-    res.json({ cards, people, metrics });
+    res.json({ cards, people, ownerColors, metrics });
   } catch (error) {
     console.error('Failed to fetch board:', error);
     res.status(500).json({ error: 'Failed to fetch board data' });
