@@ -511,11 +511,12 @@ function OriginationBoard({ user, onBack, onLogout }) {
           });
           
           const isEmpty = filteredCards.length === 0;
+          const isPrePost = column.id === 'ideation' || column.id === 'closed';
           
           return (
           <div
             key={column.id}
-            className={`kanban-column ${isEmpty ? 'column-empty' : ''}`}
+            className={`kanban-column ${isEmpty ? 'column-empty' : ''} ${isPrePost ? `column-${column.id}` : ''}`}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, column.id)}
           >
