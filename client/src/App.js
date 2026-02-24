@@ -1011,6 +1011,9 @@ function DevTools({ user, onClose }) {
           <button className="devtools-btn" onClick={() => window.open('https://dash.cloudflare.com/', '_blank')}>
             Cloudflare Pages
           </button>
+          <button className="devtools-btn" onClick={() => window.open('https://docs.google.com/spreadsheets/d/1bdXv9eA4fbNDj4vGGZf2kU6v24yYaLow2BVVHWtZaYQ', '_blank')}>
+            Hey_Phil Spreadsheet
+          </button>
         </div>
 
         <div className="devtools-section">
