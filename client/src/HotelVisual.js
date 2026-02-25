@@ -62,7 +62,8 @@ const INITIAL_STATE = {
   guestQueue: 5,
   guestArrivalRate: 3,
   
-  activeServices: [], // {roomId, type, progress, staffId}
+  activeServices: [], // {roomId, type, progress, staffId, staffPosition: {floor, pos}}
+  staffPositions: [], // {id, floor, position, targetFloor, targetPosition, moving}
   
   upgrades: {
     autoCheckin: 0,
@@ -107,6 +108,20 @@ for (let floor = 0; floor < 3; floor++) {
   }
 }
 
+// Initialize staff positions
+INITIAL_STATE.staffPositions = [];
+for (let i = 0; i < INITIAL_STATE.serviceStaff; i++) {
+  INITIAL_STATE.staffPositions.push({
+    id: i,
+    floor: 0,
+    position: i,
+    targetFloor: null,
+    targetPosition: null,
+    moving: false,
+    assignedService: null
+  });
+}
+
 function HotelVisual({ user, onBack }) {
   const [state, setState] = useState(() => {
     const saved = localStorage.getItem('hotelVisualSave');
@@ -122,7 +137,9 @@ function HotelVisual({ user, onBack }) {
   
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [showServiceMenu, setShowServiceMenu] = useState(null);
+  const [particles, setParticles] = useState([]);
   const nextGuestId = useRef(1);
+  const nextParticleId = useRef(1);
   
   useEffect(() => {
     localStorage.setItem('hotelVisualSave', JSON.stringify(state));
@@ -149,6 +166,18 @@ function HotelVisual({ user, onBack }) {
               newCash += revenue;
               newStats.totalRevenue += revenue;
               newStats.guestsServed += 1;
+              
+              // Create checkout particle!
+              newParticles.push({
+                id: nextParticleId.current++,
+                roomId: room.id,
+                text: `+$${Math.floor(revenue)}`,
+                color: '#4ade80',
+                life: 30,
+                offsetX: Math.random() * 40 - 20,
+                offsetY: 0
+              });
+              
               return { ...room, guest: null };
             }
             
@@ -180,7 +209,35 @@ function HotelVisual({ user, onBack }) {
           return { ...hotel, rooms: newRooms };
         });
         
+        // Update staff positions
+        let newStaffPositions = prev.staffPositions.map(staff => {
+          if (staff.moving && staff.targetFloor !== null) {
+            // Move towards target
+            let newFloor = staff.floor;
+            let newPosition = staff.position;
+            
+            if (staff.floor !== staff.targetFloor) {
+              newFloor += staff.floor < staff.targetFloor ? 1 : -1;
+            } else if (staff.position !== staff.targetPosition) {
+              newPosition += staff.position < staff.targetPosition ? 1 : -1;
+            }
+            
+            const arrived = newFloor === staff.targetFloor && newPosition === staff.targetPosition;
+            
+            return {
+              ...staff,
+              floor: newFloor,
+              position: newPosition,
+              moving: !arrived,
+              targetFloor: arrived ? null : staff.targetFloor,
+              targetPosition: arrived ? null : staff.targetPosition
+            };
+          }
+          return staff;
+        });
+        
         // Process active services
+        const newParticles = [];
         const newActiveServices = prev.activeServices.map(service => {
           const newProgress = service.progress + (1 + prev.upgrades.serviceSpeed * 0.2);
           if (newProgress >= service.duration) {
@@ -197,6 +254,17 @@ function HotelVisual({ user, onBack }) {
             if (room && room.guest) {
               room.guest.happiness = Math.min(100, room.guest.happiness + 20);
               room.guest.needsService = false;
+              
+              // Create particle effect!
+              newParticles.push({
+                id: nextParticleId.current++,
+                roomId: room.id,
+                text: `+$${Math.floor(tip)}`,
+                color: '#fbbf24',
+                life: 30,
+                offsetX: Math.random() * 40 - 20,
+                offsetY: 0
+              });
             }
             
             return null; // Remove completed service
@@ -321,6 +389,16 @@ function HotelVisual({ user, onBack }) {
         // Update notifications (decay life)
         newNotifications = newNotifications.map(n => ({ ...n, life: n.life - 1 })).filter(n => n.life > 0);
         
+        // Update particles
+        setParticles(currentParticles => {
+          const updated = currentParticles.map(p => ({
+            ...p,
+            life: p.life - 1,
+            offsetY: p.offsetY - 2
+          })).filter(p => p.life > 0);
+          return [...updated, ...newParticles];
+        });
+        
         // Phase
         let newPhase = 1;
         if (newStats.totalRevenue >= 50000) newPhase = 2;
@@ -343,7 +421,8 @@ function HotelVisual({ user, onBack }) {
           activeEvent: newActiveEvent,
           eventTimer: newEventTimer,
           achievements: newAchievements,
-          notifications: newNotifications
+          notifications: newNotifications,
+          staffPositions: newStaffPositions
         };
       });
     }, TICK_MS);
@@ -391,6 +470,28 @@ function HotelVisual({ user, onBack }) {
       const service = SERVICE_TYPES[serviceType];
       if (service.unlockAt > prev.stats.servicesCompleted) return prev;
       
+      // Find available staff
+      const availableStaff = prev.staffPositions.find(s => !s.moving && !prev.activeServices.find(as => as.staffId === s.id));
+      if (!availableStaff) return prev;
+      
+      // Get room location
+      const room = prev.hotels[0].rooms.find(r => r.id === roomId);
+      if (!room) return prev;
+      
+      // Send staff to room
+      const newStaffPositions = prev.staffPositions.map(s => {
+        if (s.id === availableStaff.id) {
+          return {
+            ...s,
+            targetFloor: room.floor,
+            targetPosition: room.position,
+            moving: true,
+            assignedService: roomId
+          };
+        }
+        return s;
+      });
+      
       return {
         ...prev,
         activeServices: [...prev.activeServices, {
@@ -398,8 +499,9 @@ function HotelVisual({ user, onBack }) {
           type: serviceType,
           progress: 0,
           duration: service.duration,
-          staffId: prev.activeServices.length
-        }]
+          staffId: availableStaff.id
+        }],
+        staffPositions: newStaffPositions
       };
     });
     setShowServiceMenu(null);
@@ -575,10 +677,41 @@ function HotelVisual({ user, onBack }) {
                               )}
                             </>
                           )}
+                          {/* Particles for this room */}
+                          {particles
+                            .filter(p => p.roomId === room.id)
+                            .map(particle => (
+                              <div
+                                key={particle.id}
+                                className="particle"
+                                style={{
+                                  color: particle.color,
+                                  opacity: particle.life / 30,
+                                  transform: `translate(${particle.offsetX}px, ${particle.offsetY}px)`
+                                }}
+                              >
+                                {particle.text}
+                              </div>
+                            ))}
                         </div>
                       );
                     })}
                 </div>
+                
+                {/* Staff sprites on this floor */}
+                {state.staffPositions
+                  .filter(staff => staff.floor === floor)
+                  .map(staff => (
+                    <div
+                      key={staff.id}
+                      className="staff-sprite"
+                      style={{
+                        left: `${96 + staff.position * 132}px` // Position relative to floor
+                      }}
+                    >
+                      👔
+                    </div>
+                  ))}
               </div>
             );
           })}
