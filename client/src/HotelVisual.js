@@ -574,10 +574,21 @@ function HotelVisual({ user, onBack }) {
         needsService: false
       };
       
+      const newNotifications = [...prev.notifications];
+      if (guestType.name === 'VIP') {
+        newNotifications.push({
+          id: Date.now(),
+          text: '⭐ VIP Guest Arrived!',
+          color: '#fbbf24',
+          life: 100
+        });
+      }
+      
       return {
         ...prev,
         hotels: newHotels,
-        guestQueue: prev.guestQueue - 1
+        guestQueue: prev.guestQueue - 1,
+        notifications: newNotifications
       };
     });
   }, [state.guestQueue]);
@@ -892,11 +903,12 @@ function HotelVisual({ user, onBack }) {
                     .map(room => {
                       const hasService = state.activeServices.find(s => s.roomId === room.id);
                       const needsService = room.guest?.needsService && !hasService;
+                      const isVip = room.guest?.type.name === 'VIP';
                       
                       return (
                         <div
                           key={room.id}
-                          className={`room ${room.guest ? 'occupied' : 'empty'} ${needsService ? 'needs-service' : ''}`}
+                          className={`room ${room.guest ? 'occupied' : 'empty'} ${needsService ? 'needs-service' : ''} ${isVip ? 'vip-room' : ''}`}
                           onClick={() => {
                             if (room.guest && needsService) {
                               setShowServiceMenu(room.id);
