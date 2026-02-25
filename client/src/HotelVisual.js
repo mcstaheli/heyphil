@@ -20,7 +20,27 @@ const GUEST_TYPES = {
   vip: { name: 'VIP', emoji: '⭐', adrMult: 3.0, serviceDemand: 0.8, color: '#fbbf24' }
 };
 
-const WEATHER_TYPES = ['☀️ Sunny', '🌧️ Rainy', '❄️ Snowy', '☁️ Cloudy'];
+const WEATHER_TYPES = [
+  { name: 'Sunny', emoji: '☀️', guestMult: 1.2, color: '#fbbf24' },
+  { name: 'Rainy', emoji: '🌧️', guestMult: 0.8, color: '#3b82f6' },
+  { name: 'Snowy', emoji: '❄️', guestMult: 0.6, color: '#60a5fa' },
+  { name: 'Cloudy', emoji: '☁️', guestMult: 1.0, color: '#6b7280' }
+];
+
+const EVENTS = [
+  { id: 'convention', name: 'Tech Convention', emoji: '🎪', guestMult: 2.5, duration: 200, chance: 0.005 },
+  { id: 'holiday', name: 'Holiday Season', emoji: '🎄', adrMult: 1.5, duration: 300, chance: 0.003 },
+  { id: 'festival', name: 'Music Festival', emoji: '🎵', guestMult: 2.0, duration: 150, chance: 0.008 },
+  { id: 'sports', name: 'Sports Tournament', emoji: '🏆', guestMult: 1.8, duration: 100, chance: 0.006 }
+];
+
+const ACHIEVEMENTS = [
+  { id: 'first_service', name: 'First Service', desc: 'Complete your first service', reward: { tips: 100 }, check: s => s.stats.servicesCompleted >= 1 },
+  { id: 'happy_guests', name: 'Guest Satisfaction', desc: 'Maintain 90% happiness', reward: { reputation: 50 }, check: s => s.stats.happiness >= 90 },
+  { id: 'service_master', name: 'Service Master', desc: 'Complete 100 services', reward: { tips: 1000 }, check: s => s.stats.servicesCompleted >= 100 },
+  { id: 'money_maker', name: 'Money Maker', desc: 'Earn $50,000 total', reward: { cash: 5000 }, check: s => s.stats.totalRevenue >= 50000 },
+  { id: 'full_house', name: 'Full House', desc: 'Fill all rooms', reward: { reputation: 100 }, check: s => s.hotels[0].rooms.every(r => r.guest) }
+];
 
 const INITIAL_STATE = {
   cash: 20000,
@@ -63,9 +83,15 @@ const INITIAL_STATE = {
   
   tick: 0,
   phase: 1,
-  weather: 'Sunny',
+  weather: 0, // index into WEATHER_TYPES
+  weatherTimer: 0,
   
-  notifications: []
+  activeEvent: null,
+  eventTimer: 0,
+  
+  achievements: [],
+  notifications: [],
+  particles: [] // {id, x, y, text, color, life}
 };
 
 // Initialize rooms
@@ -250,6 +276,51 @@ function HotelVisual({ user, onBack }) {
           newReputation = Math.max(0, newReputation - 0.2);
         }
         
+        // Weather changes
+        let newWeather = prev.weather;
+        let newWeatherTimer = prev.weatherTimer + 1;
+        if (newWeatherTimer >= 500) { // Change weather every 50 seconds
+          newWeather = Math.floor(Math.random() * WEATHER_TYPES.length);
+          newWeatherTimer = 0;
+        }
+        
+        // Events
+        let newActiveEvent = prev.activeEvent;
+        let newEventTimer = prev.eventTimer;
+        let newNotifications = [...prev.notifications];
+        
+        if (newActiveEvent) {
+          newEventTimer += 1;
+          if (newEventTimer >= newActiveEvent.duration) {
+            newActiveEvent = null;
+            newEventTimer = 0;
+            newNotifications.push({ id: Date.now(), text: `${newActiveEvent.name} ended!`, color: '#6b7280', life: 50 });
+          }
+        } else if (Math.random() < 0.001) { // Small chance each tick
+          const possibleEvents = EVENTS.filter(e => Math.random() < e.chance);
+          if (possibleEvents.length > 0) {
+            newActiveEvent = possibleEvents[0];
+            newEventTimer = 0;
+            newNotifications.push({ id: Date.now(), text: `${newActiveEvent.emoji} ${newActiveEvent.name} started!`, color: '#fbbf24', life: 100 });
+          }
+        }
+        
+        // Check achievements
+        let newAchievements = [...prev.achievements];
+        ACHIEVEMENTS.forEach(achievement => {
+          if (!prev.achievements.includes(achievement.id) && achievement.check(prev)) {
+            newAchievements.push(achievement.id);
+            newNotifications.push({ id: Date.now(), text: `🏆 ${achievement.name} unlocked!`, color: '#fbbf24', life: 150 });
+            // Apply rewards
+            if (achievement.reward.cash) newCash += achievement.reward.cash;
+            if (achievement.reward.tips) newTips += achievement.reward.tips;
+            if (achievement.reward.reputation) newReputation += achievement.reward.reputation;
+          }
+        });
+        
+        // Update notifications (decay life)
+        newNotifications = newNotifications.map(n => ({ ...n, life: n.life - 1 })).filter(n => n.life > 0);
+        
         // Phase
         let newPhase = 1;
         if (newStats.totalRevenue >= 50000) newPhase = 2;
@@ -266,7 +337,13 @@ function HotelVisual({ user, onBack }) {
           guestQueue: newQueue,
           activeServices: newActiveServices,
           reputation: newReputation,
-          phase: newPhase
+          phase: newPhase,
+          weather: newWeather,
+          weatherTimer: newWeatherTimer,
+          activeEvent: newActiveEvent,
+          eventTimer: newEventTimer,
+          achievements: newAchievements,
+          notifications: newNotifications
         };
       });
     }, TICK_MS);
@@ -389,7 +466,27 @@ function HotelVisual({ user, onBack }) {
           <span className="resource-label">Happiness</span>
           <span className="resource-value">{Math.floor(state.stats.happiness)}%</span>
         </div>
+        <div className="resource">
+          <span className="resource-label">Weather</span>
+          <span className="resource-value">{WEATHER_TYPES[state.weather].emoji} {WEATHER_TYPES[state.weather].name}</span>
+        </div>
+        {state.activeEvent && (
+          <div className="resource event-active">
+            <span className="resource-label">Event</span>
+            <span className="resource-value">{state.activeEvent.emoji} {state.activeEvent.name}</span>
+          </div>
+        )}
       </div>
+      
+      {state.notifications.length > 0 && (
+        <div className="notifications-container">
+          {state.notifications.map(notif => (
+            <div key={notif.id} className="notification" style={{ color: notif.color, opacity: notif.life / 100 }}>
+              {notif.text}
+            </div>
+          ))}
+        </div>
+      )}
       
       <div className="game-container-visual">
         <div className="left-controls">
