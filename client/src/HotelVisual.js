@@ -180,8 +180,15 @@ function HotelVisual({ user, onBack }) {
     const saved = localStorage.getItem('hotelVisualSave');
     if (saved) {
       try {
-        return JSON.parse(saved);
-      } catch {
+        const parsed = JSON.parse(saved);
+        // Ensure all required fields exist
+        if (!parsed.reviews) parsed.reviews = [];
+        if (!parsed.milestones) parsed.milestones = [];
+        if (!parsed.celebration) parsed.celebration = null;
+        return parsed;
+      } catch (e) {
+        console.error('Failed to load save, resetting:', e);
+        localStorage.removeItem('hotelVisualSave');
         return INITIAL_STATE;
       }
     }
@@ -196,7 +203,11 @@ function HotelVisual({ user, onBack }) {
   const nextParticleId = useRef(1);
   
   useEffect(() => {
-    localStorage.setItem('hotelVisualSave', JSON.stringify(state));
+    try {
+      localStorage.setItem('hotelVisualSave', JSON.stringify(state));
+    } catch (e) {
+      console.error('Failed to save state:', e);
+    }
   }, [state]);
   
   // Main game loop
@@ -207,6 +218,7 @@ function HotelVisual({ user, onBack }) {
         let newCash = prev.cash;
         let newTips = prev.tips;
         let newStats = { ...prev.stats };
+        let newReviews = [...prev.reviews];
         
         // Update hotels
         const newHotels = prev.hotels.map(hotel => {
@@ -245,16 +257,16 @@ function HotelVisual({ user, onBack }) {
                 const templates = REVIEW_TEMPLATES[category];
                 const reviewText = templates[Math.floor(Math.random() * templates.length)];
                 
-                prev.reviews.unshift({
+                newReviews = [{
                   id: Date.now() + Math.random(),
                   text: reviewText,
                   rating,
                   guestType: room.guest.type.name
-                });
+                }, ...newReviews];
                 
                 // Keep only last 10 reviews
-                if (prev.reviews.length > 10) {
-                  prev.reviews = prev.reviews.slice(0, 10);
+                if (newReviews.length > 10) {
+                  newReviews = newReviews.slice(0, 10);
                 }
               }
               
@@ -542,7 +554,8 @@ function HotelVisual({ user, onBack }) {
           milestones: newMilestones,
           notifications: newNotifications,
           staffPositions: newStaffPositions,
-          celebration: newCelebration
+          celebration: newCelebration,
+          reviews: newReviews
         };
       });
     }, TICK_MS);
@@ -685,6 +698,14 @@ function HotelVisual({ user, onBack }) {
     }));
   }, [state.cash, state.tips, state.upgrades]);
   
+  // Reset game
+  const resetGame = useCallback(() => {
+    if (window.confirm('Reset game? This will delete all progress!')) {
+      localStorage.removeItem('hotelVisualSave');
+      window.location.reload();
+    }
+  }, []);
+  
   // Build new hotel
   const buildHotel = useCallback(() => {
     const cost = 50000 * Math.pow(2, state.hotels.length - 1);
@@ -736,6 +757,7 @@ function HotelVisual({ user, onBack }) {
         <button className="btn-back" onClick={onBack}>← Back</button>
         <h1>🏨 {hotel.name}</h1>
         <div className="phase-indicator">Phase {state.phase}</div>
+        <button className="btn-reset" onClick={resetGame}>🔄 Reset</button>
       </header>
       
       <div className="resources-bar">
