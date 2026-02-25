@@ -640,6 +640,47 @@ function HotelVisual({ user, onBack }) {
     }));
   }, [state.cash, state.tips, state.upgrades]);
   
+  // Build new hotel
+  const buildHotel = useCallback(() => {
+    const cost = 50000 * Math.pow(2, state.hotels.length - 1);
+    if (state.cash < cost) return;
+    
+    setState(prev => {
+      const newHotelId = prev.hotels.length + 1;
+      const newHotel = {
+        id: newHotelId,
+        name: `Hotel ${newHotelId}`,
+        floors: 3,
+        roomsPerFloor: 5,
+        rooms: []
+      };
+      
+      // Initialize rooms
+      for (let floor = 0; floor < 3; floor++) {
+        for (let pos = 0; pos < 5; pos++) {
+          newHotel.rooms.push({
+            id: `h${newHotelId}-r${floor}-${pos}`,
+            floor,
+            position: pos,
+            guest: null
+          });
+        }
+      }
+      
+      return {
+        ...prev,
+        cash: prev.cash - cost,
+        hotels: [...prev.hotels, newHotel],
+        notifications: [...prev.notifications, {
+          id: Date.now(),
+          text: `🏨 ${newHotel.name} built!`,
+          color: '#4ade80',
+          life: 100
+        }]
+      };
+    });
+  }, [state.cash, state.hotels.length]);
+  
   const hotel = state.hotels[0];
   const occupiedRooms = hotel.rooms.filter(r => r.guest).length;
   const totalRooms = hotel.rooms.length;
@@ -714,12 +755,27 @@ function HotelVisual({ user, onBack }) {
         </div>
       )}
       
+      {/* Weather effects */}
+      {WEATHER_TYPES[state.weather].name === 'Rainy' && (
+        <div className="weather-effect rain"></div>
+      )}
+      {WEATHER_TYPES[state.weather].name === 'Snowy' && (
+        <div className="weather-effect snow"></div>
+      )}
+      
       <div className="game-container-visual">
         <div className="left-controls">
           <button className="big-btn" onClick={checkInGuest} disabled={state.guestQueue < 1 || occupiedRooms >= totalRooms}>
             Check In Guest
             <small>{Math.floor(state.guestQueue)} in queue</small>
           </button>
+          
+          {state.hotels.length < 5 && (
+            <button className="big-btn" onClick={buildHotel} disabled={state.cash < 50000 * Math.pow(2, state.hotels.length - 1)}>
+              Build New Hotel
+              <small>${(50000 * Math.pow(2, state.hotels.length - 1)).toLocaleString()}</small>
+            </button>
+          )}
           
           <div className="stats-box">
             <h3>Stats</h3>
