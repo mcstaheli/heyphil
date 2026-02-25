@@ -42,6 +42,13 @@ const ACHIEVEMENTS = [
   { id: 'full_house', name: 'Full House', desc: 'Fill all rooms', reward: { reputation: 100 }, check: s => s.hotels[0].rooms.every(r => r.guest) }
 ];
 
+const EMERGENCIES = [
+  { id: 'ac_broken', name: 'AC Broken', emoji: '🔥', cost: 500, duration: 100, happinessPenalty: 0.3 },
+  { id: 'plumbing', name: 'Plumbing Issue', emoji: '💧', cost: 300, duration: 80, happinessPenalty: 0.2 },
+  { id: 'power_outage', name: 'Power Outage', emoji: '⚡', cost: 1000, duration: 50, happinessPenalty: 0.5 },
+  { id: 'elevator_broken', name: 'Elevator Down', emoji: '🛗', cost: 800, duration: 150, happinessPenalty: 0.15 }
+];
+
 const INITIAL_STATE = {
   cash: 20000,
   tips: 0,
@@ -89,6 +96,9 @@ const INITIAL_STATE = {
   
   activeEvent: null,
   eventTimer: 0,
+  
+  activeEmergency: null,
+  emergencyTimer: 0,
   
   achievements: [],
   notifications: [],
@@ -373,6 +383,24 @@ function HotelVisual({ user, onBack }) {
           }
         }
         
+        // Emergencies
+        let newActiveEmergency = prev.activeEmergency;
+        let newEmergencyTimer = prev.emergencyTimer;
+        
+        if (newActiveEmergency) {
+          newEmergencyTimer += 1;
+          // Emergency causes happiness drain
+          newHotels[0].rooms.forEach(room => {
+            if (room.guest) {
+              room.guest.happiness = Math.max(0, room.guest.happiness - newActiveEmergency.happinessPenalty);
+            }
+          });
+        } else if (Math.random() < 0.0008 && prev.hotels[0].rooms.some(r => r.guest)) { // Random emergency
+          newActiveEmergency = EMERGENCIES[Math.floor(Math.random() * EMERGENCIES.length)];
+          newEmergencyTimer = 0;
+          newNotifications.push({ id: Date.now(), text: `⚠️ ${newActiveEmergency.emoji} ${newActiveEmergency.name}! Click to fix!`, color: '#ef4444', life: 150 });
+        }
+        
         // Check achievements
         let newAchievements = [...prev.achievements];
         ACHIEVEMENTS.forEach(achievement => {
@@ -420,6 +448,8 @@ function HotelVisual({ user, onBack }) {
           weatherTimer: newWeatherTimer,
           activeEvent: newActiveEvent,
           eventTimer: newEventTimer,
+          activeEmergency: newActiveEmergency,
+          emergencyTimer: newEmergencyTimer,
           achievements: newAchievements,
           notifications: newNotifications,
           staffPositions: newStaffPositions
@@ -507,6 +537,25 @@ function HotelVisual({ user, onBack }) {
     setShowServiceMenu(null);
   }, []);
   
+  // Fix emergency
+  const fixEmergency = useCallback(() => {
+    if (!state.activeEmergency) return;
+    if (state.cash < state.activeEmergency.cost) return;
+    
+    setState(prev => ({
+      ...prev,
+      cash: prev.cash - prev.activeEmergency.cost,
+      activeEmergency: null,
+      emergencyTimer: 0,
+      notifications: [...prev.notifications, { 
+        id: Date.now(), 
+        text: `✅ ${prev.activeEmergency.name} fixed!`, 
+        color: '#22c55e', 
+        life: 80 
+      }]
+    }));
+  }, [state.activeEmergency, state.cash]);
+  
   // Buy upgrade
   const buyUpgrade = useCallback((upgradeType) => {
     const costs = {
@@ -587,6 +636,25 @@ function HotelVisual({ user, onBack }) {
               {notif.text}
             </div>
           ))}
+        </div>
+      )}
+      
+      {state.activeEmergency && (
+        <div className="emergency-overlay">
+          <div className="emergency-box">
+            <h2>{state.activeEmergency.emoji} {state.activeEmergency.name}!</h2>
+            <p>Guests are unhappy! Fix it quickly!</p>
+            <button 
+              className="fix-btn"
+              onClick={fixEmergency}
+              disabled={state.cash < state.activeEmergency.cost}
+            >
+              Fix Now - ${state.activeEmergency.cost}
+            </button>
+            {state.cash < state.activeEmergency.cost && (
+              <small className="warning">Not enough cash!</small>
+            )}
+          </div>
         </div>
       )}
       
