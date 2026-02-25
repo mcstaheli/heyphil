@@ -6,7 +6,12 @@ import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { google } from 'googleapis';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import 'dotenv/config';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -433,6 +438,16 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to delete card' });
   }
 });
+
+// Serve static files from React app in production
+if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
+  app.use(express.static(path.join(__dirname, '../client/build')));
+  
+  // All remaining requests return the React app, so it can handle routing
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/build/index.html'));
+  });
+}
 
 // Start server
 const host = process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : 'localhost';
