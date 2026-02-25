@@ -224,6 +224,105 @@
   opacity: 0.9;
 }
 
+.upgrade-tree {
+  background: linear-gradient(135deg, #1e293b, #334155);
+  border: 3px solid #4ade80;
+  border-radius: 16px;
+  padding: 32px;
+  min-width: 600px;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+  animation: slideUp 0.3s;
+  position: relative;
+}
+
+.upgrade-tree h2 {
+  margin: 0 0 24px 0;
+  font-size: 28px;
+  text-align: center;
+  color: #4ade80;
+}
+
+.close-tree {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 28px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.close-tree:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: rotate(90deg);
+}
+
+.tree-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+
+.tree-branch {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tree-branch h3 {
+  margin: 0;
+  font-size: 18px;
+  text-align: center;
+  padding-bottom: 12px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.tree-node {
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.tree-node:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #4ade80;
+  transform: scale(1.05);
+}
+
+.node-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.node-level {
+  font-size: 14px;
+  opacity: 0.7;
+  margin-bottom: 8px;
+}
+
+.node-cost {
+  font-size: 14px;
+  font-weight: 700;
+  color: #4ade80;
+}
+
 .game-container-visual {
   display: grid;
   grid-template-columns: 300px 1fr;
@@ -422,6 +521,21 @@
 .guest-icon {
   font-size: 48px;
   margin: 12px 0;
+  animation: guestBounce 0.5s ease-out;
+}
+
+@keyframes guestBounce {
+  0% {
+    transform: scale(0) translateY(-50px);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.2) translateY(0);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
 }
 
 .happiness-bar {

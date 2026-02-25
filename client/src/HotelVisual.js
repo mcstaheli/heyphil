@@ -176,6 +176,7 @@ function HotelVisual({ user, onBack }) {
   
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [showServiceMenu, setShowServiceMenu] = useState(null);
+  const [showUpgradeTree, setShowUpgradeTree] = useState(false);
   const [particles, setParticles] = useState([]);
   const nextGuestId = useRef(1);
   const nextParticleId = useRef(1);
@@ -745,6 +746,9 @@ function HotelVisual({ user, onBack }) {
           
           <div className="upgrades-box">
             <h3>Upgrades</h3>
+            <button className="big-btn" style={{padding: '16px', fontSize: '16px'}} onClick={() => setShowUpgradeTree(true)}>
+              🌳 View Upgrade Tree
+            </button>
             <button onClick={() => buyUpgrade('autoCheckin')} className="upgrade-btn">
               Auto Check-in Lv.{state.upgrades.autoCheckin}
               <small>${(5000 * Math.pow(1.5, state.upgrades.autoCheckin)).toFixed(0)}</small>
@@ -872,6 +876,50 @@ function HotelVisual({ user, onBack }) {
                     <span className="service-tip">${service.baseTip} tip</span>
                   </button>
                 ))}
+            </div>
+          </div>
+        )}
+        
+        {showUpgradeTree && (
+          <div className="service-menu-overlay" onClick={() => setShowUpgradeTree(false)}>
+            <div className="upgrade-tree" onClick={e => e.stopPropagation()}>
+              <h2>🌳 Upgrade Tree</h2>
+              <button className="close-tree" onClick={() => setShowUpgradeTree(false)}>×</button>
+              
+              <div className="tree-container">
+                <div className="tree-branch">
+                  <h3>💵 Revenue Path</h3>
+                  <div className="tree-node" onClick={() => buyUpgrade('autoCheckin')}>
+                    <div className="node-title">Auto Check-in</div>
+                    <div className="node-level">Lv.{state.upgrades.autoCheckin}</div>
+                    <div className="node-cost">${(5000 * Math.pow(1.5, state.upgrades.autoCheckin)).toFixed(0)}</div>
+                  </div>
+                  <div className="tree-node" onClick={() => buyUpgrade('marketing')}>
+                    <div className="node-title">Marketing</div>
+                    <div className="node-level">Lv.{state.upgrades.marketing}</div>
+                    <div className="node-cost">${(3000 * Math.pow(1.5, state.upgrades.marketing)).toFixed(0)}</div>
+                  </div>
+                </div>
+                
+                <div className="tree-branch">
+                  <h3>✨ Service Path</h3>
+                  <div className="tree-node" onClick={() => buyUpgrade('serviceSpeed')}>
+                    <div className="node-title">Service Speed</div>
+                    <div className="node-level">Lv.{state.upgrades.serviceSpeed}</div>
+                    <div className="node-cost tip-color">${(1000 * Math.pow(2, state.upgrades.serviceSpeed)).toFixed(0)} tips</div>
+                  </div>
+                  <div className="tree-node" onClick={() => buyUpgrade('autoService')}>
+                    <div className="node-title">Auto Service</div>
+                    <div className="node-level">Lv.{state.upgrades.autoService}</div>
+                    <div className="node-cost tip-color">${(5000 * Math.pow(2, state.upgrades.autoService)).toFixed(0)} tips</div>
+                  </div>
+                  <div className="tree-node" onClick={() => buyUpgrade('staffTraining')}>
+                    <div className="node-title">Staff Training</div>
+                    <div className="node-level">Lv.{state.upgrades.staffTraining}</div>
+                    <div className="node-cost tip-color">${(2000 * Math.pow(1.8, state.upgrades.staffTraining)).toFixed(0)} tips</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
