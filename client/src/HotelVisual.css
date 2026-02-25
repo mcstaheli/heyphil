@@ -1,0 +1,436 @@
+.hotel-visual {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  color: white;
+}
+
+.visual-header {
+  background: rgba(0, 0, 0, 0.5);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.visual-header h1 {
+  margin: 0;
+  flex: 1;
+}
+
+.phase-indicator {
+  background: #fbbf24;
+  color: #000;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.btn-back {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-back:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.resources-bar {
+  display: flex;
+  gap: 32px;
+  padding: 16px 24px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.resource {
+  display: flex;
+  flex-direction: column;
+}
+
+.resource-label {
+  font-size: 11px;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.resource-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #4ade80;
+  margin-top: 4px;
+}
+
+.tip-color {
+  color: #fbbf24 !important;
+}
+
+.game-container-visual {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  height: calc(100vh - 150px);
+  gap: 20px;
+  padding: 20px;
+}
+
+/* Left Controls */
+.left-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.big-btn {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: none;
+  color: white;
+  padding: 24px;
+  border-radius: 12px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.big-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.6);
+}
+
+.big-btn:disabled {
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.big-btn small {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.stats-box,
+.upgrades-box {
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.stats-box h3,
+.upgrades-box h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.8;
+}
+
+.stat-line {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+}
+
+.stat-line:last-child {
+  border-bottom: none;
+}
+
+.upgrade-btn {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-weight: 600;
+}
+
+.upgrade-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #4ade80;
+  transform: translateX(4px);
+}
+
+.upgrade-btn small {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-top: 4px;
+  font-weight: 400;
+}
+
+/* Hotel Building */
+.hotel-building {
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.floor {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.floor-label {
+  width: 80px;
+  font-size: 14px;
+  font-weight: 700;
+  opacity: 0.7;
+  text-align: right;
+}
+
+.rooms-row {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+}
+
+.room {
+  width: 120px;
+  height: 140px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 12px;
+  position: relative;
+  transition: all 0.3s;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.room.empty {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  cursor: default;
+}
+
+.room.occupied {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.3));
+  border-color: #3b82f6;
+}
+
+.room.needs-service {
+  animation: pulse-glow 2s ease-in-out infinite;
+  border-color: #fbbf24;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(251, 191, 36, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.9);
+  }
+}
+
+.room:hover.needs-service {
+  transform: scale(1.05);
+  border-color: #f59e0b;
+}
+
+.room-number {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 11px;
+  opacity: 0.6;
+  font-weight: 600;
+}
+
+.guest-icon {
+  font-size: 48px;
+  margin: 12px 0;
+}
+
+.happiness-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.happiness-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ef4444, #fbbf24, #4ade80);
+  transition: width 0.3s;
+}
+
+.service-bell {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  font-size: 32px;
+  animation: bounce 1s ease-in-out infinite;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.service-progress {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.service-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+  transition: width 0.3s;
+}
+
+/* Service Menu */
+.service-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.service-menu {
+  background: linear-gradient(135deg, #1e293b, #334155);
+  border: 3px solid #fbbf24;
+  border-radius: 16px;
+  padding: 32px;
+  min-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+  animation: slideUp 0.3s;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.service-menu h3 {
+  margin: 0 0 20px 0;
+  font-size: 20px;
+  text-align: center;
+  color: #fbbf24;
+}
+
+.service-option {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.service-option:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #4ade80;
+  transform: scale(1.02);
+}
+
+.service-emoji {
+  font-size: 32px;
+}
+
+.service-name {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.service-tip {
+  font-size: 14px;
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+/* Scrollbars */
+.left-controls::-webkit-scrollbar,
+.hotel-building::-webkit-scrollbar {
+  width: 8px;
+}
+
+.left-controls::-webkit-scrollbar-track,
+.hotel-building::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.left-controls::-webkit-scrollbar-thumb,
+.hotel-building::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .game-container-visual {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  
+  .room {
+    width: 100px;
+    height: 120px;
+  }
+  
+  .guest-icon {
+    font-size: 36px;
+  }
+}

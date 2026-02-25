@@ -6,6 +6,7 @@ import HotelTycoon from './HotelTycoon';
 import HotelPaperclips from './HotelPaperclips';
 import HotelEmpire from './HotelEmpire';
 import HotelEmpireV2 from './HotelEmpireV2';
+import HotelVisual from './HotelVisual';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -152,7 +153,7 @@ function App() {
   if (currentApp === 'hotel-tycoon') {
     return (
       <>
-        <HotelEmpireV2 user={user} onBack={() => setCurrentApp(null)} />
+        <HotelVisual user={user} onBack={() => setCurrentApp(null)} />
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
