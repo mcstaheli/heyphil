@@ -191,6 +191,39 @@
   font-weight: 600;
 }
 
+.review-item {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-left: 3px solid #fbbf24;
+}
+
+.review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.review-guest {
+  font-size: 11px;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.review-rating {
+  font-size: 12px;
+}
+
+.review-text {
+  font-size: 13px;
+  line-height: 1.4;
+  font-style: italic;
+  opacity: 0.9;
+}
+
 .game-container-visual {
   display: grid;
   grid-template-columns: 300px 1fr;
@@ -241,7 +274,8 @@
 }
 
 .stats-box,
-.upgrades-box {
+.upgrades-box,
+.reviews-box {
   background: rgba(255, 255, 255, 0.05);
   border: 2px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
@@ -249,7 +283,8 @@
 }
 
 .stats-box h3,
-.upgrades-box h3 {
+.upgrades-box h3,
+.reviews-box h3 {
   margin: 0 0 12px 0;
   font-size: 14px;
   text-transform: uppercase;

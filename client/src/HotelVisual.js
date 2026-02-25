@@ -49,6 +49,34 @@ const EMERGENCIES = [
   { id: 'elevator_broken', name: 'Elevator Down', emoji: '🛗', cost: 800, duration: 150, happinessPenalty: 0.15 }
 ];
 
+const REVIEW_TEMPLATES = {
+  excellent: [
+    "Amazing stay! Will definitely come back! ⭐⭐⭐⭐⭐",
+    "Best hotel experience ever! Staff was incredible! ⭐⭐⭐⭐⭐",
+    "Absolutely perfect! Can't fault anything! ⭐⭐⭐⭐⭐"
+  ],
+  good: [
+    "Great hotel, nice staff. Would recommend! ⭐⭐⭐⭐",
+    "Very pleasant stay overall. ⭐⭐⭐⭐",
+    "Good service and clean rooms. ⭐⭐⭐⭐"
+  ],
+  average: [
+    "Decent hotel. Nothing special. ⭐⭐⭐",
+    "It was okay. Could be better. ⭐⭐⭐",
+    "Average experience. ⭐⭐⭐"
+  ],
+  poor: [
+    "Not great. Service was slow. ⭐⭐",
+    "Disappointed with the stay. ⭐⭐",
+    "Below expectations. ⭐⭐"
+  ],
+  terrible: [
+    "Awful experience! Never again! ⭐",
+    "Horrible service. Room was dirty. ⭐",
+    "Worst hotel ever. Do not book! ⭐"
+  ]
+};
+
 const INITIAL_STATE = {
   cash: 20000,
   tips: 0,
@@ -102,7 +130,8 @@ const INITIAL_STATE = {
   
   achievements: [],
   notifications: [],
-  particles: [] // {id, x, y, text, color, life}
+  particles: [], // {id, x, y, text, color, life}
+  reviews: [] // {id, text, rating, guestType}
 };
 
 // Initialize rooms
@@ -187,6 +216,32 @@ function HotelVisual({ user, onBack }) {
                 offsetX: Math.random() * 40 - 20,
                 offsetY: 0
               });
+              
+              // Generate review based on happiness (30% chance)
+              if (Math.random() < 0.3) {
+                const happiness = room.guest.happiness;
+                let category, rating;
+                if (happiness >= 90) { category = 'excellent'; rating = 5; }
+                else if (happiness >= 75) { category = 'good'; rating = 4; }
+                else if (happiness >= 50) { category = 'average'; rating = 3; }
+                else if (happiness >= 30) { category = 'poor'; rating = 2; }
+                else { category = 'terrible'; rating = 1; }
+                
+                const templates = REVIEW_TEMPLATES[category];
+                const reviewText = templates[Math.floor(Math.random() * templates.length)];
+                
+                prev.reviews.unshift({
+                  id: Date.now() + Math.random(),
+                  text: reviewText,
+                  rating,
+                  guestType: room.guest.type.name
+                });
+                
+                // Keep only last 10 reviews
+                if (prev.reviews.length > 10) {
+                  prev.reviews = prev.reviews.slice(0, 10);
+                }
+              }
               
               return { ...room, guest: null };
             }
@@ -672,6 +727,21 @@ function HotelVisual({ user, onBack }) {
             <div className="stat-line">Total Tips: ${Math.floor(state.stats.totalTips).toLocaleString()}</div>
             <div className="stat-line">Rooms: {occupiedRooms}/{totalRooms}</div>
           </div>
+          
+          {state.reviews.length > 0 && (
+            <div className="reviews-box">
+              <h3>Recent Reviews</h3>
+              {state.reviews.slice(0, 5).map(review => (
+                <div key={review.id} className="review-item">
+                  <div className="review-header">
+                    <span className="review-guest">{review.guestType}</span>
+                    <span className="review-rating">{'⭐'.repeat(review.rating)}</span>
+                  </div>
+                  <div className="review-text">{review.text.split('⭐')[0]}</div>
+                </div>
+              ))}
+            </div>
+          )}
           
           <div className="upgrades-box">
             <h3>Upgrades</h3>
