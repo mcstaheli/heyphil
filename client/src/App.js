@@ -254,6 +254,22 @@ function OriginationBoard({ user, onBack, onLogout }) {
     };
   };
 
+  const handleApiResponse = async (res) => {
+    if (res.status === 401) {
+      // Token expired or invalid - auto logout
+      localStorage.removeItem('authToken');
+      alert('Your session has expired. Please log in again.');
+      window.location.href = '/';
+      throw new Error('Session expired');
+    }
+    return res;
+  };
+
+  const apiFetch = async (url, options = {}) => {
+    const res = await fetch(url, options);
+    return handleApiResponse(res);
+  };
+
   const loadBoard = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     const startTime = Date.now();
@@ -262,6 +278,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
       const res = await fetch(`${API_BASE_URL}/api/origination/board`, {
         headers: getAuthHeaders()
       });
+      await handleApiResponse(res);
       const data = await res.json();
       setCards(data.cards || []);
       setPeople(data.people || {});
@@ -282,7 +299,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
 
   const createCard = async (cardData, pendingActions = []) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/origination/card`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/card`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(cardData)
@@ -327,7 +344,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
 
   const updateCard = async (cardId, cardData) => {
     try {
-      await fetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
+      await apiFetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(cardData)
@@ -356,7 +373,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
 
     // Update backend in background
     try {
-      await fetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
+      await apiFetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({ ...card, column: newColumn })
@@ -388,7 +405,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   
   const toggleAction = async (rowIndex, completed, cardId, cardTitle) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/origination/action/toggle`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/action/toggle`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ rowIndex, completed, cardId, cardTitle })
@@ -437,7 +454,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   
   const exportToCSV = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/origination/export`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/export`, {
         headers: getAuthHeaders()
       });
       const blob = await response.blob();
@@ -456,7 +473,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   
   const addAction = async (cardId, cardTitle, text) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/origination/action`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/action`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ cardId, cardTitle, text })
@@ -708,7 +725,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
           onDelete={async (id) => {
             if (window.confirm('Are you sure you want to delete this deal? This cannot be undone.')) {
               try {
-                await fetch(`${API_BASE_URL}/api/origination/card/${id}`, {
+                await apiFetch(`${API_BASE_URL}/api/origination/card/${id}`, {
                   method: 'DELETE',
                   headers: getAuthHeaders()
                 });
