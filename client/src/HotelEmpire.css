@@ -1,0 +1,536 @@
+.hotel-empire {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1e3a8a 0%, #312e81 100%);
+  color: white;
+}
+
+.empire-header {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 20px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.header-left h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.phase-badge {
+  background: #fbbf24;
+  color: #000;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.btn-back {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-back:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.header-stats {
+  display: flex;
+  gap: 32px;
+}
+
+.stat-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.stat-label {
+  font-size: 12px;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.stat-mini {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+
+.game-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr 360px;
+  gap: 0;
+  height: calc(100vh - 90px);
+}
+
+/* Left Panel */
+.left-panel {
+  background: rgba(0, 0, 0, 0.3);
+  border-right: 2px solid rgba(255, 255, 255, 0.1);
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.capacity-card,
+.stats-card {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.capacity-card h3,
+.stats-card h3 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.9;
+}
+
+.capacity-bar {
+  width: 100%;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.capacity-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4ade80, #22c55e);
+  transition: width 0.3s;
+}
+
+.capacity-text {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.capacity-available {
+  font-size: 14px;
+  opacity: 0.8;
+  color: #4ade80;
+}
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.metric-row:last-child {
+  border-bottom: none;
+}
+
+.metric-row.highlight {
+  background: rgba(74, 222, 128, 0.1);
+  padding: 12px;
+  border-radius: 6px;
+  margin-top: 8px;
+  border-bottom: none;
+}
+
+.metric-value {
+  font-weight: 700;
+  color: #4ade80;
+}
+
+/* Center Panel */
+.center-panel {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 48px;
+  overflow-y: auto;
+}
+
+.booking-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  position: relative;
+}
+
+.book-btn {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  border: none;
+  color: white;
+  border-radius: 50%;
+  width: 280px;
+  height: 280px;
+  font-size: 28px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 12px 48px rgba(251, 191, 36, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  position: relative;
+}
+
+.book-btn:hover:not(.disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 16px 64px rgba(251, 191, 36, 0.6);
+}
+
+.book-btn:active:not(.disabled) {
+  transform: scale(0.98);
+}
+
+.book-btn.disabled {
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.book-text {
+  font-size: 32px;
+  letter-spacing: 1px;
+}
+
+.book-info {
+  font-size: 16px;
+  opacity: 0.9;
+}
+
+.auto-booking-info {
+  font-size: 15px;
+  opacity: 0.8;
+  text-align: center;
+}
+
+.recent-bookings {
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.booking-float {
+  font-size: 20px;
+  font-weight: 700;
+  color: #4ade80;
+  animation: float-up 1s ease-out forwards;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+}
+
+.hotels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 900px;
+}
+
+.hotel-card-mini {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.hotel-card-mini.more {
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.hotel-name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hotel-occupancy {
+  font-size: 12px;
+  opacity: 0.8;
+  color: #4ade80;
+}
+
+/* Right Panel */
+.right-panel {
+  background: rgba(0, 0, 0, 0.3);
+  border-left: 2px solid rgba(255, 255, 255, 0.1);
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.right-panel h3,
+.right-panel h4 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.9;
+}
+
+.buy-hotel-section {
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.upgrades-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.upgrade-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 16px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  font-family: inherit;
+  width: 100%;
+}
+
+.upgrade-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+.upgrade-btn.affordable {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.upgrade-btn.affordable:hover {
+  background: rgba(74, 222, 128, 0.2);
+  border-color: #4ade80;
+}
+
+.upgrade-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.upgrade-name {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.upgrade-desc {
+  font-size: 13px;
+  opacity: 0.8;
+  margin-bottom: 8px;
+  color: #4ade80;
+}
+
+.upgrade-cost {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.discount {
+  font-size: 11px;
+  background: #ef4444;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 8px;
+}
+
+.owned-upgrades {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.owned-upgrade {
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 6px 0;
+}
+
+/* Game Complete */
+.game-complete-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.complete-card {
+  background: linear-gradient(135deg, #1e3a8a, #312e81);
+  border: 3px solid #fbbf24;
+  border-radius: 16px;
+  padding: 64px;
+  text-align: center;
+  max-width: 700px;
+  box-shadow: 0 16px 64px rgba(251, 191, 36, 0.5);
+}
+
+.complete-card h1 {
+  margin: 0 0 24px 0;
+  font-size: 42px;
+  color: #fbbf24;
+}
+
+.complete-card p {
+  font-size: 20px;
+  margin: 16px 0;
+  opacity: 0.9;
+  line-height: 1.6;
+}
+
+.final-stats {
+  display: flex;
+  justify-content: space-around;
+  margin: 48px 0;
+  padding: 32px 0;
+  border-top: 2px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.final-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.final-stats span {
+  font-size: 36px;
+  font-weight: 700;
+  color: #4ade80;
+}
+
+.complete-card button {
+  background: #fbbf24;
+  color: #000;
+  border: none;
+  padding: 16px 32px;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  margin: 0 8px;
+  transition: all 0.2s;
+}
+
+.complete-card button:hover {
+  background: #f59e0b;
+  transform: scale(1.05);
+}
+
+/* Scrollbars */
+.left-panel::-webkit-scrollbar,
+.center-panel::-webkit-scrollbar,
+.right-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.left-panel::-webkit-scrollbar-track,
+.center-panel::-webkit-scrollbar-track,
+.right-panel::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.left-panel::-webkit-scrollbar-thumb,
+.center-panel::-webkit-scrollbar-thumb,
+.right-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+/* Responsive */
+@media (max-width: 1400px) {
+  .game-layout {
+    grid-template-columns: 300px 1fr 340px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .game-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+  }
+  
+  .left-panel,
+  .right-panel {
+    border: none;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .hotels-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+  
+  .book-btn {
+    width: 220px;
+    height: 220px;
+  }
+}

@@ -1,0 +1,603 @@
+import React, { useState, useEffect, useRef } from 'react';
+import './HotelEmpire.css';
+
+const TICK_MS = 100; // 10 ticks per second
+const TICKS_PER_DAY = 100; // 10 seconds = 1 day
+
+// Season cycles (affects booking rate)
+const SEASONS = ['Winter', 'Spring', 'Summer', 'Fall'];
+const SEASON_MULTIPLIERS = { Winter: 0.7, Spring: 1.0, Summer: 1.5, Fall: 1.0 };
+
+const HOTEL_TYPES = {
+  motel: { name: 'Roadside Motel', rooms: 15, baseADR: 60, cost: 0 },
+  budget: { name: 'Budget Inn', rooms: 40, baseADR: 85, cost: 150000 },
+  midscale: { name: 'Mid-Scale Hotel', rooms: 100, baseADR: 120, cost: 500000 },
+  boutique: { name: 'Boutique Hotel', rooms: 25, baseADR: 250, cost: 800000 },
+  resort: { name: 'Resort & Spa', rooms: 200, baseADR: 180, cost: 2000000 },
+  luxury: { name: 'Luxury Brand', rooms: 300, baseADR: 350, cost: 5000000 }
+};
+
+const UPGRADES = {
+  // Phase 1 - Basic
+  breakfast: { name: 'Breakfast Bar', cost: 3000, effect: '+$10 ADR', adrBonus: 10, phase: 1 },
+  wifi: { name: 'Free WiFi', cost: 5000, effect: '+20% booking speed', bookingSpeedMult: 1.2, phase: 1 },
+  add_rooms_1: { name: 'Add 5 Rooms', cost: 10000, effect: '+5 rooms', roomsBonus: 5, phase: 1 },
+  online_booking: { name: 'Online Booking', cost: 15000, effect: '1 auto-booking/sec', autoBookRate: 1, phase: 1 },
+  express_checkout: { name: 'Express Checkout', cost: 20000, effect: 'Guests leave 30% faster', checkoutSpeedMult: 1.3, phase: 1 },
+  
+  // Phase 2 - Scaling
+  pms: { name: 'Property Management System', cost: 50000, effect: '5 auto-bookings/sec', autoBookRate: 5, phase: 2 },
+  loyalty_program: { name: 'Loyalty Program', cost: 75000, effect: 'Guests stay +1 night', nightsBonus: 1, phase: 2 },
+  dynamic_pricing: { name: 'Dynamic Pricing', cost: 100000, effect: '+25% ADR', adrMultiplier: 1.25, phase: 2 },
+  add_rooms_2: { name: 'Room Expansion', cost: 150000, effect: '+20 rooms', roomsBonus: 20, phase: 2 },
+  marketing: { name: 'Marketing Campaign', cost: 200000, effect: '+50% booking speed', bookingSpeedMult: 1.5, phase: 2 },
+  
+  // Phase 3 - Automation
+  ai_revenue: { name: 'AI Revenue Engine', cost: 1000000, effect: '+100% ADR', adrMultiplier: 2, phase: 3 },
+  franchise_system: { name: 'Franchise System', cost: 2000000, effect: 'Clone hotels for 50% cost', franchiseUnlocked: true, phase: 3 },
+  channel_manager: { name: 'Channel Manager', cost: 500000, effect: '50 auto-bookings/sec', autoBookRate: 50, phase: 3 },
+  brand_power: { name: 'National Brand', cost: 3000000, effect: 'All hotels +50% ADR', globalADRMult: 1.5, phase: 3 },
+  
+  // Phase 4 - Endgame  
+  rapid_expansion: { name: 'Rapid Expansion Protocol', cost: 10000000, effect: 'Auto-buy hotels', autoBuyHotels: true, phase: 4 },
+  universal_conversion: { name: 'Universal Hospitality', cost: 50000000, effect: 'Convert all buildings', universalMode: true, phase: 4 }
+};
+
+const INITIAL_STATE = {
+  cash: 10000,
+  totalRevenue: 0,
+  tick: 0,
+  day: 0,
+  
+  hotels: [{
+    id: 1,
+    type: 'motel',
+    name: 'Roadside Motel #1',
+    rooms: 15,
+    baseADR: 60,
+    guests: [] // { id, checkInTick, nightsStaying, nightsRemaining, revenue }
+  }],
+  
+  nextHotelId: 2,
+  
+  upgrades: [],
+  
+  // Derived stats (calculated)
+  totalRooms: 15,
+  occupiedRooms: 0,
+  availableRooms: 15,
+  effectiveADR: 60,
+  autoBookRate: 0,
+  
+  // Phase tracking
+  phase: 1,
+  
+  // Endgame
+  universalMode: false,
+  gameComplete: false,
+  
+  // Stats
+  totalGuestsBooked: 0,
+  totalNightsBooked: 0
+};
+
+function HotelEmpire({ user, onBack }) {
+  const [state, setState] = useState(() => {
+    const saved = localStorage.getItem('hotelEmpireSave');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return INITIAL_STATE;
+  });
+  
+  const [clickPower, setClickPower] = useState(1);
+  const [recentBookings, setRecentBookings] = useState([]);
+  const nextGuestId = useRef(1);
+  
+  // Auto-save
+  useEffect(() => {
+    localStorage.setItem('hotelEmpireSave', JSON.stringify(state));
+  }, [state]);
+  
+  // Calculate derived stats
+  const calculateDerivedStats = (currentState) => {
+    let totalRooms = 0;
+    let occupiedRooms = 0;
+    let adrBonus = 0;
+    let adrMultiplier = 1;
+    let globalADRMult = 1;
+    let autoBookRate = 0;
+    let roomsBonus = 0;
+    let nightsBonus = 0;
+    let checkoutSpeedMult = 1;
+    let bookingSpeedMult = 1;
+    let franchiseUnlocked = false;
+    let autoBuyHotels = false;
+    let universalMode = false;
+    
+    // Calculate upgrade bonuses
+    currentState.upgrades.forEach(upgradeId => {
+      const upgrade = UPGRADES[upgradeId];
+      if (upgrade) {
+        if (upgrade.adrBonus) adrBonus += upgrade.adrBonus;
+        if (upgrade.adrMultiplier) adrMultiplier *= upgrade.adrMultiplier;
+        if (upgrade.globalADRMult) globalADRMult *= upgrade.globalADRMult;
+        if (upgrade.autoBookRate) autoBookRate += upgrade.autoBookRate;
+        if (upgrade.roomsBonus) roomsBonus += upgrade.roomsBonus;
+        if (upgrade.nightsBonus) nightsBonus += upgrade.nightsBonus;
+        if (upgrade.checkoutSpeedMult) checkoutSpeedMult *= upgrade.checkoutSpeedMult;
+        if (upgrade.bookingSpeedMult) bookingSpeedMult *= upgrade.bookingSpeedMult;
+        if (upgrade.franchiseUnlocked) franchiseUnlocked = true;
+        if (upgrade.autoBuyHotels) autoBuyHotels = true;
+        if (upgrade.universalMode) universalMode = true;
+      }
+    });
+    
+    // Calculate hotel stats
+    currentState.hotels.forEach(hotel => {
+      const hotelRooms = hotel.rooms + (roomsBonus / currentState.hotels.length);
+      totalRooms += hotelRooms;
+      occupiedRooms += hotel.guests.length;
+    });
+    
+    const effectiveADR = (currentState.hotels[0]?.baseADR || 60 + adrBonus) * adrMultiplier * globalADRMult;
+    
+    return {
+      totalRooms: Math.floor(totalRooms),
+      occupiedRooms,
+      availableRooms: Math.floor(totalRooms) - occupiedRooms,
+      effectiveADR,
+      autoBookRate,
+      nightsBonus,
+      checkoutSpeedMult,
+      bookingSpeedMult,
+      franchiseUnlocked,
+      autoBuyHotels,
+      universalMode
+    };
+  };
+  
+  // Main game tick
+  useEffect(() => {
+    if (state.gameComplete) return;
+    
+    const interval = setInterval(() => {
+      setState(prev => {
+        const newTick = prev.tick + 1;
+        const newDay = Math.floor(newTick / TICKS_PER_DAY);
+        
+        const stats = calculateDerivedStats(prev);
+        
+        // Process all hotels
+        const newHotels = prev.hotels.map(hotel => {
+          const newGuests = hotel.guests.map(guest => {
+            // Decrease nights remaining
+            const newNightsRemaining = guest.nightsRemaining - (0.01 * stats.checkoutSpeedMult);
+            
+            // Guest checks out
+            if (newNightsRemaining <= 0) {
+              return null; // Will be filtered out
+            }
+            
+            return { ...guest, nightsRemaining: newNightsRemaining };
+          }).filter(g => g !== null);
+          
+          return { ...hotel, guests: newGuests };
+        });
+        
+        // Auto-booking (10 ticks = 1 second, so divide by 10)
+        let newCash = prev.cash;
+        let newRevenue = prev.totalRevenue;
+        let newGuestsBooked = prev.totalGuestsBooked;
+        let newNightsBooked = prev.totalNightsBooked;
+        
+        if (stats.autoBookRate > 0) {
+          const bookingsThisTick = stats.autoBookRate / 10; // Convert per-second to per-tick
+          
+          for (let i = 0; i < bookingsThisTick; i++) {
+            if (stats.availableRooms > 0) {
+              const result = bookGuest(newHotels, stats);
+              if (result) {
+                newHotels[result.hotelIndex] = result.hotel;
+                newCash += result.revenue;
+                newRevenue += result.revenue;
+                newGuestsBooked += 1;
+                newNightsBooked += result.nights;
+              }
+            }
+          }
+        }
+        
+        // Universal mode - exponential hotel growth
+        if (stats.universalMode) {
+          const hotelGrowth = Math.floor(prev.hotels.length * 0.001); // 0.1% per tick
+          if (hotelGrowth > 0 && newTick % 10 === 0) {
+            for (let i = 0; i < hotelGrowth; i++) {
+              const hotelType = Object.keys(HOTEL_TYPES)[Math.floor(Math.random() * Object.keys(HOTEL_TYPES).length)];
+              const template = HOTEL_TYPES[hotelType];
+              newHotels.push({
+                id: prev.nextHotelId + i,
+                type: hotelType,
+                name: `${template.name} #${prev.nextHotelId + i}`,
+                rooms: template.rooms,
+                baseADR: template.baseADR,
+                guests: []
+              });
+            }
+          }
+          
+          // Check for game complete
+          if (prev.hotels.length > 1000000) {
+            return { ...prev, gameComplete: true };
+          }
+        }
+        
+        return {
+          ...prev,
+          tick: newTick,
+          day: newDay,
+          hotels: newHotels,
+          cash: newCash,
+          totalRevenue: newRevenue,
+          totalGuestsBooked: newGuestsBooked,
+          totalNightsBooked: newNightsBooked,
+          ...stats
+        };
+      });
+    }, TICK_MS);
+    
+    return () => clearInterval(interval);
+  }, [state.gameComplete]);
+  
+  // Calculate phase
+  useEffect(() => {
+    let newPhase = 1;
+    if (state.totalRevenue >= 100000) newPhase = 2;
+    if (state.hotels.length >= 10 && state.totalRevenue >= 1000000) newPhase = 3;
+    if (state.hotels.length >= 100 && state.totalRevenue >= 50000000) newPhase = 4;
+    
+    if (newPhase !== state.phase) {
+      setState(prev => ({ ...prev, phase: newPhase }));
+    }
+  }, [state.totalRevenue, state.hotels.length, state.phase]);
+  
+  // Book a guest
+  const bookGuest = (hotels, stats) => {
+    // Find first hotel with available rooms
+    for (let i = 0; i < hotels.length; i++) {
+      const hotel = hotels[i];
+      if (hotel.guests.length < hotel.rooms) {
+        // Random nights: 1-3 + bonus
+        const nights = Math.floor(Math.random() * 3) + 1 + (stats.nightsBonus || 0);
+        const revenue = stats.effectiveADR * nights;
+        
+        const guest = {
+          id: nextGuestId.current++,
+          checkInTick: state.tick,
+          nightsStaying: nights,
+          nightsRemaining: nights,
+          revenue
+        };
+        
+        const newGuests = [...hotel.guests, guest];
+        
+        return {
+          hotelIndex: i,
+          hotel: { ...hotel, guests: newGuests },
+          revenue,
+          nights
+        };
+      }
+    }
+    return null;
+  };
+  
+  // Click to book guest
+  const handleClick = () => {
+    setState(prev => {
+      const stats = calculateDerivedStats(prev);
+      
+      if (stats.availableRooms <= 0) {
+        return prev; // Hotel full
+      }
+      
+      const newHotels = [...prev.hotels];
+      const result = bookGuest(newHotels, stats);
+      
+      if (!result) return prev;
+      
+      newHotels[result.hotelIndex] = result.hotel;
+      
+      // Add to recent bookings for visual feedback
+      setRecentBookings(prevBookings => [
+        { id: Date.now(), amount: result.revenue },
+        ...prevBookings.slice(0, 4)
+      ]);
+      
+      return {
+        ...prev,
+        hotels: newHotels,
+        cash: prev.cash + result.revenue,
+        totalRevenue: prev.totalRevenue + result.revenue,
+        totalGuestsBooked: prev.totalGuestsBooked + 1,
+        totalNightsBooked: prev.totalNightsBooked + result.nights,
+        occupiedRooms: prev.occupiedRooms + 1,
+        availableRooms: prev.availableRooms - 1
+      };
+    });
+  };
+  
+  // Buy upgrade
+  const buyUpgrade = (upgradeId) => {
+    const upgrade = UPGRADES[upgradeId];
+    if (!upgrade || state.upgrades.includes(upgradeId)) return;
+    if (state.cash < upgrade.cost) return;
+    if (upgrade.phase > state.phase) return;
+    
+    setState(prev => ({
+      ...prev,
+      cash: prev.cash - upgrade.cost,
+      upgrades: [...prev.upgrades, upgradeId]
+    }));
+  };
+  
+  // Buy hotel
+  const buyHotel = (hotelType) => {
+    const template = HOTEL_TYPES[hotelType];
+    const stats = calculateDerivedStats(state);
+    const cost = stats.franchiseUnlocked ? template.cost * 0.5 : template.cost;
+    
+    if (state.cash < cost) return;
+    
+    setState(prev => ({
+      ...prev,
+      cash: prev.cash - cost,
+      hotels: [...prev.hotels, {
+        id: prev.nextHotelId,
+        type: hotelType,
+        name: `${template.name} #${prev.nextHotelId}`,
+        rooms: template.rooms,
+        baseADR: template.baseADR,
+        guests: []
+      }],
+      nextHotelId: prev.nextHotelId + 1
+    }));
+  };
+  
+  // Reset
+  const resetGame = () => {
+    if (window.confirm('Start over?')) {
+      setState(INITIAL_STATE);
+      localStorage.removeItem('hotelEmpireSave');
+    }
+  };
+  
+  // Get current season
+  const currentSeason = SEASONS[Math.floor((state.day / 90) % 4)];
+  const seasonMultiplier = SEASON_MULTIPLIERS[currentSeason];
+  
+  // Filter upgrades by phase and not owned
+  const availableUpgrades = Object.entries(UPGRADES)
+    .filter(([id, upgrade]) => 
+      !state.upgrades.includes(id) && 
+      upgrade.phase <= state.phase
+    )
+    .map(([id, upgrade]) => ({ id, ...upgrade }));
+  
+  // Calculate revenue per second
+  const revenuePerSecond = state.autoBookRate * state.effectiveADR * 2; // avg 2 nights
+  
+  return (
+    <div className="hotel-empire">
+      {state.gameComplete && (
+        <div className="game-complete-overlay">
+          <div className="complete-card">
+            <h1>🏨 UNIVERSAL HOSPITALITY ACHIEVED</h1>
+            <p>Every building on Earth is now a hotel.</p>
+            <p>Every person is a perpetual guest.</p>
+            <p>The mission is complete.</p>
+            <div className="final-stats">
+              <div><span>{state.hotels.length.toLocaleString()}</span> Hotels</div>
+              <div><span>${state.totalRevenue.toLocaleString(undefined, {maximumFractionDigits: 0})}</span> Total Revenue</div>
+              <div><span>{state.day}</span> Days</div>
+            </div>
+            <button onClick={resetGame}>Play Again</button>
+            <button onClick={onBack}>Exit</button>
+          </div>
+        </div>
+      )}
+      
+      <header className="empire-header">
+        <div className="header-left">
+          <button className="btn-back" onClick={onBack}>← Back</button>
+          <h1>🏨 Hotel Empire</h1>
+          <div className="phase-badge">Phase {state.phase}</div>
+        </div>
+        <div className="header-stats">
+          <div className="stat-box">
+            <div className="stat-label">Cash</div>
+            <div className="stat-value">${state.cash.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+          </div>
+          <div className="stat-box">
+            <div className="stat-label">Hotels</div>
+            <div className="stat-value">{state.hotels.length}</div>
+          </div>
+          <div className="stat-box">
+            <div className="stat-label">Day {state.day}</div>
+            <div className="stat-mini">{currentSeason}</div>
+          </div>
+        </div>
+      </header>
+      
+      <div className="game-layout">
+        {/* Left Panel - Stats */}
+        <div className="left-panel">
+          <div className="capacity-card">
+            <h3>Capacity</h3>
+            <div className="capacity-bar">
+              <div 
+                className="capacity-fill"
+                style={{ width: `${(state.occupiedRooms / state.totalRooms) * 100}%` }}
+              />
+            </div>
+            <div className="capacity-text">
+              {state.occupiedRooms} / {state.totalRooms} rooms occupied
+            </div>
+            <div className="capacity-available">
+              {state.availableRooms} available
+            </div>
+          </div>
+          
+          <div className="stats-card">
+            <h3>Metrics</h3>
+            <div className="metric-row">
+              <span>ADR</span>
+              <span className="metric-value">${state.effectiveADR.toFixed(0)}</span>
+            </div>
+            <div className="metric-row">
+              <span>Occupancy</span>
+              <span className="metric-value">{((state.occupiedRooms / state.totalRooms) * 100).toFixed(1)}%</span>
+            </div>
+            <div className="metric-row">
+              <span>Revenue/sec</span>
+              <span className="metric-value">${revenuePerSecond.toFixed(0)}</span>
+            </div>
+            <div className="metric-row highlight">
+              <span>Total Revenue</span>
+              <span className="metric-value">${state.totalRevenue.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+            </div>
+          </div>
+          
+          <div className="stats-card">
+            <h3>All-Time Stats</h3>
+            <div className="metric-row">
+              <span>Guests Booked</span>
+              <span className="metric-value">{state.totalGuestsBooked.toLocaleString()}</span>
+            </div>
+            <div className="metric-row">
+              <span>Nights Booked</span>
+              <span className="metric-value">{state.totalNightsBooked.toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Center Panel - Main Action */}
+        <div className="center-panel">
+          <div className="booking-section">
+            <button 
+              className={`book-btn ${state.availableRooms === 0 ? 'disabled' : ''}`}
+              onClick={handleClick}
+              disabled={state.availableRooms === 0}
+            >
+              {state.availableRooms > 0 ? (
+                <>
+                  <span className="book-text">BOOK GUEST</span>
+                  <span className="book-info">${state.effectiveADR.toFixed(0)} × 1-3 nights</span>
+                </>
+              ) : (
+                <>
+                  <span className="book-text">HOTEL FULL</span>
+                  <span className="book-info">Wait for checkout...</span>
+                </>
+              )}
+            </button>
+            
+            {state.autoBookRate > 0 && (
+              <div className="auto-booking-info">
+                ⚙️ Auto-booking {state.autoBookRate} guests/sec
+              </div>
+            )}
+            
+            {recentBookings.length > 0 && (
+              <div className="recent-bookings">
+                {recentBookings.map(booking => (
+                  <div key={booking.id} className="booking-float">
+                    +${booking.amount.toFixed(0)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <div className="hotels-grid">
+            {state.hotels.slice(0, 12).map(hotel => (
+              <div key={hotel.id} className="hotel-card-mini">
+                <div className="hotel-name">{hotel.name}</div>
+                <div className="hotel-occupancy">
+                  {hotel.guests.length}/{hotel.rooms} occupied
+                </div>
+              </div>
+            ))}
+            {state.hotels.length > 12 && (
+              <div className="hotel-card-mini more">
+                +{state.hotels.length - 12} more
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Right Panel - Upgrades */}
+        <div className="right-panel">
+          <h3>Upgrades</h3>
+          
+          <div className="buy-hotel-section">
+            <h4>Buy Hotels</h4>
+            {Object.entries(HOTEL_TYPES).filter(([key]) => 
+              key === 'motel' || state.phase >= 2
+            ).map(([key, hotel]) => {
+              const stats = calculateDerivedStats(state);
+              const cost = stats.franchiseUnlocked ? hotel.cost * 0.5 : hotel.cost;
+              const canAfford = state.cash >= cost;
+              
+              return (
+                <button
+                  key={key}
+                  className={`upgrade-btn ${canAfford ? 'affordable' : ''}`}
+                  onClick={() => buyHotel(key)}
+                  disabled={!canAfford}
+                >
+                  <div className="upgrade-name">{hotel.name}</div>
+                  <div className="upgrade-desc">{hotel.rooms} rooms • ${hotel.baseADR} ADR</div>
+                  <div className="upgrade-cost">
+                    ${cost.toLocaleString()}
+                    {stats.franchiseUnlocked && <span className="discount">50% OFF</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          
+          <div className="upgrades-list">
+            {availableUpgrades.map(upgrade => {
+              const canAfford = state.cash >= upgrade.cost;
+              
+              return (
+                <button
+                  key={upgrade.id}
+                  className={`upgrade-btn ${canAfford ? 'affordable' : ''}`}
+                  onClick={() => buyUpgrade(upgrade.id)}
+                  disabled={!canAfford}
+                >
+                  <div className="upgrade-name">{upgrade.name}</div>
+                  <div className="upgrade-desc">{upgrade.effect}</div>
+                  <div className="upgrade-cost">${upgrade.cost.toLocaleString()}</div>
+                </button>
+              );
+            })}
+          </div>
+          
+          {state.upgrades.length > 0 && (
+            <div className="owned-upgrades">
+              <h4>Owned ({state.upgrades.length})</h4>
+              {state.upgrades.map(id => (
+                <div key={id} className="owned-upgrade">✓ {UPGRADES[id].name}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default HotelEmpire;

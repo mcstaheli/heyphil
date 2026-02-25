@@ -4,6 +4,7 @@ import './Loading.css';
 import Landing from './Landing';
 import HotelTycoon from './HotelTycoon';
 import HotelPaperclips from './HotelPaperclips';
+import HotelEmpire from './HotelEmpire';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -125,8 +126,8 @@ function App() {
               </div>
               <div className="app-card" onClick={() => setCurrentApp('hotel-tycoon')}>
                 <div className="app-icon">🏨</div>
-                <h3>Hotel Paperclips</h3>
-                <p>Universal hospitality optimization</p>
+                <h3>Hotel Empire</h3>
+                <p>Book guests, build your empire</p>
               </div>
               <div className="app-card disabled">
                 <div className="app-icon">📧</div>
@@ -146,11 +147,11 @@ function App() {
     );
   }
 
-  // Hotel Paperclips app
+  // Hotel Empire app
   if (currentApp === 'hotel-tycoon') {
     return (
       <>
-        <HotelPaperclips user={user} onBack={() => setCurrentApp(null)} />
+        <HotelEmpire user={user} onBack={() => setCurrentApp(null)} />
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
