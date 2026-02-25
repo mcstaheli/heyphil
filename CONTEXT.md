@@ -27,16 +27,27 @@ Personal project management and productivity tool with multiple apps:
 - Changes need to be deployed after editing code
 
 ## Deploy Process
+**Railway auto-deploys from GitHub**
+
 ```bash
 # After making code changes:
 cd /Users/philo/clawd/heyphil-app
 
-# Build the client
+# 1. Build the client
 cd client && npm run build
 
-# Deploy (method TBD - Railway/Cloudflare/manual?)
-# TODO: Document exact deployment steps
+# 2. Commit and push (Railway auto-deploys)
+cd ..
+git add -A
+git commit -m "Description of changes"
+git push
+
+# 3. Wait ~2-3 minutes for Railway to deploy
+# 4. Check https://heyphil.bot
 ```
+
+**GitHub repo:** https://github.com/mcstaheli/heyphil.git
+**Deployment:** Railway (connected to main branch)
 
 ## Local Testing (rarely used)
 - Frontend dev: http://localhost:3000
