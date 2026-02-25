@@ -439,22 +439,6 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Serve static files from React app in production
-if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
-  app.use(express.static(path.join(__dirname, '../client/build')));
-  
-  // All remaining requests return the React app, so it can handle routing
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../client/build/index.html'));
-  });
-}
-
-// Start server
-const host = process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : 'localhost';
-app.listen(PORT, host, () => {
-  console.log(`🚀 HeyPhil API running on http://${host}:${PORT}`);
-});
-
 // Toggle action item completion
 app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
   try {
@@ -627,4 +611,20 @@ app.get('/api/origination/export', requireAuth, async (req, res) => {
     console.error('Failed to export:', error);
     res.status(500).json({ error: 'Failed to export data' });
   }
+});
+
+// Serve static files from React app in production (MUST be after all API routes)
+if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
+  app.use(express.static(path.join(__dirname, '../client/build')));
+  
+  // All remaining requests return the React app, so it can handle routing
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/build/index.html'));
+  });
+}
+
+// Start server
+const host = process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : 'localhost';
+app.listen(PORT, host, () => {
+  console.log(`🚀 HeyPhil API running on http://${host}:${PORT}`);
 });
