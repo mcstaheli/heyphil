@@ -49,6 +49,18 @@ const EMERGENCIES = [
   { id: 'elevator_broken', name: 'Elevator Down', emoji: '🛗', cost: 800, duration: 150, happinessPenalty: 0.15 }
 ];
 
+const MILESTONES = [
+  { id: 'revenue_10k', check: s => s.stats.totalRevenue >= 10000, text: '🎉 $10,000 Revenue Milestone!' },
+  { id: 'revenue_50k', check: s => s.stats.totalRevenue >= 50000, text: '🎊 $50,000 Revenue Milestone!' },
+  { id: 'revenue_100k', check: s => s.stats.totalRevenue >= 100000, text: '🥳 $100,000 Revenue Milestone!' },
+  { id: 'services_50', check: s => s.stats.servicesCompleted >= 50, text: '⭐ 50 Services Completed!' },
+  { id: 'services_100', check: s => s.stats.servicesCompleted >= 100, text: '⭐⭐ 100 Services Completed!' },
+  { id: 'services_500', check: s => s.stats.servicesCompleted >= 500, text: '⭐⭐⭐ 500 Services Completed!' },
+  { id: 'guests_100', check: s => s.stats.guestsServed >= 100, text: '👥 100 Guests Served!' },
+  { id: 'hotels_2', check: s => s.hotels.length >= 2, text: '🏨🏨 Hotel Empire Growing!' },
+  { id: 'hotels_5', check: s => s.hotels.length >= 5, text: '🏨🏨🏨🏨🏨 Hotel Tycoon!' }
+];
+
 const REVIEW_TEMPLATES = {
   excellent: [
     "Amazing stay! Will definitely come back! ⭐⭐⭐⭐⭐",
@@ -129,9 +141,11 @@ const INITIAL_STATE = {
   emergencyTimer: 0,
   
   achievements: [],
+  milestones: [],
   notifications: [],
   particles: [], // {id, x, y, text, color, life}
-  reviews: [] // {id, text, rating, guestType}
+  reviews: [], // {id, text, rating, guestType}
+  celebration: null // {type, duration}
 };
 
 // Initialize rooms
@@ -470,6 +484,24 @@ function HotelVisual({ user, onBack }) {
           }
         });
         
+        // Check milestones
+        let newMilestones = [...prev.milestones];
+        let newCelebration = prev.celebration;
+        MILESTONES.forEach(milestone => {
+          if (!prev.milestones.includes(milestone.id) && milestone.check({ ...prev, stats: newStats, hotels: newHotels })) {
+            newMilestones.push(milestone.id);
+            newNotifications.push({ id: Date.now(), text: milestone.text, color: '#fbbf24', life: 200 });
+            newCelebration = { type: 'confetti', duration: 100 };
+          }
+        });
+        
+        // Update celebration
+        if (newCelebration && newCelebration.duration > 0) {
+          newCelebration = { ...newCelebration, duration: newCelebration.duration - 1 };
+        } else if (newCelebration && newCelebration.duration <= 0) {
+          newCelebration = null;
+        }
+        
         // Update notifications (decay life)
         newNotifications = newNotifications.map(n => ({ ...n, life: n.life - 1 })).filter(n => n.life > 0);
         
@@ -507,8 +539,10 @@ function HotelVisual({ user, onBack }) {
           activeEmergency: newActiveEmergency,
           emergencyTimer: newEmergencyTimer,
           achievements: newAchievements,
+          milestones: newMilestones,
           notifications: newNotifications,
-          staffPositions: newStaffPositions
+          staffPositions: newStaffPositions,
+          celebration: newCelebration
         };
       });
     }, TICK_MS);
@@ -761,6 +795,23 @@ function HotelVisual({ user, onBack }) {
       )}
       {WEATHER_TYPES[state.weather].name === 'Snowy' && (
         <div className="weather-effect snow"></div>
+      )}
+      
+      {/* Celebration effects */}
+      {state.celebration && (
+        <div className="celebration-overlay">
+          {[...Array(50)].map((_, i) => (
+            <div
+              key={i}
+              className="confetti"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 2}s`,
+                backgroundColor: ['#fbbf24', '#4ade80', '#3b82f6', '#ef4444', '#a855f7'][Math.floor(Math.random() * 5)]
+              }}
+            />
+          ))}
+        </div>
       )}
       
       <div className="game-container-visual">

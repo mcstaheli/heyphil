@@ -363,6 +363,32 @@
   }
 }
 
+.celebration-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: hidden;
+}
+
+.confetti {
+  position: absolute;
+  top: -10px;
+  width: 10px;
+  height: 10px;
+  animation: confetti-fall 3s linear forwards;
+}
+
+@keyframes confetti-fall {
+  to {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
 .game-container-visual {
   display: grid;
   grid-template-columns: 300px 1fr;
