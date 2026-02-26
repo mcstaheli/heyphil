@@ -2,11 +2,8 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 import './Loading.css';
 import Landing from './Landing';
-import HotelTycoon from './HotelTycoon';
-import HotelPaperclips from './HotelPaperclips';
-import HotelEmpire from './HotelEmpire';
-import HotelEmpireV2 from './HotelEmpireV2';
 import HotelVisual from './HotelVisual';
+import OrgCharts from './OrgCharts';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -189,7 +186,7 @@ function App() {
 function OriginationBoard({ user, onBack, onLogout }) {
   const [cards, setCards] = useState([]);
   const [people, setPeople] = useState({});
-  const [ownerColors, setOwnerColors] = useState({});
+  const [_ownerColors, setOwnerColors] = useState({});
   const [projectTypeColors, setProjectTypeColors] = useState({});
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
