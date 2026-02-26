@@ -126,6 +126,11 @@ function App() {
                 <h3>Origination Board</h3>
                 <p>Manage projects with your team</p>
               </div>
+              <div className="app-card" onClick={() => setCurrentApp('orgcharts')}>
+                <div className="app-icon">📊</div>
+                <h3>Org Charts</h3>
+                <p>Interactive organizational diagrams</p>
+              </div>
               <div className="app-card disabled">
                 <div className="app-icon">🏨</div>
                 <h3>Hotel Empire</h3>
