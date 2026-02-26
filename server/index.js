@@ -615,10 +615,20 @@ app.get('/api/origination/export', requireAuth, async (req, res) => {
 
 // Serve static files from React app in production (MUST be after all API routes)
 if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
-  app.use(express.static(path.join(__dirname, '../client/build')));
+  // Serve static files with proper cache headers
+  app.use(express.static(path.join(__dirname, '../client/build'), {
+    maxAge: '1h',  // Cache static assets for 1 hour
+    setHeaders: (res, filePath) => {
+      // Don't cache index.html or service workers
+      if (filePath.endsWith('index.html') || filePath.endsWith('service-worker.js')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    }
+  }));
   
   // All remaining requests return the React app, so it can handle routing
   app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(__dirname, '../client/build/index.html'));
   });
 }
