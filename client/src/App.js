@@ -111,7 +111,7 @@ function App() {
       <>
         <div className="app-container">
           <header className="app-header">
-            <h1>🤖 HeyPhil</h1>
+            <h1>✨ 🤖 HeyPhil</h1>
             <div className="user-info">
               {user?.picture && <img src={user.picture} alt={user.name} />}
               <span>{user?.name}</span>
