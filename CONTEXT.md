@@ -53,7 +53,28 @@ git push
 - Frontend dev: http://localhost:3000
 - Backend dev: http://localhost:3002
 
+## ⚠️ CRITICAL: Deployment Gotchas
+
+**NEVER commit `client/build/` or `static/` to git!**
+- These directories are gitignored for a reason
+- Railway builds fresh on each deploy
+- Committed build files override fresh builds → deployments appear to succeed but serve stale code
+- If you see old code after successful Railway deployment, check for orphaned static files in repo root
+
+**Cache Issues:**
+- Cloudflare caches responses (can take 1-4 hours to expire)
+- If site doesn't update immediately after deploy, purge Cloudflare cache
+- Server now sets `Cache-Control: no-cache` for index.html to prevent stale app shells
+- Static JS/CSS cached for 1 hour (good for performance, short enough for updates)
+
+**Verify Deployments:**
+1. Railway status = SUCCESS ✅
+2. Check live site bundle hash: `curl -s https://heyphil.bot | grep 'main\.[a-z0-9]*\.js'`
+3. Compare to local build: `ls client/build/static/js/main.*.js`
+4. If mismatch after 5+ min → purge Cloudflare cache
+
 ## Notes
 - Server uses Google Sheets as database (originationData.getBoard(), etc.)
 - **Always deploy after code changes**
 - Check https://heyphil.bot after deployment
+- Cloudflare sits in front of Railway (acts as CDN/cache layer)
