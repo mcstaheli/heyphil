@@ -126,10 +126,10 @@ function App() {
                 <h3>Origination Board</h3>
                 <p>Manage projects with your team</p>
               </div>
-              <div className="app-card" onClick={() => setCurrentApp('hotel-tycoon')}>
+              <div className="app-card disabled">
                 <div className="app-icon">🏨</div>
                 <h3>Hotel Empire</h3>
-                <p>Book guests, build your empire</p>
+                <p>Coming soon...</p>
               </div>
               <div className="app-card disabled">
                 <div className="app-icon">📧</div>
