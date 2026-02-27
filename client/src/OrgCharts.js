@@ -143,7 +143,7 @@ function OrgCharts({ user, onBack }) {
     }
   };
 
-  // Connection ports: top, right, bottom, left
+  // Connection ports: 3 per edge (12 total)
   const getNodePorts = (node) => {
     const scaled = {
       x: node.x * zoom + offset.x,
@@ -152,10 +152,22 @@ function OrgCharts({ user, onBack }) {
       height: node.height * zoom
     };
     return {
-      top: { x: scaled.x + scaled.width / 2, y: scaled.y },
-      right: { x: scaled.x + scaled.width, y: scaled.y + scaled.height / 2 },
-      bottom: { x: scaled.x + scaled.width / 2, y: scaled.y + scaled.height },
-      left: { x: scaled.x, y: scaled.y + scaled.height / 2 }
+      // Top edge
+      'top-left': { x: scaled.x + scaled.width * 0.25, y: scaled.y },
+      'top': { x: scaled.x + scaled.width * 0.5, y: scaled.y },
+      'top-right': { x: scaled.x + scaled.width * 0.75, y: scaled.y },
+      // Right edge
+      'right-top': { x: scaled.x + scaled.width, y: scaled.y + scaled.height * 0.25 },
+      'right': { x: scaled.x + scaled.width, y: scaled.y + scaled.height * 0.5 },
+      'right-bottom': { x: scaled.x + scaled.width, y: scaled.y + scaled.height * 0.75 },
+      // Bottom edge
+      'bottom-left': { x: scaled.x + scaled.width * 0.25, y: scaled.y + scaled.height },
+      'bottom': { x: scaled.x + scaled.width * 0.5, y: scaled.y + scaled.height },
+      'bottom-right': { x: scaled.x + scaled.width * 0.75, y: scaled.y + scaled.height },
+      // Left edge
+      'left-top': { x: scaled.x, y: scaled.y + scaled.height * 0.25 },
+      'left': { x: scaled.x, y: scaled.y + scaled.height * 0.5 },
+      'left-bottom': { x: scaled.x, y: scaled.y + scaled.height * 0.75 }
     };
   };
 
@@ -266,48 +278,56 @@ function OrgCharts({ user, onBack }) {
   const getElbowPath = (x1, y1, x2, y2, fromPort, toPort) => {
     const GAP = 20;
     
+    // Determine port orientation
+    const isHorizontalPort = (port) => port.startsWith('right') || port.startsWith('left');
+    const isVerticalPort = (port) => port.startsWith('top') || port.startsWith('bottom');
+    const isRightSide = (port) => port.startsWith('right');
+    const isLeftSide = (port) => port.startsWith('left');
+    const isTopSide = (port) => port.startsWith('top');
+    const isBottomSide = (port) => port.startsWith('bottom');
+    
     // Horizontal → Horizontal (right/left to right/left)
-    if ((fromPort === 'right' || fromPort === 'left') && (toPort === 'right' || toPort === 'left')) {
-      const startX = fromPort === 'right' ? x1 + GAP : x1 - GAP;
-      const endX = toPort === 'right' ? x2 + GAP : x2 - GAP;
+    if (isHorizontalPort(fromPort) && isHorizontalPort(toPort)) {
+      const startX = isRightSide(fromPort) ? x1 + GAP : x1 - GAP;
+      const endX = isRightSide(toPort) ? x2 + GAP : x2 - GAP;
       const midX = (startX + endX) / 2;
       
       return `M ${x1} ${y1} L ${startX} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${endX} ${y2} L ${x2} ${y2}`;
     }
     
     // Vertical → Vertical (top/bottom to top/bottom)
-    if ((fromPort === 'top' || fromPort === 'bottom') && (toPort === 'top' || toPort === 'bottom')) {
-      const startY = fromPort === 'bottom' ? y1 + GAP : y1 - GAP;
-      const endY = toPort === 'bottom' ? y2 + GAP : y2 - GAP;
+    if (isVerticalPort(fromPort) && isVerticalPort(toPort)) {
+      const startY = isBottomSide(fromPort) ? y1 + GAP : y1 - GAP;
+      const endY = isBottomSide(toPort) ? y2 + GAP : y2 - GAP;
       const midY = (startY + endY) / 2;
       
       return `M ${x1} ${y1} L ${x1} ${startY} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${endY} L ${x2} ${y2}`;
     }
     
     // Horizontal → Vertical (simple L or Z-shape)
-    if ((fromPort === 'right' || fromPort === 'left') && (toPort === 'top' || toPort === 'bottom')) {
+    if (isHorizontalPort(fromPort) && isVerticalPort(toPort)) {
       // Direct L-shape if target is in the right direction
-      if ((fromPort === 'right' && x2 >= x1) || (fromPort === 'left' && x2 <= x1)) {
+      if ((isRightSide(fromPort) && x2 >= x1) || (isLeftSide(fromPort) && x2 <= x1)) {
         // Clean L: horizontal to target's X, then vertical to target
         return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
       }
       
       // Z-shape when target is behind
-      const startX = fromPort === 'right' ? x1 + GAP : x1 - GAP;
+      const startX = isRightSide(fromPort) ? x1 + GAP : x1 - GAP;
       const midY = (y1 + y2) / 2;
       return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
     }
     
     // Vertical → Horizontal (simple L or Z-shape)
-    if ((fromPort === 'top' || fromPort === 'bottom') && (toPort === 'right' || toPort === 'left')) {
+    if (isVerticalPort(fromPort) && isHorizontalPort(toPort)) {
       // Direct L-shape if target is in the right direction
-      if ((fromPort === 'bottom' && y2 >= y1) || (fromPort === 'top' && y2 <= y1)) {
+      if ((isBottomSide(fromPort) && y2 >= y1) || (isTopSide(fromPort) && y2 <= y1)) {
         // Clean L: vertical to target's Y, then horizontal to target
         return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
       }
       
       // Z-shape when target is behind
-      const startY = fromPort === 'bottom' ? y1 + GAP : y1 - GAP;
+      const startY = isBottomSide(fromPort) ? y1 + GAP : y1 - GAP;
       const midX = (x1 + x2) / 2;
       return `M ${x1} ${y1} L ${x1} ${startY} L ${midX} ${startY} L ${midX} ${y2} L ${x2} ${y2}`;
     }
@@ -648,12 +668,25 @@ function OrgCharts({ user, onBack }) {
             }}
           >
             {/* Connection ports */}
-            {['top', 'right', 'bottom', 'left'].map(port => {
+            {['top-left', 'top', 'top-right', 'right-top', 'right', 'right-bottom', 
+              'bottom-right', 'bottom', 'bottom-left', 'left-bottom', 'left', 'left-top'].map(port => {
               const portPos = {
-                top: { left: '50%', top: '-6px', transform: 'translateX(-50%)' },
-                right: { right: '-6px', top: '50%', transform: 'translateY(-50%)' },
-                bottom: { left: '50%', bottom: '-6px', transform: 'translateX(-50%)' },
-                left: { left: '-6px', top: '50%', transform: 'translateY(-50%)' }
+                // Top edge
+                'top-left': { left: '25%', top: '-6px', transform: 'translateX(-50%)' },
+                'top': { left: '50%', top: '-6px', transform: 'translateX(-50%)' },
+                'top-right': { left: '75%', top: '-6px', transform: 'translateX(-50%)' },
+                // Right edge
+                'right-top': { right: '-6px', top: '25%', transform: 'translateY(-50%)' },
+                'right': { right: '-6px', top: '50%', transform: 'translateY(-50%)' },
+                'right-bottom': { right: '-6px', top: '75%', transform: 'translateY(-50%)' },
+                // Bottom edge
+                'bottom-right': { left: '75%', bottom: '-6px', transform: 'translateX(-50%)' },
+                'bottom': { left: '50%', bottom: '-6px', transform: 'translateX(-50%)' },
+                'bottom-left': { left: '25%', bottom: '-6px', transform: 'translateX(-50%)' },
+                // Left edge
+                'left-bottom': { left: '-6px', top: '75%', transform: 'translateY(-50%)' },
+                'left': { left: '-6px', top: '50%', transform: 'translateY(-50%)' },
+                'left-top': { left: '-6px', top: '25%', transform: 'translateY(-50%)' }
               };
               
               return (
