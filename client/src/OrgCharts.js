@@ -1,9 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './OrgCharts.css';
-import ELK from 'elkjs/lib/elk.bundled.js';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
-const elk = new ELK();
 
 function OrgCharts({ user, onBack }) {
   const canvasRef = useRef(null);
@@ -32,7 +30,6 @@ function OrgCharts({ user, onBack }) {
   const [alignmentGuides, setAlignmentGuides] = useState([]);
   const [reconnecting, setReconnecting] = useState(null); // { connectionId, end: 'from' | 'to' }
   const [editingNode, setEditingNode] = useState(null); // Node being edited in modal
-  const [computedPaths, setComputedPaths] = useState({}); // elkjs computed paths cache
   const [editingConnection, setEditingConnection] = useState(null); // Connection being edited in modal
   
   // Refs to always have latest state for auto-save
@@ -44,76 +41,6 @@ function OrgCharts({ user, onBack }) {
     connectionsRef.current = connections;
   }, [nodes, connections]);
 
-  // Compute paths with elkjs whenever nodes/connections/zoom/offset change
-  useEffect(() => {
-    const computePaths = async () => {
-      if (nodes.length === 0 || connections.length === 0) {
-        setComputedPaths({});
-        return;
-      }
-
-      // Transform nodes to screen space
-      const screenNodes = nodes.map(n => ({
-        id: n.id,
-        x: n.x * zoom + offset.x,
-        y: n.y * zoom + offset.y,
-        width: n.width * zoom,
-        height: n.height * zoom
-      }));
-
-      // Build elkjs graph
-      const graph = {
-        id: "root",
-        layoutOptions: {
-          'elk.algorithm': 'layered',
-          'elk.direction': 'DOWN',
-          'elk.edgeRouting': 'ORTHOGONAL',
-          'elk.spacing.nodeNode': '80',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '80',
-          'elk.layered.spacing.edgeNodeBetweenLayers': '40',
-          'elk.spacing.edgeNode': '40',
-          'elk.spacing.edgeEdge': '20',
-          'elk.layered.thoroughness': '7'
-        },
-        children: screenNodes,
-        edges: connections.map(conn => ({
-          id: conn.id,
-          sources: [conn.from],
-          targets: [conn.to],
-          sections: []
-        }))
-      };
-
-      try {
-        const layout = await elk.layout(graph);
-        const newPaths = {};
-        
-        for (const edge of layout.edges || []) {
-          if (edge.sections && edge.sections.length > 0) {
-            const section = edge.sections[0];
-            let path = `M ${section.startPoint.x} ${section.startPoint.y}`;
-            
-            if (section.bendPoints) {
-              for (const bp of section.bendPoints) {
-                path += ` L ${bp.x} ${bp.y}`;
-              }
-            }
-            
-            path += ` L ${section.endPoint.x} ${section.endPoint.y}`;
-            newPaths[edge.id] = path;
-          }
-        }
-        
-        setComputedPaths(newPaths);
-      } catch (error) {
-        console.error('elkjs layout error:', error);
-        setComputedPaths({});
-      }
-    };
-
-    computePaths();
-  }, [nodes, connections, zoom, offset]);
-  
   const GRID_SIZE = 20; // Grid snap size in pixels
   const SNAP_THRESHOLD = 5; // Pixels to trigger alignment guide
 
@@ -656,7 +583,7 @@ function OrgCharts({ user, onBack }) {
   // Orthogonal routing with elkjs (auto) or manual waypoints
   // ULTRA-CONSERVATIVE routing: guaranteed to avoid all nodes
   // elkjs-based routing - FINAL ATTEMPT
-  const getElbowPath = (x1, y1, x2, y2, fromPort, toPort, fromNodeId, toNodeId, waypoints, connectionId) => {
+  const getElbowPath = (x1, y1, x2, y2, fromPort, toPort, fromNodeId, toNodeId, waypoints) => {
     // If manual waypoints exist, use them
     if (waypoints && waypoints.length > 0) {
       const points = [{ x: x1, y: y1 }, ...waypoints, { x: x2, y: y2 }];
@@ -667,13 +594,113 @@ function OrgCharts({ user, onBack }) {
       return path;
     }
 
-    // Use elkjs computed path if available
-    if (connectionId && computedPaths[connectionId]) {
-      return computedPaths[connectionId];
+    // Transform nodes to screen space
+    const screenNodes = nodes.map(n => ({
+      id: n.id,
+      x: n.x * zoom + offset.x,
+      y: n.y * zoom + offset.y,
+      width: n.width * zoom,
+      height: n.height * zoom
+    }));
+
+    const sourceNode = screenNodes.find(n => n.id === fromNodeId);
+    const destNode = screenNodes.find(n => n.id === toNodeId);
+
+    if (!sourceNode || !destNode) {
+      return `M ${x1} ${y1} L ${x2} ${y2}`;
     }
 
-    // Fallback to simple straight line while elkjs is computing
-    return `M ${x1} ${y1} L ${x2} ${y2}`;
+    const EXTEND = 30; // Distance to extend from port
+    const CLEARANCE = 60; // Space around obstacles
+
+    // Calculate extension points (move away from node edge)
+    let extendFrom = { x: x1, y: y1 };
+    let extendTo = { x: x2, y: y2 };
+    
+    if (fromPort.startsWith('bottom')) extendFrom.y = y1 + EXTEND;
+    else if (fromPort.startsWith('top')) extendFrom.y = y1 - EXTEND;
+    else if (fromPort.startsWith('right')) extendFrom.x = x1 + EXTEND;
+    else if (fromPort.startsWith('left')) extendFrom.x = x1 - EXTEND;
+    
+    if (toPort.startsWith('bottom')) extendTo.y = y2 + EXTEND;
+    else if (toPort.startsWith('top')) extendTo.y = y2 - EXTEND;
+    else if (toPort.startsWith('right')) extendTo.x = x2 + EXTEND;
+    else if (toPort.startsWith('left')) extendTo.x = x2 - EXTEND;
+
+    // Get obstacle nodes (excluding source and dest)
+    const obstacleNodes = screenNodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
+    
+    // Helper: check if a rectangular corridor intersects any obstacles
+    const hasCollision = (x1, y1, x2, y2) => {
+      const minX = Math.min(x1, x2) - CLEARANCE;
+      const maxX = Math.max(x1, x2) + CLEARANCE;
+      const minY = Math.min(y1, y2) - CLEARANCE;
+      const maxY = Math.max(y1, y2) + CLEARANCE;
+      
+      for (const obs of obstacleNodes) {
+        if (obs.x < maxX && obs.x + obs.width > minX &&
+            obs.y < maxY && obs.y + obs.height > minY) {
+          return true;
+        }
+      }
+      return false;
+    };
+    
+    // Try simple L-shapes first
+    const dx = Math.abs(extendTo.x - extendFrom.x);
+    const dy = Math.abs(extendTo.y - extendFrom.y);
+    
+    // Try horizontal-then-vertical
+    if (dx >= dy) {
+      const midX = extendTo.x;
+      const midY = extendFrom.y;
+      
+      if (!hasCollision(extendFrom.x, extendFrom.y, midX, midY) &&
+          !hasCollision(midX, midY, extendTo.x, extendTo.y)) {
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${midX} ${midY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
+      }
+    }
+    
+    // Try vertical-then-horizontal
+    if (dy >= dx) {
+      const midX = extendFrom.x;
+      const midY = extendTo.y;
+      
+      if (!hasCollision(extendFrom.x, extendFrom.y, midX, midY) &&
+          !hasCollision(midX, midY, extendTo.x, extendTo.y)) {
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${midX} ${midY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
+      }
+    }
+    
+    // FALLBACK: Route around obstacles via bounding box
+    const allY = screenNodes.map(n => [n.y, n.y + n.height]).flat();
+    const allX = screenNodes.map(n => [n.x, n.x + n.width]).flat();
+    const minY = Math.min(...allY);
+    const maxY = Math.max(...allY);
+    const minX = Math.min(...allX);
+    const maxX = Math.max(...allX);
+    
+    const isVerticalFrom = fromPort.startsWith('top') || fromPort.startsWith('bottom');
+    const isVerticalTo = toPort.startsWith('top') || toPort.startsWith('bottom');
+    
+    if (isVerticalFrom && isVerticalTo) {
+      // Route via left or right side
+      const routeX = (extendFrom.x < (minX + maxX) / 2) ? minX - CLEARANCE : maxX + CLEARANCE;
+      return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${routeX} ${extendFrom.y} L ${routeX} ${extendTo.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
+    } else if (!isVerticalFrom && !isVerticalTo) {
+      // Route via top or bottom
+      const routeY = (extendFrom.y < (minY + maxY) / 2) ? minY - CLEARANCE : maxY + CLEARANCE;
+      return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendFrom.x} ${routeY} L ${extendTo.x} ${routeY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
+    } else {
+      // Mixed ports: use Z-shape via perimeter
+      if (isVerticalFrom) {
+        const routeY = (extendFrom.y < (minY + maxY) / 2) ? minY - CLEARANCE : maxY + CLEARANCE;
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendFrom.x} ${routeY} L ${extendTo.x} ${routeY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
+      } else {
+        const routeX = (extendFrom.x < (minX + maxX) / 2) ? minX - CLEARANCE : maxX + CLEARANCE;
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${routeX} ${extendFrom.y} L ${routeX} ${extendTo.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
+      }
+    }
   };
 
   const handleCanvasMouseDown = (e) => {
@@ -1097,8 +1124,7 @@ function OrgCharts({ user, onBack }) {
               conn.toPort || 'top',
               conn.from,
               conn.to,
-              conn.waypoints,
-              conn.id
+              conn.waypoints
             );
 
             const isSelected = selectedConnection === conn.id;
