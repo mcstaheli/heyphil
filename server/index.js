@@ -279,12 +279,23 @@ app.get('/api/orgcharts/:id', requireAuth, async (req, res) => {
 // Create new chart
 app.post('/api/orgcharts', requireAuth, async (req, res) => {
   try {
+    console.log('Creating chart for:', req.user.email);
     const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     const { name } = req.body;
     
+    console.log('Spreadsheet ID:', spreadsheetId);
+    console.log('Chart name:', name);
+    
+    if (!spreadsheetId) {
+      console.error('No spreadsheet ID configured');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+    
     const chartId = Date.now().toString();
     const now = new Date().toISOString();
+    
+    console.log('Attempting to append to OrgCharts sheet...');
     
     await sheets.spreadsheets.values.append({
       spreadsheetId,
@@ -294,6 +305,8 @@ app.post('/api/orgcharts', requireAuth, async (req, res) => {
         values: [[chartId, name, req.user.email, now, now, 0, 0]]
       }
     });
+    
+    console.log('Chart created successfully:', chartId);
     
     res.json({
       id: chartId,
@@ -307,8 +320,13 @@ app.post('/api/orgcharts', requireAuth, async (req, res) => {
       connections: []
     });
   } catch (error) {
-    console.error('Failed to create chart:', error);
-    res.status(500).json({ error: 'Failed to create chart' });
+    console.error('Failed to create chart - Full error:', error);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to create chart',
+      details: error.message 
+    });
   }
 });
 
