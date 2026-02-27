@@ -30,6 +30,7 @@ function OrgCharts({ user, onBack }) {
   const [alignmentGuides, setAlignmentGuides] = useState([]);
   const [reconnecting, setReconnecting] = useState(null); // { connectionId, end: 'from' | 'to' }
   const [editingNode, setEditingNode] = useState(null); // Node being edited in modal
+  const [editingConnection, setEditingConnection] = useState(null); // Connection being edited in modal
   
   // Refs to always have latest state for auto-save
   const nodesRef = useRef(nodes);
@@ -366,6 +367,18 @@ function OrgCharts({ user, onBack }) {
     }));
   };
 
+  const updateConnectionLabel = (connId, label) => {
+    setConnections(connections.map(c => c.id === connId ? { ...c, label } : c));
+  };
+
+  const updateConnectionColor = (connId, color) => {
+    setConnections(connections.map(c => c.id === connId ? { ...c, color } : c));
+  };
+
+  const updateConnectionStyle = (connId, style) => {
+    setConnections(connections.map(c => c.id === connId ? { ...c, style } : c));
+  };
+
   // Check if a horizontal/vertical line segment intersects a node
   const lineIntersectsNode = (x1, y1, x2, y2, node, fromNodeId, toNodeId) => {
     // Don't check collision with source or destination nodes
@@ -694,6 +707,8 @@ function OrgCharts({ user, onBack }) {
       if (e.key === 'Escape') {
         if (editingNode) {
           setEditingNode(null);
+        } else if (editingConnection) {
+          setEditingConnection(null);
         } else if (reconnecting) {
           setReconnecting(null);
         } else if (connectingFrom) {
@@ -708,7 +723,7 @@ function OrgCharts({ user, onBack }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [connectingFrom, selectedConnection, selectedNode, reconnecting, editingNode]);
+  }, [connectingFrom, selectedConnection, selectedNode, reconnecting, editingNode, editingConnection]);
 
   const getNodePosition = (nodeId) => {
     const node = nodes.find(n => n.id === nodeId);
@@ -979,15 +994,50 @@ function OrgCharts({ user, onBack }) {
                     setSelectedConnection(conn.id);
                     setSelectedNode(null);
                   }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setEditingConnection(conn);
+                  }}
                 />
                 {/* Visible path */}
                 <path
                   d={path}
-                  stroke={isSelected ? '#667eea' : '#999'}
+                  stroke={isSelected ? '#667eea' : (conn.color || '#999')}
                   strokeWidth={isSelected ? '3' : '2'}
+                  strokeDasharray={conn.style === 'dashed' ? '8,4' : conn.style === 'dotted' ? '2,4' : '0'}
                   fill="none"
                   style={{ pointerEvents: 'none' }}
                 />
+                {/* Connection label */}
+                {conn.label && (() => {
+                  const labelX = (fromPoint.x + toPoint.x) / 2;
+                  const labelY = (fromPoint.y + toPoint.y) / 2;
+                  return (
+                    <g>
+                      <rect
+                        x={labelX - 30}
+                        y={labelY - 10}
+                        width="60"
+                        height="20"
+                        fill="white"
+                        stroke={conn.color || '#999'}
+                        strokeWidth="1"
+                        rx="4"
+                      />
+                      <text
+                        x={labelX}
+                        y={labelY + 4}
+                        textAnchor="middle"
+                        fontSize="12"
+                        fill="#374151"
+                        fontWeight="500"
+                        style={{ pointerEvents: 'none' }}
+                      >
+                        {conn.label}
+                      </text>
+                    </g>
+                  );
+                })()}
               </g>
             );
           })}
@@ -1317,6 +1367,113 @@ function OrgCharts({ user, onBack }) {
                 🗑️ Delete Node
               </button>
               <button className="btn-primary" onClick={() => setEditingNode(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Connection Modal */}
+      {editingConnection && (
+        <div className="modal-overlay" onClick={() => setEditingConnection(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Edit Connection</h2>
+              <button className="modal-close" onClick={() => setEditingConnection(null)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Label</label>
+                <input
+                  type="text"
+                  value={editingConnection.label || ''}
+                  onChange={(e) => {
+                    const newLabel = e.target.value;
+                    setEditingConnection({ ...editingConnection, label: newLabel });
+                    updateConnectionLabel(editingConnection.id, newLabel);
+                  }}
+                  placeholder="Optional label"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Style</label>
+                <div className="style-picker">
+                  {[
+                    { name: 'Solid', value: 'solid' },
+                    { name: 'Dashed', value: 'dashed' },
+                    { name: 'Dotted', value: 'dotted' }
+                  ].map(style => (
+                    <button
+                      key={style.value}
+                      className={`style-option ${(editingConnection.style || 'solid') === style.value ? 'active' : ''}`}
+                      onClick={() => {
+                        setEditingConnection({ ...editingConnection, style: style.value });
+                        updateConnectionStyle(editingConnection.id, style.value);
+                      }}
+                    >
+                      <svg width="60" height="20" viewBox="0 0 60 20">
+                        <line
+                          x1="0"
+                          y1="10"
+                          x2="60"
+                          y2="10"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeDasharray={style.value === 'dashed' ? '8,4' : style.value === 'dotted' ? '2,4' : '0'}
+                        />
+                      </svg>
+                      <span>{style.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Color</label>
+                <div className="color-picker">
+                  {[
+                    { name: 'Gray', value: '#999' },
+                    { name: 'Purple', value: '#667eea' },
+                    { name: 'Blue', value: '#3b82f6' },
+                    { name: 'Green', value: '#10b981' },
+                    { name: 'Red', value: '#ef4444' },
+                    { name: 'Orange', value: '#f59e0b' },
+                    { name: 'Pink', value: '#ec4899' },
+                    { name: 'Teal', value: '#14b8a6' },
+                    { name: 'Indigo', value: '#6366f1' },
+                    { name: 'Yellow', value: '#eab308' }
+                  ].map(color => (
+                    <button
+                      key={color.value}
+                      className={`color-swatch ${(editingConnection.color || '#999') === color.value ? 'active' : ''}`}
+                      style={{ backgroundColor: color.value }}
+                      onClick={() => {
+                        setEditingConnection({ ...editingConnection, color: color.value });
+                        updateConnectionColor(editingConnection.id, color.value);
+                      }}
+                      title={color.name}
+                    >
+                      {(editingConnection.color || '#999') === color.value && '✓'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button 
+                className="btn-danger"
+                onClick={() => {
+                  deleteConnection(editingConnection.id);
+                  setEditingConnection(null);
+                }}
+              >
+                🗑️ Delete Connection
+              </button>
+              <button className="btn-primary" onClick={() => setEditingConnection(null)}>
                 Done
               </button>
             </div>
