@@ -63,11 +63,22 @@ function OrgCharts({ user, onBack }) {
         headers: getAuthHeaders(),
         body: JSON.stringify({ name })
       });
+      
       if (res.ok) {
-        loadCharts();
+        const data = await res.json();
+        console.log('Chart created:', data);
+        await loadCharts();
+        // Auto-open the newly created chart
+        if (data.id) {
+          loadChart(data.id);
+        }
+      } else {
+        const error = await res.json();
+        alert(`Failed to create chart: ${error.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to create chart:', error);
+      alert(`Failed to create chart: ${error.message}`);
     }
   };
 
