@@ -173,6 +173,30 @@
   box-shadow: 0 3px 8px rgba(118, 75, 162, 0.4);
 }
 
+.connection-port.active-port {
+  opacity: 1;
+  background: #667eea;
+  transform: scale(1.5);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+  animation: pulse-port 2s ease-in-out infinite;
+  cursor: grab;
+}
+
+.connection-port.active-port:hover {
+  background: #764ba2;
+  transform: scale(1.6);
+  cursor: grabbing;
+}
+
+@keyframes pulse-port {
+  0%, 100% { 
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+  }
+  50% { 
+    box-shadow: 0 0 0 6px rgba(102, 126, 234, 0.5);
+  }
+}
+
 .connection-delete-btn {
   width: 24px;
   height: 24px;

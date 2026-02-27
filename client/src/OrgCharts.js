@@ -28,6 +28,7 @@ function OrgCharts({ user, onBack }) {
   const [lastSaved, setLastSaved] = useState(null);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [alignmentGuides, setAlignmentGuides] = useState([]);
+  const [reconnecting, setReconnecting] = useState(null); // { connectionId, end: 'from' | 'to' }
   
   const GRID_SIZE = 20; // Grid snap size in pixels
   const SNAP_THRESHOLD = 5; // Pixels to trigger alignment guide
@@ -479,6 +480,9 @@ function OrgCharts({ user, onBack }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        if (reconnecting) {
+          setReconnecting(null);
+        }
         if (connectingFrom) {
           setConnectingFrom(null);
         }
@@ -493,7 +497,7 @@ function OrgCharts({ user, onBack }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [connectingFrom, selectedConnection, selectedNode]);
+  }, [connectingFrom, selectedConnection, selectedNode, reconnecting]);
 
   const getNodePosition = (nodeId) => {
     const node = nodes.find(n => n.id === nodeId);
@@ -836,51 +840,83 @@ function OrgCharts({ user, onBack }) {
             }}
           >
             {/* Connection ports */}
-            {['top-1', 'top-2', 'top', 'top-3', 'top-4',
-              'right-top', 'right', 'right-bottom', 
-              'bottom-1', 'bottom-2', 'bottom', 'bottom-3', 'bottom-4',
-              'left-top', 'left', 'left-bottom'].map(port => {
-              const portPos = {
-                // Top edge - 5 ports
-                'top-1': { left: '20%', top: '-6px', transform: 'translateX(-50%)' },
-                'top-2': { left: '35%', top: '-6px', transform: 'translateX(-50%)' },
-                'top': { left: '50%', top: '-6px', transform: 'translateX(-50%)' },
-                'top-3': { left: '65%', top: '-6px', transform: 'translateX(-50%)' },
-                'top-4': { left: '80%', top: '-6px', transform: 'translateX(-50%)' },
-                // Right edge - 3 ports
-                'right-top': { right: '-6px', top: '25%', transform: 'translateY(-50%)' },
-                'right': { right: '-6px', top: '50%', transform: 'translateY(-50%)' },
-                'right-bottom': { right: '-6px', top: '75%', transform: 'translateY(-50%)' },
-                // Bottom edge - 5 ports
-                'bottom-1': { left: '20%', bottom: '-6px', transform: 'translateX(-50%)' },
-                'bottom-2': { left: '35%', bottom: '-6px', transform: 'translateX(-50%)' },
-                'bottom': { left: '50%', bottom: '-6px', transform: 'translateX(-50%)' },
-                'bottom-3': { left: '65%', bottom: '-6px', transform: 'translateX(-50%)' },
-                'bottom-4': { left: '80%', bottom: '-6px', transform: 'translateX(-50%)' },
-                // Left edge - 3 ports
-                'left-top': { left: '-6px', top: '25%', transform: 'translateY(-50%)' },
-                'left': { left: '-6px', top: '50%', transform: 'translateY(-50%)' },
-                'left-bottom': { left: '-6px', top: '75%', transform: 'translateY(-50%)' }
-              };
+            {(() => {
+              // Check if this node is part of the selected connection
+              const selectedConn = selectedConnection ? connections.find(c => c.id === selectedConnection) : null;
+              const isConnectedNode = selectedConn && (selectedConn.from === node.id || selectedConn.to === node.id);
+              const showPorts = !selectedConnection || isConnectedNode;
               
-              return (
-                <div
-                  key={port}
-                  className={`connection-port ${hoveredPort?.nodeId === node.id && hoveredPort?.port === port ? 'hovered' : ''}`}
-                  style={portPos[port]}
-                  onMouseEnter={() => setHoveredPort({ nodeId: node.id, port })}
-                  onMouseLeave={() => setHoveredPort(null)}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    if (connectingFrom) {
-                      finishConnection(node.id, port);
-                    } else {
-                      startConnection(node.id, port);
-                    }
-                  }}
-                />
-              );
-            })}
+              if (!showPorts) return null;
+              
+              return ['top-1', 'top-2', 'top', 'top-3', 'top-4',
+                'right-top', 'right', 'right-bottom', 
+                'bottom-1', 'bottom-2', 'bottom', 'bottom-3', 'bottom-4',
+                'left-top', 'left', 'left-bottom'].map(port => {
+                const portPos = {
+                  // Top edge - 5 ports
+                  'top-1': { left: '20%', top: '-6px', transform: 'translateX(-50%)' },
+                  'top-2': { left: '35%', top: '-6px', transform: 'translateX(-50%)' },
+                  'top': { left: '50%', top: '-6px', transform: 'translateX(-50%)' },
+                  'top-3': { left: '65%', top: '-6px', transform: 'translateX(-50%)' },
+                  'top-4': { left: '80%', top: '-6px', transform: 'translateX(-50%)' },
+                  // Right edge - 3 ports
+                  'right-top': { right: '-6px', top: '25%', transform: 'translateY(-50%)' },
+                  'right': { right: '-6px', top: '50%', transform: 'translateY(-50%)' },
+                  'right-bottom': { right: '-6px', top: '75%', transform: 'translateY(-50%)' },
+                  // Bottom edge - 5 ports
+                  'bottom-1': { left: '20%', bottom: '-6px', transform: 'translateX(-50%)' },
+                  'bottom-2': { left: '35%', bottom: '-6px', transform: 'translateX(-50%)' },
+                  'bottom': { left: '50%', bottom: '-6px', transform: 'translateX(-50%)' },
+                  'bottom-3': { left: '65%', bottom: '-6px', transform: 'translateX(-50%)' },
+                  'bottom-4': { left: '80%', bottom: '-6px', transform: 'translateX(-50%)' },
+                  // Left edge - 3 ports
+                  'left-top': { left: '-6px', top: '25%', transform: 'translateY(-50%)' },
+                  'left': { left: '-6px', top: '50%', transform: 'translateY(-50%)' },
+                  'left-bottom': { left: '-6px', top: '75%', transform: 'translateY(-50%)' }
+                };
+                
+                // Check if this specific port is being used by the selected connection
+                const isActivePort = selectedConn && (
+                  (selectedConn.from === node.id && selectedConn.fromPort === port) ||
+                  (selectedConn.to === node.id && selectedConn.toPort === port)
+                );
+                
+                return (
+                  <div
+                    key={port}
+                    className={`connection-port ${hoveredPort?.nodeId === node.id && hoveredPort?.port === port ? 'hovered' : ''} ${isActivePort ? 'active-port' : ''}`}
+                    style={portPos[port]}
+                    onMouseEnter={() => setHoveredPort({ nodeId: node.id, port })}
+                    onMouseLeave={() => setHoveredPort(null)}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      
+                      // If clicking an active port, start reconnecting
+                      if (isActivePort && selectedConn) {
+                        const end = selectedConn.from === node.id ? 'from' : 'to';
+                        setReconnecting({ connectionId: selectedConn.id, end });
+                      } else if (reconnecting) {
+                        // Finish reconnecting
+                        setConnections(prev => prev.map(c => 
+                          c.id === reconnecting.connectionId
+                            ? {
+                                ...c,
+                                [reconnecting.end]: node.id,
+                                [reconnecting.end + 'Port']: port
+                              }
+                            : c
+                        ));
+                        setReconnecting(null);
+                      } else if (connectingFrom) {
+                        finishConnection(node.id, port);
+                      } else {
+                        startConnection(node.id, port);
+                      }
+                    }}
+                  />
+                );
+              });
+            })()}
             
             <div className="node-content">
               {selectedNode === node.id ? (
@@ -937,6 +973,15 @@ function OrgCharts({ user, onBack }) {
         {connectingFrom && (
           <div className="connecting-hint">
             Click a connection port on another node
+            <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.8 }}>
+              Press ESC to cancel
+            </div>
+          </div>
+        )}
+        
+        {reconnecting && (
+          <div className="connecting-hint">
+            Click a port to reconnect this end
             <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.8 }}>
               Press ESC to cancel
             </div>
