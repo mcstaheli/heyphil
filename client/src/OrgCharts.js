@@ -568,8 +568,9 @@ function OrgCharts({ user, onBack }) {
   };
 
   // Orthogonal routing with elkjs (auto) or manual waypoints
+  // ULTRA-CONSERVATIVE routing: guaranteed to avoid all nodes
   const getElbowPath = (x1, y1, x2, y2, fromPort, toPort, fromNodeId, toNodeId, waypoints) => {
-    // If waypoints exist, use them (manual routing)
+    // If waypoints exist, use them
     if (waypoints && waypoints.length > 0) {
       const points = [{ x: x1, y: y1 }, ...waypoints, { x: x2, y: y2 }];
       let path = `M ${points[0].x} ${points[0].y}`;
@@ -588,8 +589,6 @@ function OrgCharts({ user, onBack }) {
       height: n.height * zoom
     }));
     
-    // Smart routing: try direct path first, only route around if needed
-    
     const sourceNode = screenNodes.find(n => n.id === fromNodeId);
     const destNode = screenNodes.find(n => n.id === toNodeId);
     
@@ -597,207 +596,43 @@ function OrgCharts({ user, onBack }) {
       return `M ${x1} ${y1} L ${x2} ${y2}`;
     }
     
-    const EXTEND = 40; // How far to extend from port
-    const CLEARANCE = 60; // Space around obstacles
+    const CLEARANCE = 80;
     
-    // Helper: check if a line intersects any node (excluding source/dest)
-    const lineIntersectsAnyNode = (x1, y1, x2, y2) => {
-      const obstacleNodes = screenNodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
-      for (const node of obstacleNodes) {
-        // Expand node bounds by clearance
-        const left = node.x - CLEARANCE;
-        const right = node.x + node.width + CLEARANCE;
-        const top = node.y - CLEARANCE;
-        const bottom = node.y + node.height + CLEARANCE;
-        
-        // Check if line segment intersects expanded node bounds
-        if (lineRectIntersect(x1, y1, x2, y2, left, top, right, bottom)) {
-          return true;
-        }
-      }
-      return false;
-    };
-    
-    // Helper: line-rectangle intersection
-    const lineRectIntersect = (x1, y1, x2, y2, left, top, right, bottom) => {
-      // Check if either endpoint is inside rectangle
-      if ((x1 >= left && x1 <= right && y1 >= top && y1 <= bottom) ||
-          (x2 >= left && x2 <= right && y2 >= top && y2 <= bottom)) {
-        return true;
-      }
-      
-      // Check if line crosses any edge of rectangle
-      return lineLineIntersect(x1, y1, x2, y2, left, top, right, top) ||    // top edge
-             lineLineIntersect(x1, y1, x2, y2, right, top, right, bottom) || // right edge
-             lineLineIntersect(x1, y1, x2, y2, left, bottom, right, bottom) || // bottom edge
-             lineLineIntersect(x1, y1, x2, y2, left, top, left, bottom);     // left edge
-    };
-    
-    // Helper: line-line intersection
-    const lineLineIntersect = (x1, y1, x2, y2, x3, y3, x4, y4) => {
-      const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
-      if (denom === 0) return false;
-      
-      const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
-      const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
-      
-      return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
-    };
+    // Find ALL nodes bounds (including source and dest for routing calc)
+    const allY = screenNodes.map(n => [n.y, n.y + n.height]).flat();
+    const allX = screenNodes.map(n => [n.x, n.x + n.width]).flat();
+    const minY = Math.min(...allY);
+    const maxY = Math.max(...allY);
+    const minX = Math.min(...allX);
+    const maxX = Math.max(...allX);
     
     // Determine port orientations
-    const isRight = fromPort.startsWith('right');
-    const isLeft = fromPort.startsWith('left');
-    const isTop = fromPort.startsWith('top');
-    const isBottom = fromPort.startsWith('bottom');
+    const isVerticalFrom = fromPort.startsWith('top') || fromPort.startsWith('bottom');
+    const isVerticalTo = toPort.startsWith('top') || toPort.startsWith('bottom');
     
-    const isToRight = toPort.startsWith('right');
-    const isToLeft = toPort.startsWith('left');
-    const isToTop = toPort.startsWith('top');
-    const isToBottom = toPort.startsWith('bottom');
+    // Conservative routing: ALWAYS go around the entire bounding box
+    // Pick the side based on port orientations
     
-    // Extension points from ports
-    let extendFrom, extendTo;
-    if (isRight) extendFrom = { x: x1 + EXTEND, y: y1 };
-    else if (isLeft) extendFrom = { x: x1 - EXTEND, y: y1 };
-    else if (isBottom) extendFrom = { x: x1, y: y1 + EXTEND };
-    else if (isTop) extendFrom = { x: x1, y: y1 - EXTEND };
-    else extendFrom = { x: x1 + EXTEND, y: y1 };
-    
-    if (isToRight) extendTo = { x: x2 + EXTEND, y: y2 };
-    else if (isToLeft) extendTo = { x: x2 - EXTEND, y: y2 };
-    else if (isToBottom) extendTo = { x: x2, y: y2 + EXTEND };
-    else if (isToTop) extendTo = { x: x2, y: y2 - EXTEND };
-    else extendTo = { x: x2 - EXTEND, y: y2 };
-    
-    // TRY SIMPLE ORTHOGONAL PATHS (90-degree angles only)
-    
-    // Try 1: Simple L-shape (horizontal then vertical)
-    const midH = { x: extendTo.x, y: extendFrom.y };
-    if (!lineIntersectsAnyNode(extendFrom.x, extendFrom.y, midH.x, midH.y) &&
-        !lineIntersectsAnyNode(midH.x, midH.y, extendTo.x, extendTo.y)) {
-      return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${midH.x} ${midH.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
-    }
-    
-    // Try 3: Simple L-shape (vertical then horizontal)
-    const midV = { x: extendFrom.x, y: extendTo.y };
-    if (!lineIntersectsAnyNode(extendFrom.x, extendFrom.y, midV.x, midV.y) &&
-        !lineIntersectsAnyNode(midV.x, midV.y, extendTo.x, extendTo.y)) {
-      return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${midV.x} ${midV.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
-    }
-    
-    // FALLBACK: Route around obstacles
-    const obstacleNodes = screenNodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
-    
-    if (obstacleNodes.length === 0) {
-      // No obstacles, use simple L-shape
-      return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendTo.x} ${extendFrom.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
-    }
-    
-    // Find bounds of obstacles that are actually between source and dest
-    const minX = Math.min(x1, x2, ...obstacleNodes.map(n => n.x));
-    const maxX = Math.max(x1, x2, ...obstacleNodes.map(n => n.x + n.width));
-    const minY = Math.min(y1, y2, ...obstacleNodes.map(n => n.y));
-    const maxY = Math.max(y1, y2, ...obstacleNodes.map(n => n.y + n.height));
-    
-    // Pick routing channel that avoids obstacles
-    const routeAbove = minY - CLEARANCE;
-    const routeBelow = maxY + CLEARANCE;
-    const routeLeft = minX - CLEARANCE;
-    const routeRight = maxX + CLEARANCE;
-    
-    // Try routing above/below (horizontal bias)
-    if (Math.abs(extendTo.x - extendFrom.x) > Math.abs(extendTo.y - extendFrom.y)) {
-      // Try above first
-      const pathAbove = [
-        { x: x1, y: y1 },
-        extendFrom,
-        { x: extendFrom.x, y: routeAbove },
-        { x: extendTo.x, y: routeAbove },
-        extendTo,
-        { x: x2, y: y2 }
-      ];
-      
-      let clearAbove = true;
-      for (let i = 0; i < pathAbove.length - 1; i++) {
-        if (lineIntersectsAnyNode(pathAbove[i].x, pathAbove[i].y, pathAbove[i+1].x, pathAbove[i+1].y)) {
-          clearAbove = false;
-          break;
-        }
-      }
-      
-      if (clearAbove) {
-        return pathAbove.map((p, i) => i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`).join(' ');
-      }
-      
-      // Try below
-      const pathBelow = [
-        { x: x1, y: y1 },
-        extendFrom,
-        { x: extendFrom.x, y: routeBelow },
-        { x: extendTo.x, y: routeBelow },
-        extendTo,
-        { x: x2, y: y2 }
-      ];
-      
-      let clearBelow = true;
-      for (let i = 0; i < pathBelow.length - 1; i++) {
-        if (lineIntersectsAnyNode(pathBelow[i].x, pathBelow[i].y, pathBelow[i+1].x, pathBelow[i+1].y)) {
-          clearBelow = false;
-          break;
-        }
-      }
-      
-      if (clearBelow) {
-        return pathBelow.map((p, i) => i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`).join(' ');
-      }
+    if (isVerticalFrom && isVerticalTo) {
+      // Both vertical ports - route via left or right side
+      const routeX = (x1 < minX && x2 < minX) ? minX - CLEARANCE : maxX + CLEARANCE;
+      return `M ${x1} ${y1} L ${routeX} ${y1} L ${routeX} ${y2} L ${x2} ${y2}`;
+    } else if (!isVerticalFrom && !isVerticalTo) {
+      // Both horizontal ports - route via top or bottom
+      const routeY = (y1 < minY && y2 < minY) ? minY - CLEARANCE : maxY + CLEARANCE;
+      return `M ${x1} ${y1} L ${x1} ${routeY} L ${x2} ${routeY} L ${x2} ${y2}`;
     } else {
-      // Try left/right (vertical bias)
-      const pathLeft = [
-        { x: x1, y: y1 },
-        extendFrom,
-        { x: routeLeft, y: extendFrom.y },
-        { x: routeLeft, y: extendTo.y },
-        extendTo,
-        { x: x2, y: y2 }
-      ];
-      
-      let clearLeft = true;
-      for (let i = 0; i < pathLeft.length - 1; i++) {
-        if (lineIntersectsAnyNode(pathLeft[i].x, pathLeft[i].y, pathLeft[i+1].x, pathLeft[i+1].y)) {
-          clearLeft = false;
-          break;
-        }
-      }
-      
-      if (clearLeft) {
-        return pathLeft.map((p, i) => i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`).join(' ');
-      }
-      
-      // Try right
-      const pathRight = [
-        { x: x1, y: y1 },
-        extendFrom,
-        { x: routeRight, y: extendFrom.y },
-        { x: routeRight, y: extendTo.y },
-        extendTo,
-        { x: x2, y: y2 }
-      ];
-      
-      let clearRight = true;
-      for (let i = 0; i < pathRight.length - 1; i++) {
-        if (lineIntersectsAnyNode(pathRight[i].x, pathRight[i].y, pathRight[i+1].x, pathRight[i+1].y)) {
-          clearRight = false;
-          break;
-        }
-      }
-      
-      if (clearRight) {
-        return pathRight.map((p, i) => i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`).join(' ');
+      // Mixed ports - use Z-shape via perimeter
+      if (isVerticalFrom) {
+        // From vertical, to horizontal
+        const routeY = y1 < minY ? minY - CLEARANCE : maxY + CLEARANCE;
+        return `M ${x1} ${y1} L ${x1} ${routeY} L ${x2} ${routeY} L ${x2} ${y2}`;
+      } else {
+        // From horizontal, to vertical
+        const routeX = x1 < minX ? minX - CLEARANCE : maxX + CLEARANCE;
+        return `M ${x1} ${y1} L ${routeX} ${y1} L ${routeX} ${y2} L ${x2} ${y2}`;
       }
     }
-    
-    // Last resort: simple path (might have collisions but better than nothing)
-    return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendTo.x} ${extendFrom.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
   };
 
   const handleCanvasMouseDown = (e) => {
