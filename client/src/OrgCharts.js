@@ -297,7 +297,7 @@ function OrgCharts({ user, onBack }) {
     // Calculate size number: default = 0, each step of 20 = ±1
     const diff = value - defaultValue;
     const sizeNum = Math.round(diff / STEP);
-    return sizeNum === 0 ? 'Normal' : (sizeNum > 0 ? `+${sizeNum}` : `${sizeNum}`);
+    return sizeNum === 0 ? '0' : (sizeNum > 0 ? `+${sizeNum}` : `${sizeNum}`);
   };
 
   const resizeNode = (nodeId, dimension, direction) => {
@@ -1278,9 +1278,11 @@ function OrgCharts({ user, onBack }) {
                       <button 
                         className="btn-secondary"
                         onClick={() => {
-                          resizeNode(editingNode.id, 'width', 'decrease');
-                          const updated = nodes.find(n => n.id === editingNode.id);
-                          if (updated) setEditingNode(updated);
+                          const newWidth = editingNode.width - STEP;
+                          if (newWidth >= MIN_WIDTH) {
+                            resizeNode(editingNode.id, 'width', 'decrease');
+                            setEditingNode({ ...editingNode, width: newWidth });
+                          }
                         }}
                       >
                         −
@@ -1289,9 +1291,9 @@ function OrgCharts({ user, onBack }) {
                       <button 
                         className="btn-secondary"
                         onClick={() => {
+                          const newWidth = editingNode.width + STEP;
                           resizeNode(editingNode.id, 'width', 'increase');
-                          const updated = nodes.find(n => n.id === editingNode.id);
-                          if (updated) setEditingNode(updated);
+                          setEditingNode({ ...editingNode, width: newWidth });
                         }}
                       >
                         +
@@ -1305,9 +1307,11 @@ function OrgCharts({ user, onBack }) {
                       <button 
                         className="btn-secondary"
                         onClick={() => {
-                          resizeNode(editingNode.id, 'height', 'decrease');
-                          const updated = nodes.find(n => n.id === editingNode.id);
-                          if (updated) setEditingNode(updated);
+                          const newHeight = editingNode.height - STEP;
+                          if (newHeight >= MIN_HEIGHT) {
+                            resizeNode(editingNode.id, 'height', 'decrease');
+                            setEditingNode({ ...editingNode, height: newHeight });
+                          }
                         }}
                       >
                         −
@@ -1316,9 +1320,9 @@ function OrgCharts({ user, onBack }) {
                       <button 
                         className="btn-secondary"
                         onClick={() => {
+                          const newHeight = editingNode.height + STEP;
                           resizeNode(editingNode.id, 'height', 'increase');
-                          const updated = nodes.find(n => n.id === editingNode.id);
-                          if (updated) setEditingNode(updated);
+                          setEditingNode({ ...editingNode, height: newHeight });
                         }}
                       >
                         +
@@ -1330,8 +1334,7 @@ function OrgCharts({ user, onBack }) {
                     className="btn-reset"
                     onClick={() => {
                       resetNodeSize(editingNode.id);
-                      const updated = nodes.find(n => n.id === editingNode.id);
-                      if (updated) setEditingNode(updated);
+                      setEditingNode({ ...editingNode, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
                     }}
                   >
                     ↺ Reset to Default
