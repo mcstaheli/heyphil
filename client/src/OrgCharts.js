@@ -490,9 +490,10 @@ function OrgCharts({ user, onBack }) {
         const midX = (startX + endX) / 2;
         let hasCollision = false;
         
-        // Check each segment for collisions
+        // Check ALL segments for collisions (including vertical midpoint!)
         for (const node of screenNodes) {
           if (lineIntersectsNode(startX, y1, midX, y1, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(midX, y1, midX, y2, node, fromNodeId, toNodeId) ||  // VERTICAL segment!
               lineIntersectsNode(midX, y2, endX, y2, node, fromNodeId, toNodeId)) {
             hasCollision = true;
             break;
@@ -529,9 +530,10 @@ function OrgCharts({ user, onBack }) {
         const midY = (startY + endY) / 2;
         let hasCollision = false;
         
-        // Check each segment for collisions
+        // Check ALL segments for collisions (including horizontal midpoint!)
         for (const node of screenNodes) {
           if (lineIntersectsNode(x1, startY, x1, midY, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(x1, midY, x2, midY, node, fromNodeId, toNodeId) ||  // HORIZONTAL segment!
               lineIntersectsNode(x2, midY, x2, endY, node, fromNodeId, toNodeId)) {
             hasCollision = true;
             break;
