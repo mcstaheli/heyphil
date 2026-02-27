@@ -342,18 +342,38 @@ function OrgCharts({ user, onBack }) {
     if (isHorizontalPort(fromPort) && isHorizontalPort(toPort)) {
       const startX = isRightSide(fromPort) ? x1 + GAP : x1 - GAP;
       const endX = isRightSide(toPort) ? x2 + GAP : x2 - GAP;
-      const midX = (startX + endX) / 2;
       
-      return `M ${x1} ${y1} L ${startX} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${endX} ${y2} L ${x2} ${y2}`;
+      // Check if we're going backward (need smart routing)
+      const goingBackward = (isRightSide(fromPort) && x2 < x1) || (isLeftSide(fromPort) && x2 > x1);
+      
+      if (goingBackward) {
+        // Route around: out → down/up → across → down/up → in
+        const clearanceY = y1 < y2 ? Math.min(y1, y2) - GAP * 2 : Math.max(y1, y2) + GAP * 2;
+        return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${clearanceY} L ${endX} ${clearanceY} L ${endX} ${y2} L ${x2} ${y2}`;
+      } else {
+        // Simple routing: out → midpoint vertical → in
+        const midX = (startX + endX) / 2;
+        return `M ${x1} ${y1} L ${startX} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${endX} ${y2} L ${x2} ${y2}`;
+      }
     }
     
     // Vertical → Vertical (top/bottom to top/bottom)
     if (isVerticalPort(fromPort) && isVerticalPort(toPort)) {
       const startY = isBottomSide(fromPort) ? y1 + GAP : y1 - GAP;
       const endY = isBottomSide(toPort) ? y2 + GAP : y2 - GAP;
-      const midY = (startY + endY) / 2;
       
-      return `M ${x1} ${y1} L ${x1} ${startY} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${endY} L ${x2} ${y2}`;
+      // Check if we're going backward (need smart routing)
+      const goingBackward = (isBottomSide(fromPort) && y2 < y1) || (isTopSide(fromPort) && y2 > y1);
+      
+      if (goingBackward) {
+        // Route around: out → left/right → down/up → left/right → in
+        const clearanceX = x1 < x2 ? Math.min(x1, x2) - GAP * 2 : Math.max(x1, x2) + GAP * 2;
+        return `M ${x1} ${y1} L ${x1} ${startY} L ${clearanceX} ${startY} L ${clearanceX} ${endY} L ${x2} ${endY} L ${x2} ${y2}`;
+      } else {
+        // Simple routing: out → midpoint horizontal → in
+        const midY = (startY + endY) / 2;
+        return `M ${x1} ${y1} L ${x1} ${startY} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${endY} L ${x2} ${y2}`;
+      }
     }
     
     // Horizontal → Vertical (simple L or Z-shape)
