@@ -818,7 +818,6 @@ function OrgCharts({ user, onBack }) {
 
         <div className="chart-browser">
           <div className="chart-browser-header">
-            <h2>Your Org Charts</h2>
             <button className="btn-primary" onClick={createChart}>+ New Chart</button>
           </div>
 

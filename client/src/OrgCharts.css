@@ -521,15 +521,9 @@
 
 .chart-browser-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-bottom: 32px;
-}
-
-.chart-browser-header h2 {
-  font-size: 24px;
-  color: #212529;
-  margin: 0;
 }
 
 .chart-browser-loading {
