@@ -8,6 +8,7 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { google } from 'googleapis';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -120,14 +121,31 @@ app.post('/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-// Google Sheets API
-const getSheets = (user) => {
-  const auth = new google.auth.OAuth2();
-  auth.setCredentials({
-    access_token: user.accessToken,
-    refresh_token: user.refreshToken
-  });
-  return google.sheets({ version: 'v4', auth });
+// Google Sheets API with Service Account
+const getSheets = () => {
+  // Try to use service account first (preferred for automation)
+  const serviceAccountPath = path.join(__dirname, '..', 'service-account.json');
+  
+  if (fs.existsSync(serviceAccountPath)) {
+    const credentials = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+    return google.sheets({ version: 'v4', auth });
+  }
+  
+  // Fallback to environment variable (for Railway deployment)
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+    return google.sheets({ version: 'v4', auth });
+  }
+  
+  throw new Error('No service account credentials found. Please set up service-account.json or GOOGLE_SERVICE_ACCOUNT_JSON env variable.');
 };
 
 // Log activity to Log sheet (now includes Card ID)
@@ -153,7 +171,7 @@ const logActivity = async (sheets, spreadsheetId, cardTitle, action, user, detai
 // Get all charts for current user
 app.get('/api/orgcharts', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORGCHART_SHEET_ID || process.env.ORIGINATION_SHEET_ID;
     
     if (!spreadsheetId) {
@@ -185,7 +203,7 @@ app.get('/api/orgcharts', requireAuth, async (req, res) => {
 // Get specific chart with nodes
 app.get('/api/orgcharts/:id', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORGCHART_SHEET_ID || process.env.ORIGINATION_SHEET_ID;
     const chartId = req.params.id;
     
@@ -240,7 +258,7 @@ app.get('/api/orgcharts/:id', requireAuth, async (req, res) => {
 // Create new chart
 app.post('/api/orgcharts', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORGCHART_SHEET_ID || process.env.ORIGINATION_SHEET_ID;
     const { name } = req.body;
     
@@ -266,7 +284,7 @@ app.post('/api/orgcharts', requireAuth, async (req, res) => {
 // Update chart nodes
 app.put('/api/orgcharts/:id', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORGCHART_SHEET_ID || process.env.ORIGINATION_SHEET_ID;
     const chartId = req.params.id;
     const { nodes } = req.body;
@@ -339,7 +357,7 @@ app.put('/api/orgcharts/:id', requireAuth, async (req, res) => {
 // Delete chart
 app.delete('/api/orgcharts/:id', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORGCHART_SHEET_ID || process.env.ORIGINATION_SHEET_ID;
     const chartId = req.params.id;
     
@@ -393,7 +411,7 @@ app.delete('/api/orgcharts/:id', requireAuth, async (req, res) => {
 // ========== ORIGINATION BOARD ENDPOINTS ==========
 app.get('/api/origination/board', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     if (!spreadsheetId) {
@@ -521,7 +539,7 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
 app.post('/api/origination/card', requireAuth, async (req, res) => {
   try {
     const { title, description, column, owner, notes, dealValue, projectType } = req.body;
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     // Get all existing cards to find highest ID
@@ -579,7 +597,7 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params; // Numeric card ID
     const { title, description, column, owner, notes, dealValue, projectType } = req.body;
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     // Find the row by Card ID
@@ -643,7 +661,7 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
 app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params; // Numeric card ID
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     // Find the row by Card ID
@@ -685,7 +703,7 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
 app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
   try {
     const { rowIndex, completed, cardId, cardTitle } = req.body;
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     const user = req.user.name || req.user.email;
     
@@ -723,7 +741,7 @@ app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
 app.post('/api/origination/action', requireAuth, async (req, res) => {
   try {
     const { cardId, cardTitle, text } = req.body;
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     await sheets.spreadsheets.values.append({
@@ -746,7 +764,7 @@ app.post('/api/origination/action', requireAuth, async (req, res) => {
 app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
   try {
     const { cardIds, updates } = req.body; // updates: { column?, owner? }
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     const allData = await sheets.spreadsheets.values.get({
@@ -812,7 +830,7 @@ app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
 // Export to CSV
 app.get('/api/origination/export', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets(req.user);
+    const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
     const boardResponse = await sheets.spreadsheets.values.get({
