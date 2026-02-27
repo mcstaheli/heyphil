@@ -80,6 +80,15 @@ const requireAuth = (req, res, next) => {
   }
 };
 
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    serviceAccount: !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON || fs.existsSync(path.join(__dirname, '..', 'service-account.json')),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Routes
 app.get('/auth/google', passport.authenticate('google'));
 
@@ -123,29 +132,38 @@ app.post('/auth/logout', (req, res) => {
 
 // Google Sheets API with Service Account
 const getSheets = () => {
-  // Try to use service account first (preferred for automation)
-  const serviceAccountPath = path.join(__dirname, '..', 'service-account.json');
-  
-  if (fs.existsSync(serviceAccountPath)) {
-    const credentials = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets']
-    });
-    return google.sheets({ version: 'v4', auth });
+  try {
+    // Try to use service account first (preferred for automation)
+    const serviceAccountPath = path.join(__dirname, '..', 'service-account.json');
+    
+    if (fs.existsSync(serviceAccountPath)) {
+      console.log('Using local service-account.json');
+      const credentials = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+      const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
+      return google.sheets({ version: 'v4', auth });
+    }
+    
+    // Fallback to environment variable (for Railway deployment)
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      console.log('Using GOOGLE_SERVICE_ACCOUNT_JSON env variable');
+      const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+      console.log('Service account email:', credentials.client_email);
+      const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
+      return google.sheets({ version: 'v4', auth });
+    }
+    
+    console.error('No service account credentials found!');
+    throw new Error('No service account credentials found. Please set up service-account.json or GOOGLE_SERVICE_ACCOUNT_JSON env variable.');
+  } catch (error) {
+    console.error('Failed to initialize Google Sheets:', error.message);
+    throw error;
   }
-  
-  // Fallback to environment variable (for Railway deployment)
-  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets']
-    });
-    return google.sheets({ version: 'v4', auth });
-  }
-  
-  throw new Error('No service account credentials found. Please set up service-account.json or GOOGLE_SERVICE_ACCOUNT_JSON env variable.');
 };
 
 // Log activity to Log sheet (now includes Card ID)
@@ -258,9 +276,13 @@ app.get('/api/orgcharts/:id', requireAuth, async (req, res) => {
 // Create new chart
 app.post('/api/orgcharts', requireAuth, async (req, res) => {
   try {
+    console.log('Creating chart for user:', req.user.email);
     const sheets = getSheets();
     const spreadsheetId = process.env.ORGCHART_SHEET_ID || process.env.ORIGINATION_SHEET_ID;
     const { name } = req.body;
+    
+    console.log('Spreadsheet ID:', spreadsheetId);
+    console.log('Chart name:', name);
     
     const chartId = Date.now().toString();
     const now = new Date().toISOString();
@@ -274,10 +296,12 @@ app.post('/api/orgcharts', requireAuth, async (req, res) => {
       }
     });
     
+    console.log('Chart created successfully:', chartId);
     res.json({ id: chartId, name, owner: req.user.email, createdAt: now, updatedAt: now, nodes: [] });
   } catch (error) {
-    console.error('Failed to create chart:', error);
-    res.status(500).json({ error: 'Failed to create chart' });
+    console.error('Failed to create chart:', error.message);
+    console.error('Stack:', error.stack);
+    res.status(500).json({ error: 'Failed to create chart', details: error.message });
   }
 });
 
