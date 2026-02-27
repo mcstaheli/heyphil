@@ -286,41 +286,27 @@ function OrgCharts({ user, onBack }) {
     setNodes(nodes.map(n => n.id === nodeId ? { ...n, color } : n));
   };
 
-  const resizeNode = (nodeId, direction) => {
-    const STANDARD_WIDTH = 200;
-    const STANDARD_HEIGHT = 80;
+  const resizeNode = (nodeId, dimension, direction) => {
     const STEP = 20;
+    const MIN_WIDTH = 100;
+    const MIN_HEIGHT = 60;
     
     setNodes(nodes.map(n => {
       if (n.id !== nodeId) return n;
       
-      if (direction === 'increase') {
-        // Increase both dimensions
-        return {
-          ...n,
-          width: n.width + STEP,
-          height: n.height + STEP
-        };
-      } else {
-        // Decrease
-        const newWidth = Math.max(100, n.width - STEP);
-        const newHeight = Math.max(40, n.height - STEP);
-        
-        // If at or above standard size, shrink both dimensions
-        if (n.width >= STANDARD_WIDTH || n.height >= STANDARD_HEIGHT) {
-          return {
-            ...n,
-            width: newWidth,
-            height: newHeight
-          };
-        } else {
-          // Below standard size - only shrink vertically
-          return {
-            ...n,
-            height: newHeight
-          };
-        }
+      if (dimension === 'width') {
+        const newWidth = direction === 'increase' 
+          ? n.width + STEP 
+          : Math.max(MIN_WIDTH, n.width - STEP);
+        return { ...n, width: newWidth };
+      } else if (dimension === 'height') {
+        const newHeight = direction === 'increase'
+          ? n.height + STEP
+          : Math.max(MIN_HEIGHT, n.height - STEP);
+        return { ...n, height: newHeight };
       }
+      
+      return n;
     }));
   };
 
@@ -1014,6 +1000,24 @@ function OrgCharts({ user, onBack }) {
       {/* Edit Node Modal */}
       {editingNode && (
         <div className="modal-overlay" onClick={() => setEditingNode(null)}>
+          {/* Floating preview node */}
+          <div className="node-preview" onClick={(e) => e.stopPropagation()}>
+            <div 
+              className="canvas-node"
+              style={{
+                width: editingNode.width,
+                height: editingNode.height,
+                borderColor: editingNode.color || '#667eea',
+                position: 'relative',
+                margin: '0 auto'
+              }}
+            >
+              <div className="node-content">
+                <span>{editingNode.text}</span>
+              </div>
+            </div>
+          </div>
+
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Edit Node</h2>
@@ -1037,28 +1041,55 @@ function OrgCharts({ user, onBack }) {
               </div>
 
               <div className="form-group">
-                <label>Size</label>
+                <label>Width</label>
                 <div className="size-controls">
                   <button 
                     className="btn-secondary"
                     onClick={() => {
-                      resizeNode(editingNode.id, 'decrease');
+                      resizeNode(editingNode.id, 'width', 'decrease');
                       const updated = nodes.find(n => n.id === editingNode.id);
                       if (updated) setEditingNode(updated);
                     }}
                   >
-                    − Smaller
+                    −
                   </button>
-                  <span>{editingNode.width}×{editingNode.height}px</span>
+                  <span>{editingNode.width}px</span>
                   <button 
                     className="btn-secondary"
                     onClick={() => {
-                      resizeNode(editingNode.id, 'increase');
+                      resizeNode(editingNode.id, 'width', 'increase');
                       const updated = nodes.find(n => n.id === editingNode.id);
                       if (updated) setEditingNode(updated);
                     }}
                   >
-                    + Larger
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Height</label>
+                <div className="size-controls">
+                  <button 
+                    className="btn-secondary"
+                    onClick={() => {
+                      resizeNode(editingNode.id, 'height', 'decrease');
+                      const updated = nodes.find(n => n.id === editingNode.id);
+                      if (updated) setEditingNode(updated);
+                    }}
+                  >
+                    −
+                  </button>
+                  <span>{editingNode.height}px</span>
+                  <button 
+                    className="btn-secondary"
+                    onClick={() => {
+                      resizeNode(editingNode.id, 'height', 'increase');
+                      const updated = nodes.find(n => n.id === editingNode.id);
+                      if (updated) setEditingNode(updated);
+                    }}
+                  >
+                    +
                   </button>
                 </div>
               </div>
