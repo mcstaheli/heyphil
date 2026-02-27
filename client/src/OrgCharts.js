@@ -379,6 +379,122 @@ function OrgCharts({ user, onBack }) {
     setConnections(connections.map(c => c.id === connId ? { ...c, style } : c));
   };
 
+  const updateConnectionWaypoints = (connId, waypoints) => {
+    setConnections(connections.map(c => c.id === connId ? { ...c, waypoints } : c));
+  };
+
+  // A* Pathfinding for collision-free routing
+  const findPathAStar = (startX, startY, endX, endY, fromNodeId, toNodeId, screenNodes) => {
+    const GRID_SIZE = 20;
+    const PADDING = 40;
+    
+    // Convert coordinates to grid
+    const toGrid = (x, y) => ({
+      x: Math.round(x / GRID_SIZE),
+      y: Math.round(y / GRID_SIZE)
+    });
+    
+    const fromGrid = (gx, gy) => ({
+      x: gx * GRID_SIZE,
+      y: gy * GRID_SIZE
+    });
+    
+    // Check if grid cell is blocked by a node
+    const isBlocked = (gx, gy) => {
+      const worldPos = fromGrid(gx, gy);
+      for (const node of screenNodes) {
+        if (node.id === fromNodeId || node.id === toNodeId) continue;
+        
+        if (worldPos.x >= node.x - PADDING &&
+            worldPos.x <= node.x + node.width + PADDING &&
+            worldPos.y >= node.y - PADDING &&
+            worldPos.y <= node.y + node.height + PADDING) {
+          return true;
+        }
+      }
+      return false;
+    };
+    
+    const start = toGrid(startX, startY);
+    const end = toGrid(endX, endY);
+    
+    // Manhattan distance heuristic
+    const heuristic = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    
+    const openSet = [start];
+    const cameFrom = new Map();
+    const gScore = new Map();
+    const fScore = new Map();
+    
+    const key = (p) => `${p.x},${p.y}`;
+    
+    gScore.set(key(start), 0);
+    fScore.set(key(start), heuristic(start, end));
+    
+    // Orthogonal directions only
+    const neighbors = [
+      { x: 0, y: -1 }, // up
+      { x: 1, y: 0 },  // right
+      { x: 0, y: 1 },  // down
+      { x: -1, y: 0 }  // left
+    ];
+    
+    let iterations = 0;
+    const MAX_ITERATIONS = 1000;
+    
+    while (openSet.length > 0 && iterations < MAX_ITERATIONS) {
+      iterations++;
+      
+      // Find node with lowest fScore
+      let current = openSet[0];
+      let currentIdx = 0;
+      for (let i = 1; i < openSet.length; i++) {
+        if ((fScore.get(key(openSet[i])) || Infinity) < (fScore.get(key(current)) || Infinity)) {
+          current = openSet[i];
+          currentIdx = i;
+        }
+      }
+      
+      // Reached goal
+      if (current.x === end.x && current.y === end.y) {
+        // Reconstruct path
+        const path = [end];
+        let curr = end;
+        while (cameFrom.has(key(curr))) {
+          curr = cameFrom.get(key(curr));
+          path.unshift(curr);
+        }
+        
+        // Convert grid path to world coordinates
+        return path.map(p => fromGrid(p.x, p.y));
+      }
+      
+      openSet.splice(currentIdx, 1);
+      
+      // Check neighbors
+      for (const dir of neighbors) {
+        const neighbor = { x: current.x + dir.x, y: current.y + dir.y };
+        
+        if (isBlocked(neighbor.x, neighbor.y)) continue;
+        
+        const tentativeGScore = (gScore.get(key(current)) || Infinity) + 1;
+        
+        if (tentativeGScore < (gScore.get(key(neighbor)) || Infinity)) {
+          cameFrom.set(key(neighbor), current);
+          gScore.set(key(neighbor), tentativeGScore);
+          fScore.set(key(neighbor), tentativeGScore + heuristic(neighbor, end));
+          
+          if (!openSet.some(p => p.x === neighbor.x && p.y === neighbor.y)) {
+            openSet.push(neighbor);
+          }
+        }
+      }
+    }
+    
+    // No path found - return direct line
+    return [{ x: startX, y: startY }, { x: endX, y: endY }];
+  };
+
   // Check if a horizontal/vertical line segment intersects a node
   const lineIntersectsNode = (x1, y1, x2, y2, node, fromNodeId, toNodeId) => {
     // Don't check collision with source or destination nodes
@@ -451,8 +567,8 @@ function OrgCharts({ user, onBack }) {
     return minLeft - GAP;
   };
 
-  // Smart orthogonal routing - minimal segments
-  const getElbowPath = (x1, y1, x2, y2, fromPort, toPort, fromNodeId, toNodeId) => {
+  // Smart orthogonal routing with A* pathfinding
+  const getElbowPath = (x1, y1, x2, y2, fromPort, toPort, fromNodeId, toNodeId, waypoints) => {
     const GAP = 20;
     
     // Transform nodes to screen space for collision detection
@@ -464,16 +580,41 @@ function OrgCharts({ user, onBack }) {
       height: n.height * zoom
     }));
     
-    // Determine port orientation
-    const isHorizontalPort = (port) => port.startsWith('right') || port.startsWith('left');
-    const isVerticalPort = (port) => port.startsWith('top') || port.startsWith('bottom');
-    const isRightSide = (port) => port.startsWith('right');
-    const isLeftSide = (port) => port.startsWith('left');
-    const isTopSide = (port) => port.startsWith('top');
-    const isBottomSide = (port) => port.startsWith('bottom');
+    // If waypoints exist, use them
+    if (waypoints && waypoints.length > 0) {
+      const points = [{ x: x1, y: y1 }, ...waypoints, { x: x2, y: y2 }];
+      let path = `M ${points[0].x} ${points[0].y}`;
+      for (let i = 1; i < points.length; i++) {
+        path += ` L ${points[i].x} ${points[i].y}`;
+      }
+      return path;
+    }
     
-    // Horizontal → Horizontal (right/left to right/left)
-    if (isHorizontalPort(fromPort) && isHorizontalPort(toPort)) {
+    // Use A* pathfinding for automatic routing
+    const pathPoints = findPathAStar(x1, y1, x2, y2, fromNodeId, toNodeId, screenNodes);
+    
+    if (pathPoints.length === 0) {
+      return `M ${x1} ${y1} L ${x2} ${y2}`;
+    }
+    
+    let path = `M ${pathPoints[0].x} ${pathPoints[0].y}`;
+    for (let i = 1; i < pathPoints.length; i++) {
+      path += ` L ${pathPoints[i].x} ${pathPoints[i].y}`;
+    }
+    return path;
+  };
+
+  const handleCanvasMouseDown = (e) => {
+    if (e.target === canvasRef.current) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+      setSelectedNode(null);
+      setSelectedConnection(null);
+    }
+  };
+
+  const OLD_ROUTING_TO_DELETE = () => {
+    if (false && isHorizontalPort(fromPort) && isHorizontalPort(toPort)) {
       const startX = isRightSide(fromPort) ? x1 + GAP : x1 - GAP;
       const endX = isRightSide(toPort) ? x2 + GAP : x2 - GAP;
       
@@ -618,15 +759,6 @@ function OrgCharts({ user, onBack }) {
       return `M ${x1} ${y1} L ${x1} ${startY} L ${midX} ${startY} L ${midX} ${y2} L ${x2} ${y2}`;
     }
     
-    return `M ${x1} ${y1} L ${x2} ${y2}`;
-  };
-
-  const handleCanvasMouseDown = (e) => {
-    if (e.target === canvasRef.current) {
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-      setSelectedNode(null);
-      setSelectedConnection(null);
     }
   };
 
@@ -1040,7 +1172,8 @@ function OrgCharts({ user, onBack }) {
               conn.fromPort || 'bottom',
               conn.toPort || 'top',
               conn.from,
-              conn.to
+              conn.to,
+              conn.waypoints
             );
 
             const isSelected = selectedConnection === conn.id;
