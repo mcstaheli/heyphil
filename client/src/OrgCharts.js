@@ -350,8 +350,76 @@ function OrgCharts({ user, onBack }) {
     }));
   };
 
+  // Check if a horizontal/vertical line segment intersects a node
+  const lineIntersectsNode = (x1, y1, x2, y2, node, fromNodeId, toNodeId) => {
+    // Don't check collision with source or destination nodes
+    if (node.id === fromNodeId || node.id === toNodeId) return false;
+    
+    const PADDING = 20; // Extra clearance around nodes
+    const left = node.x - PADDING;
+    const right = node.x + node.width + PADDING;
+    const top = node.y - PADDING;
+    const bottom = node.y + node.height + PADDING;
+    
+    // Check if horizontal line intersects node
+    if (y1 === y2) {
+      const minX = Math.min(x1, x2);
+      const maxX = Math.max(x1, x2);
+      return y1 >= top && y1 <= bottom && maxX >= left && minX <= right;
+    }
+    
+    // Check if vertical line intersects node
+    if (x1 === x2) {
+      const minY = Math.min(y1, y2);
+      const maxY = Math.max(y1, y2);
+      return x1 >= left && x1 <= right && maxY >= top && minY <= bottom;
+    }
+    
+    return false;
+  };
+
+  // Find safe clearance Y coordinate that avoids all nodes
+  const findSafeClearanceY = (nodes, fromNodeId, toNodeId, preferredY) => {
+    const allNodes = nodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
+    if (allNodes.length === 0) return preferredY;
+    
+    // Try above all nodes
+    const maxBottom = Math.max(...allNodes.map(n => n.y + n.height));
+    const minTop = Math.min(...allNodes.map(n => n.y));
+    
+    const GAP = 40;
+    
+    // If preferred is below, go below all
+    if (preferredY > maxBottom) {
+      return maxBottom + GAP;
+    }
+    
+    // Otherwise go above all
+    return minTop - GAP;
+  };
+
+  // Find safe clearance X coordinate that avoids all nodes
+  const findSafeClearanceX = (nodes, fromNodeId, toNodeId, preferredX) => {
+    const allNodes = nodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
+    if (allNodes.length === 0) return preferredX;
+    
+    // Try left or right of all nodes
+    const maxRight = Math.max(...allNodes.map(n => n.x + n.width));
+    const minLeft = Math.min(...allNodes.map(n => n.x));
+    
+    const GAP = 40;
+    
+    // If preferred is to the right, go right of all
+    if (preferredX > maxRight) {
+      return maxRight + GAP;
+    }
+    
+    // Otherwise go left of all
+    return minLeft - GAP;
+  };
+
   // Smart orthogonal routing - minimal segments
-  const getElbowPath = (x1, y1, x2, y2, fromPort, toPort) => {
+  const getElbowPath = (x1, y1, x2, y2, fromPort, toPort, fromNodeId, toNodeId) => {
     const GAP = 20;
     
     // Determine port orientation
@@ -372,11 +440,31 @@ function OrgCharts({ user, onBack }) {
       
       if (goingBackward) {
         // Route around: out → down/up → across → down/up → in
-        const clearanceY = y1 < y2 ? Math.min(y1, y2) - GAP * 2 : Math.max(y1, y2) + GAP * 2;
+        const preferredY = y1 < y2 ? Math.min(y1, y2) - GAP * 2 : Math.max(y1, y2) + GAP * 2;
+        const clearanceY = findSafeClearanceY(nodes, fromNodeId, toNodeId, preferredY);
         return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${clearanceY} L ${endX} ${clearanceY} L ${endX} ${y2} L ${x2} ${y2}`;
       } else {
-        // Simple routing: out → midpoint vertical → in
+        // Check if horizontal path collides with any nodes
         const midX = (startX + endX) / 2;
+        let hasCollision = false;
+        
+        // Check each segment for collisions
+        for (const node of nodes) {
+          if (lineIntersectsNode(startX, y1, midX, y1, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(midX, y2, endX, y2, node, fromNodeId, toNodeId)) {
+            hasCollision = true;
+            break;
+          }
+        }
+        
+        if (hasCollision) {
+          // Route around obstacles
+          const preferredY = y1 < y2 ? Math.min(y1, y2) - GAP * 2 : Math.max(y1, y2) + GAP * 2;
+          const clearanceY = findSafeClearanceY(nodes, fromNodeId, toNodeId, preferredY);
+          return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${clearanceY} L ${endX} ${clearanceY} L ${endX} ${y2} L ${x2} ${y2}`;
+        }
+        
+        // Simple routing: out → midpoint vertical → in
         return `M ${x1} ${y1} L ${startX} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${endX} ${y2} L ${x2} ${y2}`;
       }
     }
@@ -391,11 +479,31 @@ function OrgCharts({ user, onBack }) {
       
       if (goingBackward) {
         // Route around: out → left/right → down/up → left/right → in
-        const clearanceX = x1 < x2 ? Math.min(x1, x2) - GAP * 2 : Math.max(x1, x2) + GAP * 2;
+        const preferredX = x1 < x2 ? Math.min(x1, x2) - GAP * 2 : Math.max(x1, x2) + GAP * 2;
+        const clearanceX = findSafeClearanceX(nodes, fromNodeId, toNodeId, preferredX);
         return `M ${x1} ${y1} L ${x1} ${startY} L ${clearanceX} ${startY} L ${clearanceX} ${endY} L ${x2} ${endY} L ${x2} ${y2}`;
       } else {
-        // Simple routing: out → midpoint horizontal → in
+        // Check if vertical path collides with any nodes
         const midY = (startY + endY) / 2;
+        let hasCollision = false;
+        
+        // Check each segment for collisions
+        for (const node of nodes) {
+          if (lineIntersectsNode(x1, startY, x1, midY, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(x2, midY, x2, endY, node, fromNodeId, toNodeId)) {
+            hasCollision = true;
+            break;
+          }
+        }
+        
+        if (hasCollision) {
+          // Route around obstacles
+          const preferredX = x1 < x2 ? Math.min(x1, x2) - GAP * 2 : Math.max(x1, x2) + GAP * 2;
+          const clearanceX = findSafeClearanceX(nodes, fromNodeId, toNodeId, preferredX);
+          return `M ${x1} ${y1} L ${x1} ${startY} L ${clearanceX} ${startY} L ${clearanceX} ${endY} L ${x2} ${endY} L ${x2} ${y2}`;
+        }
+        
+        // Simple routing: out → midpoint horizontal → in
         return `M ${x1} ${y1} L ${x1} ${startY} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${endY} L ${x2} ${y2}`;
       }
     }
@@ -404,13 +512,32 @@ function OrgCharts({ user, onBack }) {
     if (isHorizontalPort(fromPort) && isVerticalPort(toPort)) {
       // Direct L-shape if target is in the right direction
       if ((isRightSide(fromPort) && x2 >= x1) || (isLeftSide(fromPort) && x2 <= x1)) {
+        // Check for collisions on the direct path
+        let hasCollision = false;
+        for (const node of nodes) {
+          if (lineIntersectsNode(x1, y1, x2, y1, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(x2, y1, x2, y2, node, fromNodeId, toNodeId)) {
+            hasCollision = true;
+            break;
+          }
+        }
+        
+        if (hasCollision) {
+          // Route around with Z-shape
+          const startX = isRightSide(fromPort) ? x1 + GAP : x1 - GAP;
+          const preferredY = (y1 + y2) / 2;
+          const midY = findSafeClearanceY(nodes, fromNodeId, toNodeId, preferredY);
+          return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+        }
+        
         // Clean L: horizontal to target's X, then vertical to target
         return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
       }
       
       // Z-shape when target is behind
       const startX = isRightSide(fromPort) ? x1 + GAP : x1 - GAP;
-      const midY = (y1 + y2) / 2;
+      const preferredY = (y1 + y2) / 2;
+      const midY = findSafeClearanceY(nodes, fromNodeId, toNodeId, preferredY);
       return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
     }
     
@@ -418,13 +545,32 @@ function OrgCharts({ user, onBack }) {
     if (isVerticalPort(fromPort) && isHorizontalPort(toPort)) {
       // Direct L-shape if target is in the right direction
       if ((isBottomSide(fromPort) && y2 >= y1) || (isTopSide(fromPort) && y2 <= y1)) {
+        // Check for collisions on the direct path
+        let hasCollision = false;
+        for (const node of nodes) {
+          if (lineIntersectsNode(x1, y1, x1, y2, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(x1, y2, x2, y2, node, fromNodeId, toNodeId)) {
+            hasCollision = true;
+            break;
+          }
+        }
+        
+        if (hasCollision) {
+          // Route around with Z-shape
+          const startY = isBottomSide(fromPort) ? y1 + GAP : y1 - GAP;
+          const preferredX = (x1 + x2) / 2;
+          const midX = findSafeClearanceX(nodes, fromNodeId, toNodeId, preferredX);
+          return `M ${x1} ${y1} L ${x1} ${startY} L ${midX} ${startY} L ${midX} ${y2} L ${x2} ${y2}`;
+        }
+        
         // Clean L: vertical to target's Y, then horizontal to target
         return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
       }
       
       // Z-shape when target is behind
       const startY = isBottomSide(fromPort) ? y1 + GAP : y1 - GAP;
-      const midX = (x1 + x2) / 2;
+      const preferredX = (x1 + x2) / 2;
+      const midX = findSafeClearanceX(nodes, fromNodeId, toNodeId, preferredX);
       return `M ${x1} ${y1} L ${x1} ${startY} L ${midX} ${startY} L ${midX} ${y2} L ${x2} ${y2}`;
     }
     
@@ -796,7 +942,9 @@ function OrgCharts({ user, onBack }) {
               fromPoint.x, fromPoint.y,
               toPoint.x, toPoint.y,
               conn.fromPort || 'bottom',
-              conn.toPort || 'top'
+              conn.toPort || 'top',
+              conn.from,
+              conn.to
             );
 
             const isSelected = selectedConnection === conn.id;
