@@ -313,26 +313,65 @@
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+.size-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.size-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.size-label {
+  font-size: 13px;
+  color: #6b7280;
+  min-width: 50px;
+  font-weight: 500;
+}
+
 .size-controls {
   display: flex;
   align-items: center;
   gap: 12px;
-  justify-content: center;
+  flex: 1;
 }
 
 .size-controls .btn-secondary {
-  min-width: 44px;
+  min-width: 40px;
+  height: 40px;
   font-size: 18px;
   font-weight: 600;
 }
 
 .size-controls span {
   font-family: 'SF Mono', Monaco, monospace;
-  color: #6b7280;
-  font-size: 14px;
-  min-width: 80px;
+  color: #1f2937;
+  font-size: 15px;
+  min-width: 70px;
   text-align: center;
   font-weight: 600;
+}
+
+.btn-reset {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 2px solid #e5e7eb;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.btn-reset:hover {
+  background: #e5e7eb;
+  color: #374151;
+  border-color: #d1d5db;
 }
 
 .color-picker {

@@ -286,11 +286,20 @@ function OrgCharts({ user, onBack }) {
     setNodes(nodes.map(n => n.id === nodeId ? { ...n, color } : n));
   };
 
+  const DEFAULT_WIDTH = 200;
+  const DEFAULT_HEIGHT = 80;
+  const STEP = 20;
+  const MIN_WIDTH = 100;
+  const MIN_HEIGHT = 60;
+
+  const getSizeNumber = (value, defaultValue) => {
+    // Calculate size number: default = 0, each step of 20 = ±1
+    const diff = value - defaultValue;
+    const sizeNum = Math.round(diff / STEP);
+    return sizeNum === 0 ? 'Normal' : (sizeNum > 0 ? `+${sizeNum}` : `${sizeNum}`);
+  };
+
   const resizeNode = (nodeId, dimension, direction) => {
-    const STEP = 20;
-    const MIN_WIDTH = 100;
-    const MIN_HEIGHT = 60;
-    
     setNodes(nodes.map(n => {
       if (n.id !== nodeId) return n;
       
@@ -307,6 +316,13 @@ function OrgCharts({ user, onBack }) {
       }
       
       return n;
+    }));
+  };
+
+  const resetNodeSize = (nodeId) => {
+    setNodes(nodes.map(n => {
+      if (n.id !== nodeId) return n;
+      return { ...n, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
     }));
   };
 
@@ -1189,55 +1205,71 @@ function OrgCharts({ user, onBack }) {
               </div>
 
               <div className="form-group">
-                <label>Width</label>
-                <div className="size-controls">
+                <label>Size</label>
+                <div className="size-grid">
+                  <div className="size-row">
+                    <span className="size-label">Width</span>
+                    <div className="size-controls">
+                      <button 
+                        className="btn-secondary"
+                        onClick={() => {
+                          resizeNode(editingNode.id, 'width', 'decrease');
+                          const updated = nodes.find(n => n.id === editingNode.id);
+                          if (updated) setEditingNode(updated);
+                        }}
+                      >
+                        −
+                      </button>
+                      <span>{getSizeNumber(editingNode.width, DEFAULT_WIDTH)}</span>
+                      <button 
+                        className="btn-secondary"
+                        onClick={() => {
+                          resizeNode(editingNode.id, 'width', 'increase');
+                          const updated = nodes.find(n => n.id === editingNode.id);
+                          if (updated) setEditingNode(updated);
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="size-row">
+                    <span className="size-label">Height</span>
+                    <div className="size-controls">
+                      <button 
+                        className="btn-secondary"
+                        onClick={() => {
+                          resizeNode(editingNode.id, 'height', 'decrease');
+                          const updated = nodes.find(n => n.id === editingNode.id);
+                          if (updated) setEditingNode(updated);
+                        }}
+                      >
+                        −
+                      </button>
+                      <span>{getSizeNumber(editingNode.height, DEFAULT_HEIGHT)}</span>
+                      <button 
+                        className="btn-secondary"
+                        onClick={() => {
+                          resizeNode(editingNode.id, 'height', 'increase');
+                          const updated = nodes.find(n => n.id === editingNode.id);
+                          if (updated) setEditingNode(updated);
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  
                   <button 
-                    className="btn-secondary"
+                    className="btn-reset"
                     onClick={() => {
-                      resizeNode(editingNode.id, 'width', 'decrease');
+                      resetNodeSize(editingNode.id);
                       const updated = nodes.find(n => n.id === editingNode.id);
                       if (updated) setEditingNode(updated);
                     }}
                   >
-                    −
-                  </button>
-                  <span>{editingNode.width}px</span>
-                  <button 
-                    className="btn-secondary"
-                    onClick={() => {
-                      resizeNode(editingNode.id, 'width', 'increase');
-                      const updated = nodes.find(n => n.id === editingNode.id);
-                      if (updated) setEditingNode(updated);
-                    }}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Height</label>
-                <div className="size-controls">
-                  <button 
-                    className="btn-secondary"
-                    onClick={() => {
-                      resizeNode(editingNode.id, 'height', 'decrease');
-                      const updated = nodes.find(n => n.id === editingNode.id);
-                      if (updated) setEditingNode(updated);
-                    }}
-                  >
-                    −
-                  </button>
-                  <span>{editingNode.height}px</span>
-                  <button 
-                    className="btn-secondary"
-                    onClick={() => {
-                      resizeNode(editingNode.id, 'height', 'increase');
-                      const updated = nodes.find(n => n.id === editingNode.id);
-                      if (updated) setEditingNode(updated);
-                    }}
-                  >
-                    +
+                    ↺ Reset to Default
                   </button>
                 </div>
               </div>
