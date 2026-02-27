@@ -14,10 +14,18 @@ function OrgCharts({ user, onBack }) {
   const [zoom, setZoom] = useState(1);
 
   const addNode = () => {
+    // Get canvas center in world coordinates
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    const centerX = canvasRect ? (canvasRect.width / 2 - offset.x) / zoom : 400;
+    const centerY = canvasRect ? (canvasRect.height / 2 - offset.y) / zoom : 300;
+    
+    // Stagger nodes slightly so they don't stack
+    const stagger = nodes.length * 20;
+    
     const newNode = {
       id: Date.now(),
-      x: 400 - offset.x / zoom,
-      y: 300 - offset.y / zoom,
+      x: centerX + stagger,
+      y: centerY + stagger,
       width: 200,
       height: 80,
       text: 'New Node'
@@ -124,12 +132,32 @@ function OrgCharts({ user, onBack }) {
       <div className="canvas-toolbar">
         <button className="btn-primary" onClick={addNode}>+ Add Node</button>
         <div className="canvas-controls">
-          <button className="btn-secondary" onClick={() => setZoom(zoom * 1.2)}>+</button>
+          <button className="btn-secondary" onClick={() => setZoom(Math.min(3, zoom * 1.2))}>+</button>
           <span>{Math.round(zoom * 100)}%</span>
-          <button className="btn-secondary" onClick={() => setZoom(zoom * 0.8)}>−</button>
+          <button className="btn-secondary" onClick={() => setZoom(Math.max(0.1, zoom * 0.8))}>−</button>
           <button className="btn-secondary" onClick={() => { setOffset({ x: 0, y: 0 }); setZoom(1); }}>
             Reset View
           </button>
+          {nodes.length > 0 && (
+            <button className="btn-secondary" onClick={() => {
+              // Center on all nodes
+              const minX = Math.min(...nodes.map(n => n.x));
+              const maxX = Math.max(...nodes.map(n => n.x + n.width));
+              const minY = Math.min(...nodes.map(n => n.y));
+              const maxY = Math.max(...nodes.map(n => n.y + n.height));
+              const centerX = (minX + maxX) / 2;
+              const centerY = (minY + maxY) / 2;
+              const canvasRect = canvasRef.current?.getBoundingClientRect();
+              if (canvasRect) {
+                setOffset({
+                  x: canvasRect.width / 2 - centerX * zoom,
+                  y: canvasRect.height / 2 - centerY * zoom
+                });
+              }
+            }}>
+              Center All
+            </button>
+          )}
         </div>
         <div className="canvas-info">
           {nodes.length} nodes • {connections.length} connections
