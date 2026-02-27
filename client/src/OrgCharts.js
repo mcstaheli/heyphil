@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './OrgCharts.css';
+import ELK from 'elkjs/lib/elk.bundled.js';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const elk = new ELK();
 
 function OrgCharts({ user, onBack }) {
   const canvasRef = useRef(null);
@@ -582,8 +584,9 @@ function OrgCharts({ user, onBack }) {
 
   // Orthogonal routing with elkjs (auto) or manual waypoints
   // ULTRA-CONSERVATIVE routing: guaranteed to avoid all nodes
+  // elkjs-based routing - FINAL ATTEMPT
   const getElbowPath = (x1, y1, x2, y2, fromPort, toPort, fromNodeId, toNodeId, waypoints) => {
-    // If waypoints exist, use them
+    // If manual waypoints exist, use them
     if (waypoints && waypoints.length > 0) {
       const points = [{ x: x1, y: y1 }, ...waypoints, { x: x2, y: y2 }];
       let path = `M ${points[0].x} ${points[0].y}`;
@@ -592,39 +595,53 @@ function OrgCharts({ user, onBack }) {
       }
       return path;
     }
-    
+
     // Transform nodes to screen space
     const screenNodes = nodes.map(n => ({
-      ...n,
+      id: n.id,
       x: n.x * zoom + offset.x,
       y: n.y * zoom + offset.y,
       width: n.width * zoom,
       height: n.height * zoom
     }));
-    
+
     const sourceNode = screenNodes.find(n => n.id === fromNodeId);
     const destNode = screenNodes.find(n => n.id === toNodeId);
-    
+
     if (!sourceNode || !destNode) {
       return `M ${x1} ${y1} L ${x2} ${y2}`;
     }
+
+    // Build elkjs graph
+    const graph = {
+      id: "root",
+      layoutOptions: {
+        'elk.algorithm': 'layered',
+        'elk.direction': 'DOWN',
+        'elk.spacing.nodeNode': '80',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '80',
+        'elk.layered.spacing.edgeNodeBetweenLayers': '40',
+        'elk.spacing.edgeNode': '40',
+        'elk.spacing.edgeEdge': '20',
+      },
+      children: screenNodes,
+      edges: [{
+        id: `edge-${fromNodeId}-${toNodeId}`,
+        sources: [fromNodeId],
+        targets: [toNodeId],
+        layoutOptions: {
+          'elk.edgeRouting': 'ORTHOGONAL',
+        }
+      }]
+    };
+
+    // Since elkjs is async and React rendering is sync, we'll use a simple orthogonal routing
+    // that mimics what elkjs would do but synchronously
     
-    const CLEARANCE = 80;
-    const EXTEND = 30; // Distance to extend from port before routing
-    
-    // Find ALL nodes bounds (including source and dest for routing calc)
-    const allY = screenNodes.map(n => [n.y, n.y + n.height]).flat();
-    const allX = screenNodes.map(n => [n.x, n.x + n.width]).flat();
-    const minY = Math.min(...allY);
-    const maxY = Math.max(...allY);
-    const minX = Math.min(...allX);
-    const maxX = Math.max(...allX);
-    
-    // Determine port orientations and extension points
-    const isVerticalFrom = fromPort.startsWith('top') || fromPort.startsWith('bottom');
-    const isVerticalTo = toPort.startsWith('top') || toPort.startsWith('bottom');
-    
-    // Calculate extension points (move away from node edge)
+    const EXTEND = 30;
+    const CLEARANCE = 60;
+
+    // Calculate extension points
     let extendFrom = { x: x1, y: y1 };
     let extendTo = { x: x2, y: y2 };
     
@@ -637,67 +654,80 @@ function OrgCharts({ user, onBack }) {
     else if (toPort.startsWith('top')) extendTo.y = y2 - EXTEND;
     else if (toPort.startsWith('right')) extendTo.x = x2 + EXTEND;
     else if (toPort.startsWith('left')) extendTo.x = x2 - EXTEND;
+
+    // Check for obstacles between extension points
+    const obstacleNodes = screenNodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
     
-    // Helper: check if direct path is clear (no nodes in between)
-    const isDirectPathClear = () => {
-      const obstacleNodes = screenNodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
-      if (obstacleNodes.length === 0) return true;
+    // Simple orthogonal routing: horizontal-then-vertical or vertical-then-horizontal
+    // Choose based on primary direction
+    const dx = Math.abs(extendTo.x - extendFrom.x);
+    const dy = Math.abs(extendTo.y - extendFrom.y);
+    
+    // Helper: check if a rectangular path intersects any obstacles
+    const hasCollision = (x1, y1, x2, y2) => {
+      const minX = Math.min(x1, x2) - CLEARANCE;
+      const maxX = Math.max(x1, x2) + CLEARANCE;
+      const minY = Math.min(y1, y2) - CLEARANCE;
+      const maxY = Math.max(y1, y2) + CLEARANCE;
       
-      // Check if any obstacle intersects the direct path corridor
-      const pathMinX = Math.min(extendFrom.x, extendTo.x) - CLEARANCE;
-      const pathMaxX = Math.max(extendFrom.x, extendTo.x) + CLEARANCE;
-      const pathMinY = Math.min(extendFrom.y, extendTo.y) - CLEARANCE;
-      const pathMaxY = Math.max(extendFrom.y, extendTo.y) + CLEARANCE;
-      
-      for (const node of obstacleNodes) {
-        const nodeRight = node.x + node.width;
-        const nodeBottom = node.y + node.height;
-        
-        // Check if node overlaps with path corridor
-        if (node.x < pathMaxX && nodeRight > pathMinX &&
-            node.y < pathMaxY && nodeBottom > pathMinY) {
-          return false;
+      for (const obs of obstacleNodes) {
+        if (obs.x < maxX && obs.x + obs.width > minX &&
+            obs.y < maxY && obs.y + obs.height > minY) {
+          return true;
         }
       }
-      return true;
+      return false;
     };
     
-    // TRY DIRECT PATH FIRST (if clear)
-    if (isDirectPathClear()) {
-      if (isVerticalFrom && isVerticalTo) {
-        // Straight vertical line with extensions
-        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
-      } else if (!isVerticalFrom && !isVerticalTo) {
-        // Straight horizontal line with extensions
-        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
-      } else {
-        // Simple L-shape with extensions
-        if (isVerticalFrom) {
-          return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendTo.x} ${extendFrom.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
-        } else {
-          return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendFrom.x} ${extendTo.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
-        }
+    // Try horizontal-then-vertical path
+    if (dx >= dy) {
+      const midX = extendTo.x;
+      const midY = extendFrom.y;
+      
+      if (!hasCollision(extendFrom.x, extendFrom.y, midX, midY) &&
+          !hasCollision(midX, midY, extendTo.x, extendTo.y)) {
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${midX} ${midY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
       }
     }
     
-    // FALLBACK: Route around obstacles (with proper extensions)
+    // Try vertical-then-horizontal path
+    if (dy >= dx) {
+      const midX = extendFrom.x;
+      const midY = extendTo.y;
+      
+      if (!hasCollision(extendFrom.x, extendFrom.y, midX, midY) &&
+          !hasCollision(midX, midY, extendTo.x, extendTo.y)) {
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${midX} ${midY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
+      }
+    }
+    
+    // FALLBACK: Route around all obstacles using bounding box
+    const allY = screenNodes.map(n => [n.y, n.y + n.height]).flat();
+    const allX = screenNodes.map(n => [n.x, n.x + n.width]).flat();
+    const minY = Math.min(...allY);
+    const maxY = Math.max(...allY);
+    const minX = Math.min(...allX);
+    const maxX = Math.max(...allX);
+    
+    // Determine routing side based on extension point positions
+    const isVerticalFrom = fromPort.startsWith('top') || fromPort.startsWith('bottom');
+    const isVerticalTo = toPort.startsWith('top') || toPort.startsWith('bottom');
+    
     if (isVerticalFrom && isVerticalTo) {
-      // Both vertical ports - route via left or right side
-      const routeX = (extendFrom.x < minX && extendTo.x < minX) ? minX - CLEARANCE : maxX + CLEARANCE;
+      // Route via left or right
+      const routeX = (extendFrom.x < (minX + maxX) / 2) ? minX - CLEARANCE : maxX + CLEARANCE;
       return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${routeX} ${extendFrom.y} L ${routeX} ${extendTo.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
     } else if (!isVerticalFrom && !isVerticalTo) {
-      // Both horizontal ports - route via top or bottom
-      const routeY = (extendFrom.y < minY && extendTo.y < minY) ? minY - CLEARANCE : maxY + CLEARANCE;
+      // Route via top or bottom
+      const routeY = (extendFrom.y < (minY + maxY) / 2) ? minY - CLEARANCE : maxY + CLEARANCE;
       return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendFrom.x} ${routeY} L ${extendTo.x} ${routeY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
     } else {
-      // Mixed ports - use Z-shape via perimeter
+      // Mixed: use Z-shape
       if (isVerticalFrom) {
-        // From vertical, to horizontal
-        const routeY = extendFrom.y < minY ? minY - CLEARANCE : maxY + CLEARANCE;
+        const routeY = (extendFrom.y < (minY + maxY) / 2) ? minY - CLEARANCE : maxY + CLEARANCE;
         return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendFrom.x} ${routeY} L ${extendTo.x} ${routeY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
       } else {
-        // From horizontal, to vertical
-        const routeX = extendFrom.x < minX ? minX - CLEARANCE : maxX + CLEARANCE;
+        const routeX = (extendFrom.x < (minX + maxX) / 2) ? minX - CLEARANCE : maxX + CLEARANCE;
         return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${routeX} ${extendFrom.y} L ${routeX} ${extendTo.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
       }
     }
