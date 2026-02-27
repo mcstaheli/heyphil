@@ -592,10 +592,11 @@ function OrgCharts({ user, onBack }) {
     
     // TEMPORARY: Simple aggressive routing that WILL work
     // Route WAY around all obstacles
-    const allObstacles = screenNodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
+    // IMPORTANT: Include ALL nodes (even source/dest) as obstacles for the routing calculation
+    const allObstacles = screenNodes;
     
     if (allObstacles.length === 0) {
-      // No obstacles, direct path
+      // No nodes at all, direct path
       return `M ${x1} ${y1} L ${x2} ${y2}`;
     }
     
