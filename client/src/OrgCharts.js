@@ -590,18 +590,72 @@ function OrgCharts({ user, onBack }) {
       return path;
     }
     
-    // Use A* pathfinding for automatic routing
-    const pathPoints = findPathAStar(x1, y1, x2, y2, fromNodeId, toNodeId, screenNodes);
+    // TEMPORARY: Simple aggressive routing that WILL work
+    // Route WAY around all obstacles
+    const allObstacles = screenNodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
     
-    if (pathPoints.length === 0) {
+    if (allObstacles.length === 0) {
+      // No obstacles, direct path
       return `M ${x1} ${y1} L ${x2} ${y2}`;
     }
     
-    let path = `M ${pathPoints[0].x} ${pathPoints[0].y}`;
-    for (let i = 1; i < pathPoints.length; i++) {
-      path += ` L ${pathPoints[i].x} ${pathPoints[i].y}`;
+    // Find the bounds of all obstacles
+    const minX = Math.min(...allObstacles.map(n => n.x));
+    const maxX = Math.max(...allObstacles.map(n => n.x + n.width));
+    const minY = Math.min(...allObstacles.map(n => n.y));
+    const maxY = Math.max(...allObstacles.map(n => n.y + n.height));
+    
+    const CLEARANCE = 80;
+    
+    // Route around based on relative positions
+    if (x2 > maxX && y2 > maxY) {
+      // Target is right and below - go around right side
+      return `M ${x1} ${y1} L ${x1} ${maxY + CLEARANCE} L ${x2} ${maxY + CLEARANCE} L ${x2} ${y2}`;
+    } else if (x2 < minX && y2 > maxY) {
+      // Target is left and below - go around left side
+      return `M ${x1} ${y1} L ${x1} ${maxY + CLEARANCE} L ${x2} ${maxY + CLEARANCE} L ${x2} ${y2}`;
+    } else if (x2 > maxX && y2 < minY) {
+      // Target is right and above - go around top
+      return `M ${x1} ${y1} L ${x1} ${minY - CLEARANCE} L ${x2} ${minY - CLEARANCE} L ${x2} ${y2}`;
+    } else if (x2 < minX && y2 < minY) {
+      // Target is left and above - go around top
+      return `M ${x1} ${y1} L ${x1} ${minY - CLEARANCE} L ${x2} ${minY - CLEARANCE} L ${x2} ${y2}`;
+    } else {
+      // Complex case - route around the side with more space
+      const routeAbove = minY - CLEARANCE;
+      const routeBelow = maxY + CLEARANCE;
+      const routeLeft = minX - CLEARANCE;
+      const routeRight = maxX + CLEARANCE;
+      
+      // Choose path based on which direction has fewer obstacles
+      if (Math.abs(y2 - y1) > Math.abs(x2 - x1)) {
+        // Prefer horizontal routing
+        if (x1 < minX && x2 < minX) {
+          // Both on left, go around left
+          return `M ${x1} ${y1} L ${routeLeft} ${y1} L ${routeLeft} ${y2} L ${x2} ${y2}`;
+        } else if (x1 > maxX && x2 > maxX) {
+          // Both on right, go around right
+          return `M ${x1} ${y1} L ${routeRight} ${y1} L ${routeRight} ${y2} L ${x2} ${y2}`;
+        } else {
+          // Default: route above or below
+          const routeY = y1 < y2 ? routeAbove : routeBelow;
+          return `M ${x1} ${y1} L ${x1} ${routeY} L ${x2} ${routeY} L ${x2} ${y2}`;
+        }
+      } else {
+        // Prefer vertical routing
+        if (y1 < minY && y2 < minY) {
+          // Both above, route above
+          return `M ${x1} ${y1} L ${x1} ${routeAbove} L ${x2} ${routeAbove} L ${x2} ${y2}`;
+        } else if (y1 > maxY && y2 > maxY) {
+          // Both below, route below  
+          return `M ${x1} ${y1} L ${x1} ${routeBelow} L ${x2} ${routeBelow} L ${x2} ${y2}`;
+        } else {
+          // Default: route left or right
+          const routeX = x1 < x2 ? routeRight : routeLeft;
+          return `M ${x1} ${y1} L ${routeX} ${y1} L ${routeX} ${y2} L ${x2} ${y2}`;
+        }
+      }
     }
-    return path;
   };
 
   const handleCanvasMouseDown = (e) => {
