@@ -17,7 +17,6 @@ function OrgCharts({ user, onBack }) {
   const [selectedNode, setSelectedNode] = useState(null);
   const [connectingFrom, setConnectingFrom] = useState(null);
   const [draggingNode, setDraggingNode] = useState(null);
-  const [draggingWaypoint, setDraggingWaypoint] = useState(null); // { connId, wpIndex }
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -879,36 +878,12 @@ function OrgCharts({ user, onBack }) {
           ? { ...n, x, y }
           : n
       ));
-    } else if (draggingWaypoint) {
-      // Dragging a waypoint
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      
-      let x = (e.clientX - rect.left - offset.x) / zoom;
-      let y = (e.clientY - rect.top - offset.y) / zoom;
-      
-      // Apply grid snapping if enabled
-      if (snapToGrid) {
-        x = snapToGridValue(x);
-        y = snapToGridValue(y);
-      }
-      
-      // Update the waypoint position
-      setConnections(connections.map(conn => {
-        if (conn.id === draggingWaypoint.connId) {
-          const newWaypoints = [...(conn.waypoints || [])];
-          newWaypoints[draggingWaypoint.wpIndex] = { x, y };
-          return { ...conn, waypoints: newWaypoints };
-        }
-        return conn;
-      }));
     }
   };
 
   const handleCanvasMouseUp = () => {
     setIsPanning(false);
     setDraggingNode(null);
-    setDraggingWaypoint(null);
     setAlignmentGuides([]);
   };
 
@@ -1267,20 +1242,8 @@ function OrgCharts({ user, onBack }) {
                   style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (selectedConnection === conn.id) {
-                      // Add waypoint at click position
-                      const rect = canvasRef.current?.getBoundingClientRect();
-                      if (!rect) return;
-                      
-                      const x = (e.clientX - rect.left - offset.x) / zoom;
-                      const y = (e.clientY - rect.top - offset.y) / zoom;
-                      
-                      const newWaypoints = [...(conn.waypoints || []), { x, y }];
-                      updateConnectionWaypoints(conn.id, newWaypoints);
-                    } else {
-                      setSelectedConnection(conn.id);
-                      setSelectedNode(null);
-                    }
+                    setSelectedConnection(conn.id);
+                    setSelectedNode(null);
                   }}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
@@ -1326,36 +1289,6 @@ function OrgCharts({ user, onBack }) {
                     </g>
                   );
                 })()}
-                {/* Waypoint handles (only show when selected) */}
-                {isSelected && conn.waypoints && conn.waypoints.map((wp, idx) => (
-                  <circle
-                    key={`wp-${idx}`}
-                    cx={wp.x}
-                    cy={wp.y}
-                    r="6"
-                    fill="#667eea"
-                    stroke="white"
-                    strokeWidth="2"
-                    style={{ cursor: 'move' }}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      setDraggingWaypoint({ connId: conn.id, wpIndex: idx });
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      // Delete waypoint on right-click
-                      const newWaypoints = conn.waypoints.filter((_, i) => i !== idx);
-                      updateConnectionWaypoints(conn.id, newWaypoints.length > 0 ? newWaypoints : null);
-                    }}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      // Delete waypoint on double-click
-                      const newWaypoints = conn.waypoints.filter((_, i) => i !== idx);
-                      updateConnectionWaypoints(conn.id, newWaypoints.length > 0 ? newWaypoints : null);
-                    }}
-                  />
-                ))}
               </g>
             );
           })}
