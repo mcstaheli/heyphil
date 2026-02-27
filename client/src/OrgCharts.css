@@ -355,3 +355,14 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
+
+/* Snap to grid button active state */
+.btn-secondary.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: #667eea;
+}
+
+.btn-secondary.active:hover {
+  background: linear-gradient(135deg, #5568d3 0%, #63408a 100%);
+}

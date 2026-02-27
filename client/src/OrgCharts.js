@@ -26,6 +26,15 @@ function OrgCharts({ user, onBack }) {
   const saveTimeout = useRef(null);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [alignmentGuides, setAlignmentGuides] = useState([]);
+  
+  const GRID_SIZE = 20; // Grid snap size in pixels
+  const SNAP_THRESHOLD = 5; // Pixels to trigger alignment guide
+
+  const snapToGridValue = (value) => {
+    return Math.round(value / GRID_SIZE) * GRID_SIZE;
+  };
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
@@ -386,12 +395,57 @@ function OrgCharts({ user, onBack }) {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
       
-      const x = (e.clientX - rect.left - offset.x) / zoom;
-      const y = (e.clientY - rect.top - offset.y) / zoom;
+      let x = (e.clientX - rect.left - offset.x) / zoom - draggingNode.offsetX;
+      let y = (e.clientY - rect.top - offset.y) / zoom - draggingNode.offsetY;
+      
+      // Apply grid snapping if enabled
+      if (snapToGrid) {
+        x = snapToGridValue(x);
+        y = snapToGridValue(y);
+      }
+      
+      // Detect alignment guides with other nodes
+      const guides = [];
+      const currentNode = nodes.find(n => n.id === draggingNode.id);
+      if (currentNode) {
+        nodes.forEach(node => {
+          if (node.id === draggingNode.id) return;
+          
+          // Check horizontal alignment (top, center, bottom)
+          if (Math.abs(node.y - y) < SNAP_THRESHOLD) {
+            guides.push({ type: 'horizontal', value: node.y, align: 'top' });
+            y = node.y;
+          }
+          if (Math.abs((node.y + node.height / 2) - (y + currentNode.height / 2)) < SNAP_THRESHOLD) {
+            guides.push({ type: 'horizontal', value: y + currentNode.height / 2, align: 'center' });
+            y = node.y + node.height / 2 - currentNode.height / 2;
+          }
+          if (Math.abs((node.y + node.height) - (y + currentNode.height)) < SNAP_THRESHOLD) {
+            guides.push({ type: 'horizontal', value: node.y + node.height, align: 'bottom' });
+            y = node.y + node.height - currentNode.height;
+          }
+          
+          // Check vertical alignment (left, center, right)
+          if (Math.abs(node.x - x) < SNAP_THRESHOLD) {
+            guides.push({ type: 'vertical', value: node.x, align: 'left' });
+            x = node.x;
+          }
+          if (Math.abs((node.x + node.width / 2) - (x + currentNode.width / 2)) < SNAP_THRESHOLD) {
+            guides.push({ type: 'vertical', value: x + currentNode.width / 2, align: 'center' });
+            x = node.x + node.width / 2 - currentNode.width / 2;
+          }
+          if (Math.abs((node.x + node.width) - (x + currentNode.width)) < SNAP_THRESHOLD) {
+            guides.push({ type: 'vertical', value: node.x + node.width, align: 'right' });
+            x = node.x + node.width - currentNode.width;
+          }
+        });
+      }
+      
+      setAlignmentGuides(guides);
       
       setNodes(prev => prev.map(n => 
         n.id === draggingNode.id 
-          ? { ...n, x: x - draggingNode.offsetX, y: y - draggingNode.offsetY }
+          ? { ...n, x, y }
           : n
       ));
     }
@@ -400,6 +454,7 @@ function OrgCharts({ user, onBack }) {
   const handleCanvasMouseUp = () => {
     setIsPanning(false);
     setDraggingNode(null);
+    setAlignmentGuides([]);
   };
 
   const handleWheel = (e) => {
@@ -538,6 +593,13 @@ function OrgCharts({ user, onBack }) {
       <div className="canvas-toolbar">
         <button className="btn-primary" onClick={addNode}>+ Add Node</button>
         <div className="canvas-controls">
+          <button 
+            className={`btn-secondary ${snapToGrid ? 'active' : ''}`}
+            onClick={() => setSnapToGrid(!snapToGrid)}
+            title={snapToGrid ? 'Snap to Grid: ON' : 'Snap to Grid: OFF'}
+          >
+            {snapToGrid ? '🧲' : '◻️'} Snap
+          </button>
           <button className="btn-secondary" onClick={() => setZoom(Math.min(3, zoom * 1.2))}>+</button>
           <span>{Math.round(zoom * 100)}%</span>
           <button className="btn-secondary" onClick={() => setZoom(Math.max(0.1, zoom * 0.8))}>−</button>
@@ -583,6 +645,77 @@ function OrgCharts({ user, onBack }) {
         onMouseUp={handleCanvasMouseUp}
         onMouseLeave={handleCanvasMouseUp}
       >
+        {/* Grid background */}
+        {snapToGrid && (
+          <svg className="grid-layer" style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 0
+          }}>
+            <defs>
+              <pattern 
+                id="grid" 
+                width={GRID_SIZE * zoom} 
+                height={GRID_SIZE * zoom} 
+                patternUnits="userSpaceOnUse"
+                x={offset.x % (GRID_SIZE * zoom)}
+                y={offset.y % (GRID_SIZE * zoom)}
+              >
+                <path 
+                  d={`M ${GRID_SIZE * zoom} 0 L 0 0 0 ${GRID_SIZE * zoom}`} 
+                  fill="none" 
+                  stroke="rgba(0,0,0,0.05)" 
+                  strokeWidth="1"
+                />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+          </svg>
+        )}
+
+        {/* Alignment guides */}
+        {alignmentGuides.length > 0 && (
+          <svg className="guides-layer" style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 999
+          }}>
+            {alignmentGuides.map((guide, idx) => (
+              guide.type === 'horizontal' ? (
+                <line
+                  key={idx}
+                  x1="0"
+                  y1={guide.value * zoom + offset.y}
+                  x2="100%"
+                  y2={guide.value * zoom + offset.y}
+                  stroke="#667eea"
+                  strokeWidth="1"
+                  strokeDasharray="4,4"
+                />
+              ) : (
+                <line
+                  key={idx}
+                  x1={guide.value * zoom + offset.x}
+                  y1="0"
+                  x2={guide.value * zoom + offset.x}
+                  y2="100%"
+                  stroke="#667eea"
+                  strokeWidth="1"
+                  strokeDasharray="4,4"
+                />
+              )
+            ))}
+          </svg>
+        )}
+
         {/* Render connections */}
         <svg className="connections-layer" style={{ 
           position: 'absolute', 
