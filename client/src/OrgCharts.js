@@ -321,7 +321,7 @@ function OrgCharts({ user, onBack }) {
   };
 
   const resetNodeSize = (nodeId) => {
-    setNodes(nodes.map(n => {
+    setNodes(prev => prev.map(n => {
       if (n.id !== nodeId) return n;
       return { ...n, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
     }));
@@ -1383,9 +1383,15 @@ function OrgCharts({ user, onBack }) {
                   
                   <button 
                     className="btn-reset"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
                       resetNodeSize(editingNode.id);
-                      setEditingNode({ ...editingNode, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+                      // Force immediate update with exact values
+                      setEditingNode(prev => ({
+                        ...prev,
+                        width: DEFAULT_WIDTH,
+                        height: DEFAULT_HEIGHT
+                      }));
                     }}
                   >
                     ↺ Reset to Default
