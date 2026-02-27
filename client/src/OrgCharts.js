@@ -23,6 +23,7 @@ function OrgCharts({ user, onBack }) {
   const [zoom, setZoom] = useState(1);
   const [hoveredPort, setHoveredPort] = useState(null);
   const [selectedConnection, setSelectedConnection] = useState(null);
+  const dragAnimationFrame = useRef(null);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
@@ -261,69 +262,56 @@ function OrgCharts({ user, onBack }) {
     }));
   };
 
-  // Smart orthogonal routing with multiple segments
+  // Smart orthogonal routing - minimal segments
   const getElbowPath = (x1, y1, x2, y2, fromPort, toPort) => {
-    const GAP = 20; // Spacing from node edge
+    const GAP = 20;
     
-    // Calculate offset directions based on ports
-    const getOffset = (port) => {
-      switch(port) {
-        case 'right': return { x: GAP, y: 0 };
-        case 'left': return { x: -GAP, y: 0 };
-        case 'bottom': return { x: 0, y: GAP };
-        case 'top': return { x: 0, y: -GAP };
-        default: return { x: 0, y: 0 };
-      }
-    };
-    
-    const startOffset = getOffset(fromPort);
-    const endOffset = getOffset(toPort);
-    
-    // Points just outside the nodes
-    const p1 = { x: x1 + startOffset.x, y: y1 + startOffset.y };
-    const p2 = { x: x2 + endOffset.x, y: y2 + endOffset.y };
-    
-    // Smart routing based on port combination and positions
-    
-    // Horizontal ports (right/left)
+    // Horizontal → Horizontal (right/left to right/left)
     if ((fromPort === 'right' || fromPort === 'left') && (toPort === 'right' || toPort === 'left')) {
-      const midX = (p1.x + p2.x) / 2;
-      return `M ${x1} ${y1} L ${p1.x} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${p2.x} ${y2} L ${x2} ${y2}`;
+      const startX = fromPort === 'right' ? x1 + GAP : x1 - GAP;
+      const endX = toPort === 'right' ? x2 + GAP : x2 - GAP;
+      const midX = (startX + endX) / 2;
+      
+      return `M ${x1} ${y1} L ${startX} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${endX} ${y2} L ${x2} ${y2}`;
     }
     
-    // Vertical ports (top/bottom)
+    // Vertical → Vertical (top/bottom to top/bottom)
     if ((fromPort === 'top' || fromPort === 'bottom') && (toPort === 'top' || toPort === 'bottom')) {
-      const midY = (p1.y + p2.y) / 2;
-      return `M ${x1} ${y1} L ${x1} ${p1.y} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${p2.y} L ${x2} ${y2}`;
+      const startY = fromPort === 'bottom' ? y1 + GAP : y1 - GAP;
+      const endY = toPort === 'bottom' ? y2 + GAP : y2 - GAP;
+      const midY = (startY + endY) / 2;
+      
+      return `M ${x1} ${y1} L ${x1} ${startY} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${endY} L ${x2} ${y2}`;
     }
     
-    // Right/Left to Top/Bottom - smart routing
+    // Horizontal → Vertical (simple L or Z-shape)
     if ((fromPort === 'right' || fromPort === 'left') && (toPort === 'top' || toPort === 'bottom')) {
-      // Check if we need to route around
-      if ((fromPort === 'right' && p1.x < x2) || (fromPort === 'left' && p1.x > x2)) {
-        // Simple 2-segment L-shape
-        return `M ${x1} ${y1} L ${p1.x} ${y1} L ${p1.x} ${y2} L ${x2} ${y2}`;
-      } else {
-        // Need to route around - 4 segments
-        const midY = (y1 + p2.y) / 2;
-        return `M ${x1} ${y1} L ${p1.x} ${y1} L ${p1.x} ${midY} L ${x2} ${midY} L ${x2} ${p2.y} L ${x2} ${y2}`;
+      const startX = fromPort === 'right' ? x1 + GAP : x1 - GAP;
+      
+      // Direct L-shape if target is in the right direction
+      if ((fromPort === 'right' && x2 >= x1) || (fromPort === 'left' && x2 <= x1)) {
+        return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${y2} L ${x2} ${y2}`;
       }
+      
+      // Z-shape when target is behind
+      const midY = (y1 + y2) / 2;
+      return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
     }
     
-    // Top/Bottom to Right/Left - smart routing  
+    // Vertical → Horizontal (simple L or Z-shape)
     if ((fromPort === 'top' || fromPort === 'bottom') && (toPort === 'right' || toPort === 'left')) {
-      // Check if we need to route around
-      if ((fromPort === 'bottom' && p1.y < y2) || (fromPort === 'top' && p1.y > y2)) {
-        // Simple 2-segment L-shape
-        return `M ${x1} ${y1} L ${x1} ${p1.y} L ${x2} ${p1.y} L ${x2} ${y2}`;
-      } else {
-        // Need to route around - 4 segments
-        const midX = (x1 + p2.x) / 2;
-        return `M ${x1} ${y1} L ${x1} ${p1.y} L ${midX} ${p1.y} L ${midX} ${y2} L ${p2.x} ${y2} L ${x2} ${y2}`;
+      const startY = fromPort === 'bottom' ? y1 + GAP : y1 - GAP;
+      
+      // Direct L-shape if target is in the right direction
+      if ((fromPort === 'bottom' && y2 >= y1) || (fromPort === 'top' && y2 <= y1)) {
+        return `M ${x1} ${y1} L ${x1} ${startY} L ${x2} ${startY} L ${x2} ${y2}`;
       }
+      
+      // Z-shape when target is behind
+      const midX = (x1 + x2) / 2;
+      return `M ${x1} ${y1} L ${x1} ${startY} L ${midX} ${startY} L ${midX} ${y2} L ${x2} ${y2}`;
     }
     
-    // Fallback
     return `M ${x1} ${y1} L ${x2} ${y2}`;
   };
 
@@ -343,15 +331,25 @@ function OrgCharts({ user, onBack }) {
         y: e.clientY - panStart.y
       });
     } else if (draggingNode) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const x = (e.clientX - rect.left - offset.x) / zoom;
-      const y = (e.clientY - rect.top - offset.y) / zoom;
+      // Cancel any pending animation frame
+      if (dragAnimationFrame.current) {
+        cancelAnimationFrame(dragAnimationFrame.current);
+      }
       
-      setNodes(nodes.map(n => 
-        n.id === draggingNode.id 
-          ? { ...n, x: x - draggingNode.offsetX, y: y - draggingNode.offsetY }
-          : n
-      ));
+      // Throttle with requestAnimationFrame for smooth 60fps
+      dragAnimationFrame.current = requestAnimationFrame(() => {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        
+        const x = (e.clientX - rect.left - offset.x) / zoom;
+        const y = (e.clientY - rect.top - offset.y) / zoom;
+        
+        setNodes(nodes.map(n => 
+          n.id === draggingNode.id 
+            ? { ...n, x: x - draggingNode.offsetX, y: y - draggingNode.offsetY }
+            : n
+        ));
+      });
     }
   };
 
