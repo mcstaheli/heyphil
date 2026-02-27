@@ -23,7 +23,6 @@ function OrgCharts({ user, onBack }) {
   const [zoom, setZoom] = useState(1);
   const [hoveredPort, setHoveredPort] = useState(null);
   const [selectedConnection, setSelectedConnection] = useState(null);
-  const dragAnimationFrame = useRef(null);
   const saveTimeout = useRef(null);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
@@ -384,25 +383,17 @@ function OrgCharts({ user, onBack }) {
         y: e.clientY - panStart.y
       });
     } else if (draggingNode) {
-      // Cancel any pending animation frame
-      if (dragAnimationFrame.current) {
-        cancelAnimationFrame(dragAnimationFrame.current);
-      }
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
       
-      // Throttle with requestAnimationFrame for smooth 60fps
-      dragAnimationFrame.current = requestAnimationFrame(() => {
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        
-        const x = (e.clientX - rect.left - offset.x) / zoom;
-        const y = (e.clientY - rect.top - offset.y) / zoom;
-        
-        setNodes(nodes.map(n => 
-          n.id === draggingNode.id 
-            ? { ...n, x: x - draggingNode.offsetX, y: y - draggingNode.offsetY }
-            : n
-        ));
-      });
+      const x = (e.clientX - rect.left - offset.x) / zoom;
+      const y = (e.clientY - rect.top - offset.y) / zoom;
+      
+      setNodes(prev => prev.map(n => 
+        n.id === draggingNode.id 
+          ? { ...n, x: x - draggingNode.offsetX, y: y - draggingNode.offsetY }
+          : n
+      ));
     }
   };
 
