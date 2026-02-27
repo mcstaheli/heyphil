@@ -12,6 +12,23 @@ function OrgCharts({ user, onBack }) {
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [hoveredPort, setHoveredPort] = useState(null);
+
+  // Connection ports: top, right, bottom, left
+  const getNodePorts = (node) => {
+    const scaled = {
+      x: node.x * zoom + offset.x,
+      y: node.y * zoom + offset.y,
+      width: node.width * zoom,
+      height: node.height * zoom
+    };
+    return {
+      top: { x: scaled.x + scaled.width / 2, y: scaled.y },
+      right: { x: scaled.x + scaled.width, y: scaled.y + scaled.height / 2 },
+      bottom: { x: scaled.x + scaled.width / 2, y: scaled.y + scaled.height },
+      left: { x: scaled.x, y: scaled.y + scaled.height / 2 }
+    };
+  };
 
   const addNode = () => {
     // Simple fixed position for testing - always place at top-left with stagger
@@ -44,20 +61,49 @@ function OrgCharts({ user, onBack }) {
     setSelectedNode(null);
   };
 
-  const startConnection = (nodeId) => {
-    setConnectingFrom(nodeId);
+  const startConnection = (nodeId, port) => {
+    setConnectingFrom({ nodeId, port });
   };
 
-  const finishConnection = (toNodeId) => {
-    if (connectingFrom && connectingFrom !== toNodeId) {
+  const finishConnection = (toNodeId, toPort) => {
+    if (connectingFrom && connectingFrom.nodeId !== toNodeId) {
       const newConnection = {
         id: Date.now(),
-        from: connectingFrom,
-        to: toNodeId
+        from: connectingFrom.nodeId,
+        fromPort: connectingFrom.port,
+        to: toNodeId,
+        toPort: toPort
       };
       setConnections([...connections, newConnection]);
     }
     setConnectingFrom(null);
+  };
+
+  const updateConnectionPort = (connId, end, newPort) => {
+    setConnections(connections.map(c => {
+      if (c.id === connId) {
+        return end === 'from' 
+          ? { ...c, fromPort: newPort }
+          : { ...c, toPort: newPort };
+      }
+      return c;
+    }));
+  };
+
+  // Generate elbow path between two points
+  const getElbowPath = (x1, y1, x2, y2, fromPort, toPort) => {
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    
+    // Determine elbow direction based on ports
+    if ((fromPort === 'right' && toPort === 'left') || (fromPort === 'left' && toPort === 'right')) {
+      return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+    } else if ((fromPort === 'bottom' && toPort === 'top') || (fromPort === 'top' && toPort === 'bottom')) {
+      return `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+    } else {
+      // Mixed directions - use two elbows
+      return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+    }
   };
 
   const handleCanvasMouseDown = (e) => {
@@ -187,47 +233,34 @@ function OrgCharts({ user, onBack }) {
           pointerEvents: 'none'
         }}>
           {connections.map(conn => {
-            const fromPos = getNodePosition(conn.from);
-            const toPos = getNodePosition(conn.to);
-            if (!fromPos || !toPos) return null;
+            const fromNode = nodes.find(n => n.id === conn.from);
+            const toNode = nodes.find(n => n.id === conn.to);
+            if (!fromNode || !toNode) return null;
 
-            const x1 = fromPos.x + fromPos.width / 2;
-            const y1 = fromPos.y + fromPos.height;
-            const x2 = toPos.x + toPos.width / 2;
-            const y2 = toPos.y;
+            const fromPorts = getNodePorts(fromNode);
+            const toPorts = getNodePorts(toNode);
+            
+            const fromPoint = fromPorts[conn.fromPort || 'bottom'];
+            const toPoint = toPorts[conn.toPort || 'top'];
+
+            const path = getElbowPath(
+              fromPoint.x, fromPoint.y,
+              toPoint.x, toPoint.y,
+              conn.fromPort || 'bottom',
+              conn.toPort || 'top'
+            );
 
             return (
-              <line
+              <path
                 key={conn.id}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke="#00f5ff"
+                d={path}
+                stroke="#666"
                 strokeWidth="2"
+                fill="none"
               />
             );
           })}
         </svg>
-
-        {/* Debug: Test div */}
-        <div style={{
-          position: 'absolute',
-          left: '100px',
-          top: '100px',
-          width: '200px',
-          height: '80px',
-          background: 'red',
-          border: '3px solid yellow',
-          zIndex: 999,
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: 'bold'
-        }}>
-          TEST BOX (100, 100)
-        </div>
 
         {/* Render nodes */}
         {nodes.map(node => (
@@ -253,11 +286,36 @@ function OrgCharts({ user, onBack }) {
             }}
             onClick={(e) => {
               e.stopPropagation();
-              if (connectingFrom) {
-                finishConnection(node.id);
-              }
             }}
           >
+            {/* Connection ports */}
+            {['top', 'right', 'bottom', 'left'].map(port => {
+              const portPos = {
+                top: { left: '50%', top: '-6px', transform: 'translateX(-50%)' },
+                right: { right: '-6px', top: '50%', transform: 'translateY(-50%)' },
+                bottom: { left: '50%', bottom: '-6px', transform: 'translateX(-50%)' },
+                left: { left: '-6px', top: '50%', transform: 'translateY(-50%)' }
+              };
+              
+              return (
+                <div
+                  key={port}
+                  className={`connection-port ${hoveredPort?.nodeId === node.id && hoveredPort?.port === port ? 'hovered' : ''}`}
+                  style={portPos[port]}
+                  onMouseEnter={() => setHoveredPort({ nodeId: node.id, port })}
+                  onMouseLeave={() => setHoveredPort(null)}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    if (connectingFrom) {
+                      finishConnection(node.id, port);
+                    } else {
+                      startConnection(node.id, port);
+                    }
+                  }}
+                />
+              );
+            })}
+            
             <div className="node-content">
               {selectedNode === node.id ? (
                 <input
@@ -276,16 +334,6 @@ function OrgCharts({ user, onBack }) {
             {selectedNode === node.id && (
               <div className="node-actions">
                 <button 
-                  className="node-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    startConnection(node.id);
-                  }}
-                  title="Connect to another node"
-                >
-                  🔗
-                </button>
-                <button 
                   className="node-btn node-btn-delete"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -302,7 +350,7 @@ function OrgCharts({ user, onBack }) {
 
         {connectingFrom && (
           <div className="connecting-hint">
-            Click another node to connect
+            Click a connection port on another node
           </div>
         )}
       </div>
