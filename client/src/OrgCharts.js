@@ -228,7 +228,8 @@ function OrgCharts({ user, onBack }) {
       y: 100 + stagger,
       width: 200,
       height: 80,
-      text: `Node ${nodes.length + 1}`
+      text: `Node ${nodes.length + 1}`,
+      color: '#667eea' // Default purple
     };
     
     console.log('Adding node:', newNode);
@@ -241,6 +242,10 @@ function OrgCharts({ user, onBack }) {
 
   const updateNodeText = (nodeId, text) => {
     setNodes(nodes.map(n => n.id === nodeId ? { ...n, text } : n));
+  };
+
+  const updateNodeColor = (nodeId, color) => {
+    setNodes(nodes.map(n => n.id === nodeId ? { ...n, color } : n));
   };
 
   const resizeNode = (nodeId, direction) => {
@@ -823,7 +828,8 @@ function OrgCharts({ user, onBack }) {
               top: node.y * zoom + offset.y,
               width: node.width * zoom,
               height: node.height * zoom,
-              fontSize: 14 * zoom
+              fontSize: 14 * zoom,
+              borderColor: node.color || '#667eea'
             }}
             onMouseDown={(e) => {
               e.stopPropagation();
@@ -996,6 +1002,37 @@ function OrgCharts({ user, onBack }) {
                   >
                     + Larger
                   </button>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Color</label>
+                <div className="color-picker">
+                  {[
+                    { name: 'Purple', value: '#667eea' },
+                    { name: 'Blue', value: '#3b82f6' },
+                    { name: 'Green', value: '#10b981' },
+                    { name: 'Red', value: '#ef4444' },
+                    { name: 'Orange', value: '#f59e0b' },
+                    { name: 'Pink', value: '#ec4899' },
+                    { name: 'Teal', value: '#14b8a6' },
+                    { name: 'Indigo', value: '#6366f1' },
+                    { name: 'Yellow', value: '#eab308' },
+                    { name: 'Gray', value: '#6b7280' }
+                  ].map(color => (
+                    <button
+                      key={color.value}
+                      className={`color-swatch ${(editingNode.color || '#667eea') === color.value ? 'active' : ''}`}
+                      style={{ backgroundColor: color.value }}
+                      onClick={() => {
+                        setEditingNode({ ...editingNode, color: color.value });
+                        updateNodeColor(editingNode.id, color.value);
+                      }}
+                      title={color.name}
+                    >
+                      {(editingNode.color || '#667eea') === color.value && '✓'}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
