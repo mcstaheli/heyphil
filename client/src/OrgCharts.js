@@ -661,16 +661,76 @@ function OrgCharts({ user, onBack }) {
     const best = distances[0];
     
     // Build path based on best routing side
+    // CRITICAL: Must clear nodes in BOTH dimensions before routing
     let midPath;
     if (best.side === 'above' || best.side === 'below') {
       // Route horizontally via top or bottom
-      midPath = `L ${p2.x} ${best.y} L ${p3.x} ${best.y}`;
+      // Need to ensure p2 and p3 are horizontally clear of nodes too
+      const sourceNode = screenNodes.find(n => n.id === fromNodeId);
+      const destNode = screenNodes.find(n => n.id === toNodeId);
+      
+      // Determine horizontal clearance points
+      let clearX2 = p2.x;
+      let clearX3 = p3.x;
+      
+      if (sourceNode) {
+        // Make sure we're horizontally outside source node
+        if (p2.x >= sourceNode.x && p2.x <= sourceNode.x + sourceNode.width) {
+          // Inside node horizontally - move to nearest edge
+          if (p3.x < sourceNode.x) {
+            clearX2 = sourceNode.x - CLEARANCE;
+          } else {
+            clearX2 = sourceNode.x + sourceNode.width + CLEARANCE;
+          }
+        }
+      }
+      
+      if (destNode) {
+        // Make sure we're horizontally outside dest node
+        if (p3.x >= destNode.x && p3.x <= destNode.x + destNode.width) {
+          // Inside node horizontally - move to nearest edge
+          if (p2.x < destNode.x) {
+            clearX3 = destNode.x - CLEARANCE;
+          } else {
+            clearX3 = destNode.x + destNode.width + CLEARANCE;
+          }
+        }
+      }
+      
+      midPath = `L ${clearX2} ${p2.y} L ${clearX2} ${best.y} L ${clearX3} ${best.y} L ${clearX3} ${p3.y}`;
     } else {
       // Route vertically via left or right
-      midPath = `L ${best.x} ${p2.y} L ${best.x} ${p3.y}`;
+      // Need to ensure p2 and p3 are vertically clear of nodes too
+      const sourceNode = screenNodes.find(n => n.id === fromNodeId);
+      const destNode = screenNodes.find(n => n.id === toNodeId);
+      
+      let clearY2 = p2.y;
+      let clearY3 = p3.y;
+      
+      if (sourceNode) {
+        if (p2.y >= sourceNode.y && p2.y <= sourceNode.y + sourceNode.height) {
+          if (p3.y < sourceNode.y) {
+            clearY2 = sourceNode.y - CLEARANCE;
+          } else {
+            clearY2 = sourceNode.y + sourceNode.height + CLEARANCE;
+          }
+        }
+      }
+      
+      if (destNode) {
+        if (p3.y >= destNode.y && p3.y <= destNode.y + destNode.height) {
+          if (p2.y < destNode.y) {
+            clearY3 = destNode.y - CLEARANCE;
+          } else {
+            clearY3 = destNode.y + destNode.height + CLEARANCE;
+          }
+        }
+      }
+      
+      midPath = `L ${p2.x} ${clearY2} L ${best.x} ${clearY2} L ${best.x} ${clearY3} L ${p3.x} ${clearY3}`;
     }
     
-    // Complete path: port → extend → route around → extend → port
+    // Complete path: port → extend → clear node → route around → clear node → extend → port
     return `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y} ${midPath} L ${p3.x} ${p3.y} L ${p4.x} ${p4.y}`;
   };
 
