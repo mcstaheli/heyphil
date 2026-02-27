@@ -743,6 +743,154 @@ function OrgCharts({ user, onBack }) {
     }
   };
 
+  const OLD_ROUTING_TO_DELETE = () => {
+    if (false && isHorizontalPort(fromPort) && isHorizontalPort(toPort)) {
+      const startX = isRightSide(fromPort) ? x1 + GAP : x1 - GAP;
+      const endX = isRightSide(toPort) ? x2 + GAP : x2 - GAP;
+      
+      // Check if we're going backward (need smart routing)
+      const goingBackward = (isRightSide(fromPort) && x2 < x1) || (isLeftSide(fromPort) && x2 > x1);
+      
+      if (goingBackward) {
+        // Route around: out → down/up → across → down/up → in
+        const preferredY = y1 < y2 ? Math.min(y1, y2) - GAP * 2 : Math.max(y1, y2) + GAP * 2;
+        const clearanceY = findSafeClearanceY(screenNodes, fromNodeId, toNodeId, preferredY);
+        return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${clearanceY} L ${endX} ${clearanceY} L ${endX} ${y2} L ${x2} ${y2}`;
+      } else {
+        // Check if horizontal path collides with any nodes
+        const midX = (startX + endX) / 2;
+        let hasCollision = false;
+        
+        // Check ALL segments for collisions (including vertical midpoint!)
+        for (const node of screenNodes) {
+          if (lineIntersectsNode(startX, y1, midX, y1, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(midX, y1, midX, y2, node, fromNodeId, toNodeId) ||  // VERTICAL segment!
+              lineIntersectsNode(midX, y2, endX, y2, node, fromNodeId, toNodeId)) {
+            hasCollision = true;
+            break;
+          }
+        }
+        
+        if (hasCollision) {
+          // Route around obstacles
+          const preferredY = y1 < y2 ? Math.min(y1, y2) - GAP * 2 : Math.max(y1, y2) + GAP * 2;
+          const clearanceY = findSafeClearanceY(screenNodes, fromNodeId, toNodeId, preferredY);
+          return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${clearanceY} L ${endX} ${clearanceY} L ${endX} ${y2} L ${x2} ${y2}`;
+        }
+        
+        // Simple routing: out → midpoint vertical → in
+        return `M ${x1} ${y1} L ${startX} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${endX} ${y2} L ${x2} ${y2}`;
+      }
+    }
+    
+    // Vertical → Vertical (top/bottom to top/bottom)
+    if (isVerticalPort(fromPort) && isVerticalPort(toPort)) {
+      const startY = isBottomSide(fromPort) ? y1 + GAP : y1 - GAP;
+      const endY = isBottomSide(toPort) ? y2 + GAP : y2 - GAP;
+      
+      // Check if we're going backward (need smart routing)
+      const goingBackward = (isBottomSide(fromPort) && y2 < y1) || (isTopSide(fromPort) && y2 > y1);
+      
+      if (goingBackward) {
+        // Route around: out → left/right → down/up → left/right → in
+        const preferredX = x1 < x2 ? Math.min(x1, x2) - GAP * 2 : Math.max(x1, x2) + GAP * 2;
+        const clearanceX = findSafeClearanceX(screenNodes, fromNodeId, toNodeId, preferredX);
+        return `M ${x1} ${y1} L ${x1} ${startY} L ${clearanceX} ${startY} L ${clearanceX} ${endY} L ${x2} ${endY} L ${x2} ${y2}`;
+      } else {
+        // Check if vertical path collides with any nodes
+        const midY = (startY + endY) / 2;
+        let hasCollision = false;
+        
+        // Check ALL segments for collisions (including horizontal midpoint!)
+        for (const node of screenNodes) {
+          if (lineIntersectsNode(x1, startY, x1, midY, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(x1, midY, x2, midY, node, fromNodeId, toNodeId) ||  // HORIZONTAL segment!
+              lineIntersectsNode(x2, midY, x2, endY, node, fromNodeId, toNodeId)) {
+            hasCollision = true;
+            break;
+          }
+        }
+        
+        if (hasCollision) {
+          // Route around obstacles
+          const preferredX = x1 < x2 ? Math.min(x1, x2) - GAP * 2 : Math.max(x1, x2) + GAP * 2;
+          const clearanceX = findSafeClearanceX(screenNodes, fromNodeId, toNodeId, preferredX);
+          return `M ${x1} ${y1} L ${x1} ${startY} L ${clearanceX} ${startY} L ${clearanceX} ${endY} L ${x2} ${endY} L ${x2} ${y2}`;
+        }
+        
+        // Simple routing: out → midpoint horizontal → in
+        return `M ${x1} ${y1} L ${x1} ${startY} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${endY} L ${x2} ${y2}`;
+      }
+    }
+    
+    // Horizontal → Vertical (simple L or Z-shape)
+    if (isHorizontalPort(fromPort) && isVerticalPort(toPort)) {
+      // Direct L-shape if target is in the right direction
+      if ((isRightSide(fromPort) && x2 >= x1) || (isLeftSide(fromPort) && x2 <= x1)) {
+        // Check for collisions on the direct path
+        let hasCollision = false;
+        for (const node of screenNodes) {
+          if (lineIntersectsNode(x1, y1, x2, y1, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(x2, y1, x2, y2, node, fromNodeId, toNodeId)) {
+            hasCollision = true;
+            break;
+          }
+        }
+        
+        if (hasCollision) {
+          // Route around with Z-shape
+          const startX = isRightSide(fromPort) ? x1 + GAP : x1 - GAP;
+          const preferredY = (y1 + y2) / 2;
+          const midY = findSafeClearanceY(screenNodes, fromNodeId, toNodeId, preferredY);
+          return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+        }
+        
+        // Clean L: horizontal to target's X, then vertical to target
+        return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
+      }
+      
+      // Z-shape when target is behind
+      const startX = isRightSide(fromPort) ? x1 + GAP : x1 - GAP;
+      const preferredY = (y1 + y2) / 2;
+      const midY = findSafeClearanceY(screenNodes, fromNodeId, toNodeId, preferredY);
+      return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+    }
+    
+    // Vertical → Horizontal (simple L or Z-shape)
+    if (isVerticalPort(fromPort) && isHorizontalPort(toPort)) {
+      // Direct L-shape if target is in the right direction
+      if ((isBottomSide(fromPort) && y2 >= y1) || (isTopSide(fromPort) && y2 <= y1)) {
+        // Check for collisions on the direct path
+        let hasCollision = false;
+        for (const node of screenNodes) {
+          if (lineIntersectsNode(x1, y1, x1, y2, node, fromNodeId, toNodeId) ||
+              lineIntersectsNode(x1, y2, x2, y2, node, fromNodeId, toNodeId)) {
+            hasCollision = true;
+            break;
+          }
+        }
+        
+        if (hasCollision) {
+          // Route around with Z-shape
+          const startY = isBottomSide(fromPort) ? y1 + GAP : y1 - GAP;
+          const preferredX = (x1 + x2) / 2;
+          const midX = findSafeClearanceX(screenNodes, fromNodeId, toNodeId, preferredX);
+          return `M ${x1} ${y1} L ${x1} ${startY} L ${midX} ${startY} L ${midX} ${y2} L ${x2} ${y2}`;
+        }
+        
+        // Clean L: vertical to target's Y, then horizontal to target
+        return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
+      }
+      
+      // Z-shape when target is behind
+      const startY = isBottomSide(fromPort) ? y1 + GAP : y1 - GAP;
+      const preferredX = (x1 + x2) / 2;
+      const midX = findSafeClearanceX(screenNodes, fromNodeId, toNodeId, preferredX);
+      return `M ${x1} ${y1} L ${x1} ${startY} L ${midX} ${startY} L ${midX} ${y2} L ${x2} ${y2}`;
+    }
+    
+    }
+  };
 
   const handleCanvasMouseMove = (e) => {
     if (isPanning) {
