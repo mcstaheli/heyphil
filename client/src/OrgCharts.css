@@ -28,6 +28,7 @@
   background-size: 50px 50px;
   overflow: hidden;
   cursor: grab;
+  min-height: 500px;
 }
 
 .infinite-canvas:active {
