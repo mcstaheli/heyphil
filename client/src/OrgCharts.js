@@ -184,7 +184,7 @@ function OrgCharts({ user, onBack }) {
     }
   };
 
-  // Connection ports: 3 per edge (12 total)
+  // Connection ports: 5 on top/bottom, 3 on left/right (16 total)
   const getNodePorts = (node) => {
     const scaled = {
       x: node.x * zoom + offset.x,
@@ -193,19 +193,23 @@ function OrgCharts({ user, onBack }) {
       height: node.height * zoom
     };
     return {
-      // Top edge
-      'top-left': { x: scaled.x + scaled.width * 0.25, y: scaled.y },
+      // Top edge - 5 ports
+      'top-1': { x: scaled.x + scaled.width * 0.2, y: scaled.y },
+      'top-2': { x: scaled.x + scaled.width * 0.35, y: scaled.y },
       'top': { x: scaled.x + scaled.width * 0.5, y: scaled.y },
-      'top-right': { x: scaled.x + scaled.width * 0.75, y: scaled.y },
-      // Right edge
+      'top-3': { x: scaled.x + scaled.width * 0.65, y: scaled.y },
+      'top-4': { x: scaled.x + scaled.width * 0.8, y: scaled.y },
+      // Right edge - 3 ports
       'right-top': { x: scaled.x + scaled.width, y: scaled.y + scaled.height * 0.25 },
       'right': { x: scaled.x + scaled.width, y: scaled.y + scaled.height * 0.5 },
       'right-bottom': { x: scaled.x + scaled.width, y: scaled.y + scaled.height * 0.75 },
-      // Bottom edge
-      'bottom-left': { x: scaled.x + scaled.width * 0.25, y: scaled.y + scaled.height },
+      // Bottom edge - 5 ports
+      'bottom-1': { x: scaled.x + scaled.width * 0.2, y: scaled.y + scaled.height },
+      'bottom-2': { x: scaled.x + scaled.width * 0.35, y: scaled.y + scaled.height },
       'bottom': { x: scaled.x + scaled.width * 0.5, y: scaled.y + scaled.height },
-      'bottom-right': { x: scaled.x + scaled.width * 0.75, y: scaled.y + scaled.height },
-      // Left edge
+      'bottom-3': { x: scaled.x + scaled.width * 0.65, y: scaled.y + scaled.height },
+      'bottom-4': { x: scaled.x + scaled.width * 0.8, y: scaled.y + scaled.height },
+      // Left edge - 3 ports
       'left-top': { x: scaled.x, y: scaled.y + scaled.height * 0.25 },
       'left': { x: scaled.x, y: scaled.y + scaled.height * 0.5 },
       'left-bottom': { x: scaled.x, y: scaled.y + scaled.height * 0.75 }
@@ -832,25 +836,31 @@ function OrgCharts({ user, onBack }) {
             }}
           >
             {/* Connection ports */}
-            {['top-left', 'top', 'top-right', 'right-top', 'right', 'right-bottom', 
-              'bottom-right', 'bottom', 'bottom-left', 'left-bottom', 'left', 'left-top'].map(port => {
+            {['top-1', 'top-2', 'top', 'top-3', 'top-4',
+              'right-top', 'right', 'right-bottom', 
+              'bottom-1', 'bottom-2', 'bottom', 'bottom-3', 'bottom-4',
+              'left-top', 'left', 'left-bottom'].map(port => {
               const portPos = {
-                // Top edge
-                'top-left': { left: '25%', top: '-6px', transform: 'translateX(-50%)' },
+                // Top edge - 5 ports
+                'top-1': { left: '20%', top: '-6px', transform: 'translateX(-50%)' },
+                'top-2': { left: '35%', top: '-6px', transform: 'translateX(-50%)' },
                 'top': { left: '50%', top: '-6px', transform: 'translateX(-50%)' },
-                'top-right': { left: '75%', top: '-6px', transform: 'translateX(-50%)' },
-                // Right edge
+                'top-3': { left: '65%', top: '-6px', transform: 'translateX(-50%)' },
+                'top-4': { left: '80%', top: '-6px', transform: 'translateX(-50%)' },
+                // Right edge - 3 ports
                 'right-top': { right: '-6px', top: '25%', transform: 'translateY(-50%)' },
                 'right': { right: '-6px', top: '50%', transform: 'translateY(-50%)' },
                 'right-bottom': { right: '-6px', top: '75%', transform: 'translateY(-50%)' },
-                // Bottom edge
-                'bottom-right': { left: '75%', bottom: '-6px', transform: 'translateX(-50%)' },
+                // Bottom edge - 5 ports
+                'bottom-1': { left: '20%', bottom: '-6px', transform: 'translateX(-50%)' },
+                'bottom-2': { left: '35%', bottom: '-6px', transform: 'translateX(-50%)' },
                 'bottom': { left: '50%', bottom: '-6px', transform: 'translateX(-50%)' },
-                'bottom-left': { left: '25%', bottom: '-6px', transform: 'translateX(-50%)' },
-                // Left edge
-                'left-bottom': { left: '-6px', top: '75%', transform: 'translateY(-50%)' },
+                'bottom-3': { left: '65%', bottom: '-6px', transform: 'translateX(-50%)' },
+                'bottom-4': { left: '80%', bottom: '-6px', transform: 'translateX(-50%)' },
+                // Left edge - 3 ports
+                'left-top': { left: '-6px', top: '25%', transform: 'translateY(-50%)' },
                 'left': { left: '-6px', top: '50%', transform: 'translateY(-50%)' },
-                'left-top': { left: '-6px', top: '25%', transform: 'translateY(-50%)' }
+                'left-bottom': { left: '-6px', top: '75%', transform: 'translateY(-50%)' }
               };
               
               return (
