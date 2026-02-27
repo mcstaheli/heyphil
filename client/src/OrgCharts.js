@@ -669,14 +669,9 @@ function OrgCharts({ user, onBack }) {
     else if (isToTop) extendTo = { x: x2, y: y2 - EXTEND };
     else extendTo = { x: x2 - EXTEND, y: y2 };
     
-    // TRY SIMPLE PATHS FIRST
+    // TRY SIMPLE ORTHOGONAL PATHS (90-degree angles only)
     
-    // Try 1: Direct line between extension points
-    if (!lineIntersectsAnyNode(extendFrom.x, extendFrom.y, extendTo.x, extendTo.y)) {
-      return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
-    }
-    
-    // Try 2: Simple L-shape (horizontal then vertical)
+    // Try 1: Simple L-shape (horizontal then vertical)
     const midH = { x: extendTo.x, y: extendFrom.y };
     if (!lineIntersectsAnyNode(extendFrom.x, extendFrom.y, midH.x, midH.y) &&
         !lineIntersectsAnyNode(midH.x, midH.y, extendTo.x, extendTo.y)) {
