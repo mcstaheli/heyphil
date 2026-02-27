@@ -610,9 +610,49 @@ function OrgCharts({ user, onBack }) {
     const isVerticalFrom = fromPort.startsWith('top') || fromPort.startsWith('bottom');
     const isVerticalTo = toPort.startsWith('top') || toPort.startsWith('bottom');
     
-    // Conservative routing: ALWAYS go around the entire bounding box
-    // Pick the side based on port orientations
+    // Helper: check if direct path is clear (no nodes in between)
+    const isDirectPathClear = () => {
+      const obstacleNodes = screenNodes.filter(n => n.id !== fromNodeId && n.id !== toNodeId);
+      if (obstacleNodes.length === 0) return true;
+      
+      // Check if any obstacle intersects the direct path corridor
+      const pathMinX = Math.min(x1, x2) - CLEARANCE;
+      const pathMaxX = Math.max(x1, x2) + CLEARANCE;
+      const pathMinY = Math.min(y1, y2) - CLEARANCE;
+      const pathMaxY = Math.max(y1, y2) + CLEARANCE;
+      
+      for (const node of obstacleNodes) {
+        const nodeRight = node.x + node.width;
+        const nodeBottom = node.y + node.height;
+        
+        // Check if node overlaps with path corridor
+        if (node.x < pathMaxX && nodeRight > pathMinX &&
+            node.y < pathMaxY && nodeBottom > pathMinY) {
+          return false;
+        }
+      }
+      return true;
+    };
     
+    // TRY DIRECT PATH FIRST (if clear)
+    if (isDirectPathClear()) {
+      if (isVerticalFrom && isVerticalTo) {
+        // Straight vertical line
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+      } else if (!isVerticalFrom && !isVerticalTo) {
+        // Straight horizontal line
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+      } else {
+        // Simple L-shape
+        if (isVerticalFrom) {
+          return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
+        } else {
+          return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
+        }
+      }
+    }
+    
+    // FALLBACK: Route around obstacles
     if (isVerticalFrom && isVerticalTo) {
       // Both vertical ports - route via left or right side
       const routeX = (x1 < minX && x2 < minX) ? minX - CLEARANCE : maxX + CLEARANCE;
