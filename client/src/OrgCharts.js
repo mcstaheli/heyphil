@@ -14,22 +14,22 @@ function OrgCharts({ user, onBack }) {
   const [zoom, setZoom] = useState(1);
 
   const addNode = () => {
-    // Get canvas center in world coordinates
-    const canvasRect = canvasRef.current?.getBoundingClientRect();
-    const centerX = canvasRect ? (canvasRect.width / 2 - offset.x) / zoom : 400;
-    const centerY = canvasRect ? (canvasRect.height / 2 - offset.y) / zoom : 300;
-    
-    // Stagger nodes slightly so they don't stack
-    const stagger = nodes.length * 20;
+    // Simple fixed position for testing - always place at top-left with stagger
+    const stagger = nodes.length * 50;
     
     const newNode = {
       id: Date.now(),
-      x: centerX + stagger,
-      y: centerY + stagger,
+      x: 100 + stagger,
+      y: 100 + stagger,
       width: 200,
       height: 80,
-      text: 'New Node'
+      text: `Node ${nodes.length + 1}`
     };
+    
+    console.log('Adding node:', newNode);
+    console.log('Current nodes count:', nodes.length);
+    console.log('Offset:', offset, 'Zoom:', zoom);
+    
     setNodes([...nodes, newNode]);
     setSelectedNode(newNode.id);
   };
@@ -161,6 +161,11 @@ function OrgCharts({ user, onBack }) {
         </div>
         <div className="canvas-info">
           {nodes.length} nodes • {connections.length} connections
+          {nodes.length > 0 && (
+            <span style={{ marginLeft: '12px', color: '#00f5ff' }}>
+              (Nodes exist! Look for bright blue boxes)
+            </span>
+          )}
         </div>
       </div>
 
@@ -204,6 +209,25 @@ function OrgCharts({ user, onBack }) {
             );
           })}
         </svg>
+
+        {/* Debug: Test div */}
+        <div style={{
+          position: 'absolute',
+          left: '100px',
+          top: '100px',
+          width: '200px',
+          height: '80px',
+          background: 'red',
+          border: '3px solid yellow',
+          zIndex: 999,
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontWeight: 'bold'
+        }}>
+          TEST BOX (100, 100)
+        </div>
 
         {/* Render nodes */}
         {nodes.map(node => (

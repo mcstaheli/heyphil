@@ -37,7 +37,7 @@
 .canvas-node {
   position: absolute;
   background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-  border: 2px solid #3a3a3a;
+  border: 3px solid #00f5ff;
   border-radius: 8px;
   padding: 16px;
   cursor: move;
@@ -45,6 +45,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 245, 255, 0.3);
 }
 
 .canvas-node:hover {
