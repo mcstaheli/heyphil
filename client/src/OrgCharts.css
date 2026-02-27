@@ -521,7 +521,7 @@
 
 .chart-browser-header {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
   margin-bottom: 32px;
 }
