@@ -29,6 +29,7 @@ function OrgCharts({ user, onBack }) {
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [alignmentGuides, setAlignmentGuides] = useState([]);
   const [reconnecting, setReconnecting] = useState(null); // { connectionId, end: 'from' | 'to' }
+  const [editingNode, setEditingNode] = useState(null); // Node being edited in modal
   
   const GRID_SIZE = 20; // Grid snap size in pixels
   const SNAP_THRESHOLD = 5; // Pixels to trigger alignment guide
@@ -480,16 +481,15 @@ function OrgCharts({ user, onBack }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
-        if (reconnecting) {
+        if (editingNode) {
+          setEditingNode(null);
+        } else if (reconnecting) {
           setReconnecting(null);
-        }
-        if (connectingFrom) {
+        } else if (connectingFrom) {
           setConnectingFrom(null);
-        }
-        if (selectedConnection) {
+        } else if (selectedConnection) {
           setSelectedConnection(null);
-        }
-        if (selectedNode) {
+        } else if (selectedNode) {
           setSelectedNode(null);
         }
       }
@@ -497,7 +497,7 @@ function OrgCharts({ user, onBack }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [connectingFrom, selectedConnection, selectedNode, reconnecting]);
+  }, [connectingFrom, selectedConnection, selectedNode, reconnecting, editingNode]);
 
   const getNodePosition = (nodeId) => {
     const node = nodes.find(n => n.id === nodeId);
@@ -838,6 +838,10 @@ function OrgCharts({ user, onBack }) {
             onClick={(e) => {
               e.stopPropagation();
             }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setEditingNode(node);
+            }}
           >
             {/* Connection ports */}
             {(() => {
@@ -919,54 +923,8 @@ function OrgCharts({ user, onBack }) {
             })()}
             
             <div className="node-content">
-              {selectedNode === node.id ? (
-                <input
-                  type="text"
-                  value={node.text}
-                  onChange={(e) => updateNodeText(node.id, e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  autoFocus
-                  style={{ fontSize: 14 * zoom }}
-                />
-              ) : (
-                <span>{node.text}</span>
-              )}
+              <span>{node.text}</span>
             </div>
-            {selectedNode === node.id && (
-              <div className="node-actions">
-                <button 
-                  className="node-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    resizeNode(node.id, 'increase');
-                  }}
-                  title="Make larger"
-                >
-                  +
-                </button>
-                <button 
-                  className="node-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    resizeNode(node.id, 'decrease');
-                  }}
-                  title="Make smaller"
-                >
-                  −
-                </button>
-                <button 
-                  className="node-btn node-btn-delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteNode(node.id);
-                  }}
-                  title="Delete node"
-                >
-                  🗑️
-                </button>
-              </div>
-            )}
           </div>
         ))}
 
@@ -988,6 +946,77 @@ function OrgCharts({ user, onBack }) {
           </div>
         )}
       </div>
+
+      {/* Edit Node Modal */}
+      {editingNode && (
+        <div className="modal-overlay" onClick={() => setEditingNode(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Edit Node</h2>
+              <button className="modal-close" onClick={() => setEditingNode(null)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Text</label>
+                <input
+                  type="text"
+                  value={editingNode.text}
+                  onChange={(e) => {
+                    const newText = e.target.value;
+                    setEditingNode({ ...editingNode, text: newText });
+                    updateNodeText(editingNode.id, newText);
+                  }}
+                  placeholder="Enter node text"
+                  autoFocus
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Size</label>
+                <div className="size-controls">
+                  <button 
+                    className="btn-secondary"
+                    onClick={() => {
+                      resizeNode(editingNode.id, 'decrease');
+                      const updated = nodes.find(n => n.id === editingNode.id);
+                      if (updated) setEditingNode(updated);
+                    }}
+                  >
+                    − Smaller
+                  </button>
+                  <span>{editingNode.width}×{editingNode.height}px</span>
+                  <button 
+                    className="btn-secondary"
+                    onClick={() => {
+                      resizeNode(editingNode.id, 'increase');
+                      const updated = nodes.find(n => n.id === editingNode.id);
+                      if (updated) setEditingNode(updated);
+                    }}
+                  >
+                    + Larger
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button 
+                className="btn-danger"
+                onClick={() => {
+                  deleteNode(editingNode.id);
+                  setEditingNode(null);
+                }}
+              >
+                🗑️ Delete Node
+              </button>
+              <button className="btn-primary" onClick={() => setEditingNode(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
