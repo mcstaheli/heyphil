@@ -24,6 +24,9 @@ function OrgCharts({ user, onBack }) {
   const [hoveredPort, setHoveredPort] = useState(null);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const dragAnimationFrame = useRef(null);
+  const saveTimeout = useRef(null);
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
@@ -106,23 +109,53 @@ function OrgCharts({ user, onBack }) {
     }
   };
 
-  const saveChart = async () => {
+  const saveChart = async (silent = false) => {
     if (!currentChart) return;
 
     try {
+      setSaving(true);
       const res = await fetch(`${API_BASE_URL}/api/orgcharts/${currentChart.id}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({ nodes, connections })
       });
       if (res.ok) {
-        alert('Chart saved!');
+        setLastSaved(new Date());
+        if (!silent) {
+          alert('Chart saved!');
+        }
       }
     } catch (error) {
       console.error('Failed to save chart:', error);
-      alert('Failed to save chart');
+      if (!silent) {
+        alert('Failed to save chart');
+      }
+    } finally {
+      setSaving(false);
     }
   };
+
+  // Auto-save with debounce when nodes or connections change
+  useEffect(() => {
+    if (!currentChart) return;
+    if (nodes.length === 0 && connections.length === 0) return;
+
+    // Clear existing timeout
+    if (saveTimeout.current) {
+      clearTimeout(saveTimeout.current);
+    }
+
+    // Debounce auto-save by 2 seconds
+    saveTimeout.current = setTimeout(() => {
+      saveChart(true); // Silent auto-save
+    }, 2000);
+
+    return () => {
+      if (saveTimeout.current) {
+        clearTimeout(saveTimeout.current);
+      }
+    };
+  }, [nodes, connections, currentChart]);
 
   const deleteChart = async (chartId) => {
     if (!window.confirm('Delete this chart? This cannot be undone.')) return;
@@ -498,7 +531,14 @@ function OrgCharts({ user, onBack }) {
           <h1>📊 {currentChart.name}</h1>
         </div>
         <div className="user-info">
-          <button className="btn-secondary" onClick={saveChart}>💾 Save</button>
+          <div className="save-status">
+            {saving ? (
+              <span className="saving-indicator">💾 Saving...</span>
+            ) : lastSaved ? (
+              <span className="saved-indicator">✓ Saved {new Date().getTime() - lastSaved.getTime() < 5000 ? 'now' : 'at ' + lastSaved.toLocaleTimeString()}</span>
+            ) : null}
+          </div>
+          <button className="btn-secondary" onClick={() => saveChart(false)}>💾 Save Now</button>
           {user?.picture && <img src={user.picture} alt={user.name} />}
           <span>{user?.name}</span>
         </div>

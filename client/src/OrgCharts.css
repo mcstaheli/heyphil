@@ -333,3 +333,25 @@
   border-color: #dc3545;
   transform: scale(1.1);
 }
+
+/* Auto-save indicators */
+.save-status {
+  margin-right: 12px;
+  font-size: 13px;
+}
+
+.saving-indicator {
+  color: #667eea;
+  font-weight: 500;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.saved-indicator {
+  color: #28a745;
+  font-weight: 500;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
