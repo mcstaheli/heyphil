@@ -710,9 +710,14 @@ function OrgCharts({ user, onBack }) {
     }
   }, [zoom]);
 
-  // Handle Escape key to cancel connection mode
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Don't handle arrow keys if user is typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        return;
+      }
+
       if (e.key === 'Escape') {
         if (editingNode) {
           setEditingNode(null);
@@ -728,11 +733,57 @@ function OrgCharts({ user, onBack }) {
           setSelectedNode(null);
         }
       }
+
+      // Arrow keys to move selected node
+      if (selectedNode && !editingNode && !editingConnection) {
+        let deltaX = 0;
+        let deltaY = 0;
+        const moveAmount = snapToGrid ? GRID_SIZE : 5; // Use grid size if snapping, otherwise 5px
+
+        switch(e.key) {
+          case 'ArrowUp':
+            deltaY = -moveAmount;
+            e.preventDefault();
+            break;
+          case 'ArrowDown':
+            deltaY = moveAmount;
+            e.preventDefault();
+            break;
+          case 'ArrowLeft':
+            deltaX = -moveAmount;
+            e.preventDefault();
+            break;
+          case 'ArrowRight':
+            deltaX = moveAmount;
+            e.preventDefault();
+            break;
+          default:
+            return;
+        }
+
+        if (deltaX !== 0 || deltaY !== 0) {
+          setNodes(prev => prev.map(n => {
+            if (n.id === selectedNode) {
+              let newX = n.x + deltaX;
+              let newY = n.y + deltaY;
+              
+              // Apply grid snapping if enabled
+              if (snapToGrid) {
+                newX = snapToGridValue(newX);
+                newY = snapToGridValue(newY);
+              }
+              
+              return { ...n, x: newX, y: newY };
+            }
+            return n;
+          }));
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [connectingFrom, selectedConnection, selectedNode, reconnecting, editingNode, editingConnection]);
+  }, [connectingFrom, selectedConnection, selectedNode, reconnecting, editingNode, editingConnection, snapToGrid]);
 
   const getNodePosition = (nodeId) => {
     const node = nodes.find(n => n.id === nodeId);
