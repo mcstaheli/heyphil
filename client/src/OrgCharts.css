@@ -83,6 +83,7 @@
   right: -12px;
   display: flex;
   gap: 4px;
+  align-items: center;
 }
 
 .node-btn {
@@ -95,15 +96,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 1;
   transition: all 0.2s;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  color: #495057;
 }
 
 .node-btn:hover {
-  background: #f8f9fa;
+  background: #667eea;
+  border-color: #667eea;
+  color: white;
   transform: scale(1.1);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
 }
 
 .node-btn-delete:hover {

@@ -169,6 +169,44 @@ function OrgCharts({ user, onBack }) {
     setNodes(nodes.map(n => n.id === nodeId ? { ...n, text } : n));
   };
 
+  const resizeNode = (nodeId, direction) => {
+    const STANDARD_WIDTH = 200;
+    const STANDARD_HEIGHT = 80;
+    const STEP = 20;
+    
+    setNodes(nodes.map(n => {
+      if (n.id !== nodeId) return n;
+      
+      if (direction === 'increase') {
+        // Increase both dimensions
+        return {
+          ...n,
+          width: n.width + STEP,
+          height: n.height + STEP
+        };
+      } else {
+        // Decrease
+        const newWidth = Math.max(100, n.width - STEP);
+        const newHeight = Math.max(40, n.height - STEP);
+        
+        // If at or above standard size, shrink both dimensions
+        if (n.width >= STANDARD_WIDTH || n.height >= STANDARD_HEIGHT) {
+          return {
+            ...n,
+            width: newWidth,
+            height: newHeight
+          };
+        } else {
+          // Below standard size - only shrink vertically
+          return {
+            ...n,
+            height: newHeight
+          };
+        }
+      }
+    }));
+  };
+
   const deleteNode = (nodeId) => {
     setNodes(nodes.filter(n => n.id !== nodeId));
     setConnections(connections.filter(c => c.from !== nodeId && c.to !== nodeId));
@@ -584,6 +622,26 @@ function OrgCharts({ user, onBack }) {
             </div>
             {selectedNode === node.id && (
               <div className="node-actions">
+                <button 
+                  className="node-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    resizeNode(node.id, 'increase');
+                  }}
+                  title="Make larger"
+                >
+                  +
+                </button>
+                <button 
+                  className="node-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    resizeNode(node.id, 'decrease');
+                  }}
+                  title="Make smaller"
+                >
+                  −
+                </button>
                 <button 
                   className="node-btn node-btn-delete"
                   onClick={(e) => {
