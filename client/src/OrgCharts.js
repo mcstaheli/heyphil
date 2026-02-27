@@ -590,73 +590,82 @@ function OrgCharts({ user, onBack }) {
       return path;
     }
     
-    // TEMPORARY: Simple aggressive routing that WILL work
-    // Route WAY around all obstacles
-    // IMPORTANT: Include ALL nodes (even source/dest) as obstacles for the routing calculation
+    // Simple routing with proper port clearance
     const allObstacles = screenNodes;
     
     if (allObstacles.length === 0) {
-      // No nodes at all, direct path
       return `M ${x1} ${y1} L ${x2} ${y2}`;
     }
     
-    // Find the bounds of all obstacles
+    // Find the source and destination nodes
+    const sourceNode = screenNodes.find(n => n.id === fromNodeId);
+    const destNode = screenNodes.find(n => n.id === toNodeId);
+    
+    if (!sourceNode || !destNode) {
+      return `M ${x1} ${y1} L ${x2} ${y2}`;
+    }
+    
+    const CLEARANCE = 80;
+    const PORT_CLEARANCE = 40; // Distance to move away from port before routing
+    
+    // Determine port directions and create clearance points
+    const getPortDirection = (port) => {
+      if (port.startsWith('right')) return { x: 1, y: 0 };
+      if (port.startsWith('left')) return { x: -1, y: 0 };
+      if (port.startsWith('bottom')) return { x: 0, y: 1 };
+      if (port.startsWith('top')) return { x: 0, y: -1 };
+      return { x: 1, y: 0 }; // default right
+    };
+    
+    const fromDir = getPortDirection(fromPort);
+    const toDir = getPortDirection(toPort);
+    
+    // Create clearance points (move away from the nodes)
+    const startClear = { x: x1 + fromDir.x * PORT_CLEARANCE, y: y1 + fromDir.y * PORT_CLEARANCE };
+    const endClear = { x: x2 + toDir.x * PORT_CLEARANCE, y: y2 + toDir.y * PORT_CLEARANCE };
+    
+    // Find bounds of ALL nodes for routing around
     const minX = Math.min(...allObstacles.map(n => n.x));
     const maxX = Math.max(...allObstacles.map(n => n.x + n.width));
     const minY = Math.min(...allObstacles.map(n => n.y));
     const maxY = Math.max(...allObstacles.map(n => n.y + n.height));
     
-    const CLEARANCE = 80;
+    // Route using clearance points
+    // Always: port → clearance point → route around → clearance point → port
     
-    // Route around based on relative positions
-    if (x2 > maxX && y2 > maxY) {
-      // Target is right and below - go around right side
-      return `M ${x1} ${y1} L ${x1} ${maxY + CLEARANCE} L ${x2} ${maxY + CLEARANCE} L ${x2} ${y2}`;
-    } else if (x2 < minX && y2 > maxY) {
-      // Target is left and below - go around left side
-      return `M ${x1} ${y1} L ${x1} ${maxY + CLEARANCE} L ${x2} ${maxY + CLEARANCE} L ${x2} ${y2}`;
-    } else if (x2 > maxX && y2 < minY) {
-      // Target is right and above - go around top
-      return `M ${x1} ${y1} L ${x1} ${minY - CLEARANCE} L ${x2} ${minY - CLEARANCE} L ${x2} ${y2}`;
-    } else if (x2 < minX && y2 < minY) {
-      // Target is left and above - go around top
-      return `M ${x1} ${y1} L ${x1} ${minY - CLEARANCE} L ${x2} ${minY - CLEARANCE} L ${x2} ${y2}`;
+    const routeAbove = minY - CLEARANCE;
+    const routeBelow = maxY + CLEARANCE;
+    const routeLeft = minX - CLEARANCE;
+    const routeRight = maxX + CLEARANCE;
+    
+    // Determine best routing path (always go around the bounding box)
+    let routePath;
+    
+    // Check which side to route around
+    if (startClear.y < minY && endClear.y < minY) {
+      // Both above all nodes - route above
+      routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${startClear.x} ${routeAbove} L ${endClear.x} ${routeAbove} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
+    } else if (startClear.y > maxY && endClear.y > maxY) {
+      // Both below all nodes - route below
+      routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${startClear.x} ${routeBelow} L ${endClear.x} ${routeBelow} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
+    } else if (startClear.x < minX && endClear.x < minX) {
+      // Both left of all nodes - route left
+      routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${routeLeft} ${startClear.y} L ${routeLeft} ${endClear.y} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
+    } else if (startClear.x > maxX && endClear.x > maxX) {
+      // Both right of all nodes - route right
+      routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${routeRight} ${startClear.y} L ${routeRight} ${endClear.y} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
     } else {
-      // Complex case - route around the side with more space
-      const routeAbove = minY - CLEARANCE;
-      const routeBelow = maxY + CLEARANCE;
-      const routeLeft = minX - CLEARANCE;
-      const routeRight = maxX + CLEARANCE;
-      
-      // Choose path based on which direction has fewer obstacles
-      if (Math.abs(y2 - y1) > Math.abs(x2 - x1)) {
-        // Prefer horizontal routing
-        if (x1 < minX && x2 < minX) {
-          // Both on left, go around left
-          return `M ${x1} ${y1} L ${routeLeft} ${y1} L ${routeLeft} ${y2} L ${x2} ${y2}`;
-        } else if (x1 > maxX && x2 > maxX) {
-          // Both on right, go around right
-          return `M ${x1} ${y1} L ${routeRight} ${y1} L ${routeRight} ${y2} L ${x2} ${y2}`;
-        } else {
-          // Default: route above or below
-          const routeY = y1 < y2 ? routeAbove : routeBelow;
-          return `M ${x1} ${y1} L ${x1} ${routeY} L ${x2} ${routeY} L ${x2} ${y2}`;
-        }
+      // Mixed case - pick safest route (above or below based on Y positions)
+      if (Math.abs(startClear.y - minY) + Math.abs(endClear.y - minY) < Math.abs(startClear.y - maxY) + Math.abs(endClear.y - maxY)) {
+        // Route above
+        routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${startClear.x} ${routeAbove} L ${endClear.x} ${routeAbove} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
       } else {
-        // Prefer vertical routing
-        if (y1 < minY && y2 < minY) {
-          // Both above, route above
-          return `M ${x1} ${y1} L ${x1} ${routeAbove} L ${x2} ${routeAbove} L ${x2} ${y2}`;
-        } else if (y1 > maxY && y2 > maxY) {
-          // Both below, route below  
-          return `M ${x1} ${y1} L ${x1} ${routeBelow} L ${x2} ${routeBelow} L ${x2} ${y2}`;
-        } else {
-          // Default: route left or right
-          const routeX = x1 < x2 ? routeRight : routeLeft;
-          return `M ${x1} ${y1} L ${routeX} ${y1} L ${routeX} ${y2} L ${x2} ${y2}`;
-        }
+        // Route below
+        routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${startClear.x} ${routeBelow} L ${endClear.x} ${routeBelow} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
       }
     }
+    
+    return routePath;
   };
 
   const handleCanvasMouseDown = (e) => {
