@@ -667,7 +667,7 @@ function OrgCharts({ user, onBack }) {
               onClick={() => deleteConnection(conn.id)}
               title="Delete connection"
             >
-              ✕
+              🗑️
             </button>
           );
         })()}
