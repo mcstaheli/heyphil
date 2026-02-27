@@ -210,18 +210,31 @@ function OrgCharts({ user, onBack }) {
     if (!window.confirm('Delete this chart? This cannot be undone.')) return;
 
     try {
+      console.log('Deleting chart:', chartId);
       const res = await fetch(`${API_BASE_URL}/api/orgcharts/${chartId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
+      
+      console.log('Delete response:', res.status, res.ok);
+      
       if (res.ok) {
-        setCharts(charts.filter(c => c.id !== chartId));
+        console.log('Delete successful, updating list');
+        // Remove from local state
+        setCharts(prevCharts => prevCharts.filter(c => c.id !== chartId));
         if (currentChart?.id === chartId) {
           setCurrentChart(null);
         }
+        // Reload list to be sure
+        await loadCharts();
+      } else {
+        const error = await res.text();
+        console.error('Delete failed:', error);
+        alert('Failed to delete chart. ' + error);
       }
     } catch (error) {
       console.error('Failed to delete chart:', error);
+      alert('Network error while deleting chart.');
     }
   };
 
