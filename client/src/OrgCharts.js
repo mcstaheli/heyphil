@@ -286,28 +286,28 @@ function OrgCharts({ user, onBack }) {
     
     // Horizontal → Vertical (simple L or Z-shape)
     if ((fromPort === 'right' || fromPort === 'left') && (toPort === 'top' || toPort === 'bottom')) {
-      const startX = fromPort === 'right' ? x1 + GAP : x1 - GAP;
-      
       // Direct L-shape if target is in the right direction
       if ((fromPort === 'right' && x2 >= x1) || (fromPort === 'left' && x2 <= x1)) {
-        return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${y2} L ${x2} ${y2}`;
+        // Clean L: horizontal to target's X, then vertical to target
+        return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
       }
       
       // Z-shape when target is behind
+      const startX = fromPort === 'right' ? x1 + GAP : x1 - GAP;
       const midY = (y1 + y2) / 2;
       return `M ${x1} ${y1} L ${startX} ${y1} L ${startX} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
     }
     
     // Vertical → Horizontal (simple L or Z-shape)
     if ((fromPort === 'top' || fromPort === 'bottom') && (toPort === 'right' || toPort === 'left')) {
-      const startY = fromPort === 'bottom' ? y1 + GAP : y1 - GAP;
-      
       // Direct L-shape if target is in the right direction
       if ((fromPort === 'bottom' && y2 >= y1) || (fromPort === 'top' && y2 <= y1)) {
-        return `M ${x1} ${y1} L ${x1} ${startY} L ${x2} ${startY} L ${x2} ${y2}`;
+        // Clean L: vertical to target's Y, then horizontal to target
+        return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
       }
       
       // Z-shape when target is behind
+      const startY = fromPort === 'bottom' ? y1 + GAP : y1 - GAP;
       const midX = (x1 + x2) / 2;
       return `M ${x1} ${y1} L ${x1} ${startY} L ${midX} ${startY} L ${midX} ${y2} L ${x2} ${y2}`;
     }
