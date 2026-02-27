@@ -403,6 +403,8 @@ app.delete('/api/orgcharts/:id', requireAuth, async (req, res) => {
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     const chartId = req.params.id;
     
+    console.log('Delete request:', { chartId, userEmail: req.user.email });
+    
     // Delete chart metadata
     const chartResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
@@ -410,12 +412,21 @@ app.delete('/api/orgcharts/:id', requireAuth, async (req, res) => {
     });
     
     const chartRows = chartResponse.data.values || [];
+    console.log('Total chart rows before delete:', chartRows.length);
+    
     const filteredCharts = [chartRows[0]]; // Keep header
+    let deletedCount = 0;
     chartRows.slice(1).forEach(row => {
       if (row[0] !== chartId || row[2] !== req.user.email) {
         filteredCharts.push(row);
+      } else {
+        deletedCount++;
+        console.log('Deleting chart row:', { id: row[0], email: row[2], name: row[1] });
       }
     });
+    
+    console.log('Charts deleted:', deletedCount);
+    console.log('Rows after filter:', filteredCharts.length);
     
     await sheets.spreadsheets.values.update({
       spreadsheetId,
