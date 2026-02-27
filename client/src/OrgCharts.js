@@ -1,8 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './OrgCharts.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+
 function OrgCharts({ user, onBack }) {
   const canvasRef = useRef(null);
+  
+  // Chart management
+  const [charts, setCharts] = useState([]);
+  const [currentChart, setCurrentChart] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  // Canvas state
   const [nodes, setNodes] = useState([]);
   const [connections, setConnections] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
@@ -14,6 +23,110 @@ function OrgCharts({ user, onBack }) {
   const [zoom, setZoom] = useState(1);
   const [hoveredPort, setHoveredPort] = useState(null);
   const [selectedConnection, setSelectedConnection] = useState(null);
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('authToken');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
+  // Load charts list on mount
+  useEffect(() => {
+    loadCharts();
+  }, []);
+
+  const loadCharts = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orgcharts`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCharts(data.charts || []);
+      }
+    } catch (error) {
+      console.error('Failed to load charts:', error);
+    }
+    setLoading(false);
+  };
+
+  const createChart = async () => {
+    const name = prompt('Chart name:');
+    if (!name) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orgcharts`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ name })
+      });
+      if (res.ok) {
+        const newChart = await res.json();
+        setCurrentChart(newChart);
+        setNodes([]);
+        setConnections([]);
+        loadCharts(); // Refresh list
+      }
+    } catch (error) {
+      console.error('Failed to create chart:', error);
+    }
+  };
+
+  const openChart = async (chartId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orgcharts/${chartId}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const chart = await res.json();
+        setCurrentChart(chart);
+        setNodes(chart.nodes || []);
+        setConnections(chart.connections || []);
+      }
+    } catch (error) {
+      console.error('Failed to load chart:', error);
+    }
+  };
+
+  const saveChart = async () => {
+    if (!currentChart) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orgcharts/${currentChart.id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ nodes, connections })
+      });
+      if (res.ok) {
+        alert('Chart saved!');
+      }
+    } catch (error) {
+      console.error('Failed to save chart:', error);
+      alert('Failed to save chart');
+    }
+  };
+
+  const deleteChart = async (chartId) => {
+    if (!window.confirm('Delete this chart? This cannot be undone.')) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orgcharts/${chartId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        setCharts(charts.filter(c => c.id !== chartId));
+        if (currentChart?.id === chartId) {
+          setCurrentChart(null);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to delete chart:', error);
+    }
+  };
 
   // Connection ports: top, right, bottom, left
   const getNodePorts = (node) => {
@@ -181,14 +294,83 @@ function OrgCharts({ user, onBack }) {
     } : null;
   };
 
+  // Chart browser view
+  if (!currentChart) {
+    return (
+      <div className="app-container">
+        <header className="app-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <button className="btn-secondary" onClick={onBack}>← Back</button>
+            <h1>📊 Org Charts</h1>
+          </div>
+          <div className="user-info">
+            {user?.picture && <img src={user.picture} alt={user.name} />}
+            <span>{user?.name}</span>
+          </div>
+        </header>
+
+        <div className="chart-browser">
+          <div className="chart-browser-header">
+            <h2>Your Org Charts</h2>
+            <button className="btn-primary" onClick={createChart}>+ New Chart</button>
+          </div>
+
+          {loading ? (
+            <div className="chart-browser-loading">Loading charts...</div>
+          ) : charts.length === 0 ? (
+            <div className="chart-browser-empty">
+              <div className="empty-state">
+                <div className="empty-icon">📊</div>
+                <h3>No org charts yet</h3>
+                <p>Create your first organizational chart to get started</p>
+                <button className="btn-primary" onClick={createChart}>+ Create Chart</button>
+              </div>
+            </div>
+          ) : (
+            <div className="chart-list">
+              {charts.map(chart => (
+                <div key={chart.id} className="chart-item">
+                  <div className="chart-item-main" onClick={() => openChart(chart.id)}>
+                    <div className="chart-item-icon">📊</div>
+                    <div className="chart-item-info">
+                      <h3>{chart.name}</h3>
+                      <div className="chart-item-meta">
+                        {chart.nodeCount || 0} nodes • {chart.connectionCount || 0} connections
+                      </div>
+                      <div className="chart-item-date">
+                        Last edited {new Date(chart.updatedAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    className="chart-item-delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteChart(chart.id);
+                    }}
+                    title="Delete chart"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Canvas editor view
   return (
     <div className="app-container">
       <header className="app-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button className="btn-secondary" onClick={onBack}>← Back</button>
-          <h1>📊 Org Charts</h1>
+          <button className="btn-secondary" onClick={() => setCurrentChart(null)}>← Charts</button>
+          <h1>📊 {currentChart.name}</h1>
         </div>
         <div className="user-info">
+          <button className="btn-secondary" onClick={saveChart}>💾 Save</button>
           {user?.picture && <img src={user.picture} alt={user.name} />}
           <span>{user?.name}</span>
         </div>

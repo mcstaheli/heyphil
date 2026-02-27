@@ -184,6 +184,254 @@ const logActivity = async (sheets, spreadsheetId, cardTitle, action, user, detai
   }
 };
 
+// ========== ORG CHARTS ENDPOINTS ==========
+
+// Get all charts for user
+app.get('/api/orgcharts', requireAuth, async (req, res) => {
+  try {
+    const sheets = getSheets();
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'OrgCharts!A:G'
+    });
+    
+    const rows = response.data.values || [];
+    const charts = rows.slice(1)
+      .filter(row => row[2] === req.user.email)
+      .map(row => ({
+        id: row[0],
+        name: row[1],
+        owner: row[2],
+        createdAt: row[3],
+        updatedAt: row[4],
+        nodeCount: parseInt(row[5]) || 0,
+        connectionCount: parseInt(row[6]) || 0
+      }));
+    
+    res.json({ charts });
+  } catch (error) {
+    console.error('Failed to load charts:', error);
+    res.status(500).json({ error: 'Failed to load charts' });
+  }
+});
+
+// Get specific chart
+app.get('/api/orgcharts/:id', requireAuth, async (req, res) => {
+  try {
+    const sheets = getSheets();
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    const chartId = req.params.id;
+    
+    // Get chart metadata
+    const chartResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'OrgCharts!A:G'
+    });
+    
+    const chartRows = chartResponse.data.values || [];
+    const chartRow = chartRows.slice(1).find(row => row[0] === chartId && row[2] === req.user.email);
+    
+    if (!chartRow) {
+      return res.status(404).json({ error: 'Chart not found' });
+    }
+    
+    // Get chart data
+    const dataResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'OrgChartData!A:C'
+    });
+    
+    const dataRows = dataResponse.data.values || [];
+    const nodes = [];
+    const connections = [];
+    
+    dataRows.slice(1).forEach(row => {
+      if (row[0] === chartId) {
+        try {
+          const data = JSON.parse(row[2]);
+          if (row[1] === 'node') nodes.push(data);
+          if (row[1] === 'connection') connections.push(data);
+        } catch (e) {
+          console.error('Failed to parse data:', e);
+        }
+      }
+    });
+    
+    res.json({
+      id: chartRow[0],
+      name: chartRow[1],
+      owner: chartRow[2],
+      createdAt: chartRow[3],
+      updatedAt: chartRow[4],
+      nodeCount: nodes.length,
+      connectionCount: connections.length,
+      nodes,
+      connections
+    });
+  } catch (error) {
+    console.error('Failed to load chart:', error);
+    res.status(500).json({ error: 'Failed to load chart' });
+  }
+});
+
+// Create new chart
+app.post('/api/orgcharts', requireAuth, async (req, res) => {
+  try {
+    const sheets = getSheets();
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    const { name } = req.body;
+    
+    const chartId = Date.now().toString();
+    const now = new Date().toISOString();
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'OrgCharts!A:G',
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[chartId, name, req.user.email, now, now, 0, 0]]
+      }
+    });
+    
+    res.json({
+      id: chartId,
+      name,
+      owner: req.user.email,
+      createdAt: now,
+      updatedAt: now,
+      nodeCount: 0,
+      connectionCount: 0,
+      nodes: [],
+      connections: []
+    });
+  } catch (error) {
+    console.error('Failed to create chart:', error);
+    res.status(500).json({ error: 'Failed to create chart' });
+  }
+});
+
+// Update chart
+app.put('/api/orgcharts/:id', requireAuth, async (req, res) => {
+  try {
+    const sheets = getSheets();
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    const chartId = req.params.id;
+    const { nodes, connections } = req.body;
+    
+    // Verify ownership
+    const chartResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'OrgCharts!A:G'
+    });
+    
+    const chartRows = chartResponse.data.values || [];
+    const chartRowIndex = chartRows.slice(1).findIndex(row => row[0] === chartId && row[2] === req.user.email);
+    
+    if (chartRowIndex === -1) {
+      return res.status(404).json({ error: 'Chart not found' });
+    }
+    
+    // Delete existing data for this chart
+    const dataResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'OrgChartData!A:C'
+    });
+    
+    const existingRows = dataResponse.data.values || [];
+    const rowsToKeep = [existingRows[0]]; // Keep header
+    existingRows.slice(1).forEach(row => {
+      if (row[0] !== chartId) rowsToKeep.push(row);
+    });
+    
+    // Add new data
+    nodes.forEach(node => {
+      rowsToKeep.push([chartId, 'node', JSON.stringify(node)]);
+    });
+    
+    connections.forEach(conn => {
+      rowsToKeep.push([chartId, 'connection', JSON.stringify(conn)]);
+    });
+    
+    // Write data back
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'OrgChartData!A:C',
+      valueInputOption: 'RAW',
+      resource: { values: rowsToKeep }
+    });
+    
+    // Update metadata
+    const now = new Date().toISOString();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `OrgCharts!E${chartRowIndex + 2}:G${chartRowIndex + 2}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[now, nodes.length, connections.length]] }
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to update chart:', error);
+    res.status(500).json({ error: 'Failed to update chart' });
+  }
+});
+
+// Delete chart
+app.delete('/api/orgcharts/:id', requireAuth, async (req, res) => {
+  try {
+    const sheets = getSheets();
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    const chartId = req.params.id;
+    
+    // Delete chart metadata
+    const chartResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'OrgCharts!A:G'
+    });
+    
+    const chartRows = chartResponse.data.values || [];
+    const filteredCharts = [chartRows[0]]; // Keep header
+    chartRows.slice(1).forEach(row => {
+      if (row[0] !== chartId || row[2] !== req.user.email) {
+        filteredCharts.push(row);
+      }
+    });
+    
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'OrgCharts!A:G',
+      valueInputOption: 'RAW',
+      resource: { values: filteredCharts }
+    });
+    
+    // Delete chart data
+    const dataResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'OrgChartData!A:C'
+    });
+    
+    const dataRows = dataResponse.data.values || [];
+    const filteredData = [dataRows[0]]; // Keep header
+    dataRows.slice(1).forEach(row => {
+      if (row[0] !== chartId) filteredData.push(row);
+    });
+    
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'OrgChartData!A:C',
+      valueInputOption: 'RAW',
+      resource: { values: filteredData }
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete chart:', error);
+    res.status(500).json({ error: 'Failed to delete chart' });
+  }
+});
+
 // ========== ORIGINATION BOARD ENDPOINTS ==========
 app.get('/api/origination/board', requireAuth, async (req, res) => {
   try {

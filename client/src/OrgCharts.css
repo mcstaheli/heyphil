@@ -187,3 +187,140 @@
   color: white;
   transform: scale(1.1);
 }
+
+/* Chart Browser */
+.chart-browser {
+  padding: 40px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.chart-browser-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.chart-browser-header h2 {
+  font-size: 24px;
+  color: #212529;
+  margin: 0;
+}
+
+.chart-browser-loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: #6c757d;
+}
+
+.chart-browser-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.empty-state {
+  text-align: center;
+  max-width: 400px;
+}
+
+.empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.empty-state h3 {
+  font-size: 20px;
+  color: #212529;
+  margin: 0 0 8px 0;
+}
+
+.empty-state p {
+  color: #6c757d;
+  margin: 0 0 24px 0;
+}
+
+.chart-list {
+  display: grid;
+  gap: 16px;
+}
+
+.chart-item {
+  background: white;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.chart-item:hover {
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+  transform: translateY(-2px);
+}
+
+.chart-item-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.chart-item-icon {
+  font-size: 32px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.chart-item-info {
+  flex: 1;
+}
+
+.chart-item-info h3 {
+  font-size: 18px;
+  color: #212529;
+  margin: 0 0 4px 0;
+}
+
+.chart-item-meta {
+  font-size: 14px;
+  color: #667eea;
+  margin: 0 0 4px 0;
+}
+
+.chart-item-date {
+  font-size: 13px;
+  color: #6c757d;
+}
+
+.chart-item-delete {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #dee2e6;
+  background: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.chart-item-delete:hover {
+  background: #dc3545;
+  border-color: #dc3545;
+  transform: scale(1.1);
+}
