@@ -166,6 +166,21 @@ function App() {
     );
   }
 
+  // Org Charts app
+  if (currentApp === 'orgcharts') {
+    return (
+      <>
+        <OrgCharts user={user} onBack={() => setCurrentApp(null)} />
+        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
+        {!showDevTools && (
+          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
+            🔧 Dev Tools
+          </button>
+        )}
+      </>
+    );
+  }
+
   // Origination Board app
   if (currentApp === 'origination') {
     return (
