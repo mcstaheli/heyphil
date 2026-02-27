@@ -929,7 +929,7 @@ function OrgCharts({ user, onBack }) {
           {nodes.length} nodes • {connections.length} connections
           {selectedConnection && (
             <span style={{ color: '#667eea', fontWeight: '600' }}>
-              {' '}• Connection selected (click ✕ to delete)
+              {' '}• Connection selected (double-click to edit)
             </span>
           )}
         </div>
@@ -1106,39 +1106,6 @@ function OrgCharts({ user, onBack }) {
             );
           })}
         </svg>
-        
-        {/* Connection delete button */}
-        {selectedConnection && (() => {
-          const conn = connections.find(c => c.id === selectedConnection);
-          if (!conn) return null;
-          
-          const fromNode = nodes.find(n => n.id === conn.from);
-          const toNode = nodes.find(n => n.id === conn.to);
-          if (!fromNode || !toNode) return null;
-          
-          const fromPorts = getNodePorts(fromNode);
-          const toPorts = getNodePorts(toNode);
-          const fromPoint = fromPorts[conn.fromPort || 'bottom'];
-          const toPoint = toPorts[conn.toPort || 'top'];
-          
-          const midX = (fromPoint.x + toPoint.x) / 2;
-          const midY = (fromPoint.y + toPoint.y) / 2;
-          
-          return (
-            <button
-              className="connection-delete-btn"
-              style={{
-                position: 'absolute',
-                left: midX - 12,
-                top: midY - 12
-              }}
-              onClick={() => deleteConnection(conn.id)}
-              title="Delete connection"
-            >
-              🗑️
-            </button>
-          );
-        })()}
 
         {/* Render nodes */}
         {nodes.map(node => (
