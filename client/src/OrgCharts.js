@@ -1357,6 +1357,19 @@ function OrgCharts({ user, onBack }) {
                       e.stopPropagation();
                       setDraggingWaypoint({ connId: conn.id, wpIndex: idx });
                     }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // Delete waypoint on right-click
+                      const newWaypoints = conn.waypoints.filter((_, i) => i !== idx);
+                      updateConnectionWaypoints(conn.id, newWaypoints.length > 0 ? newWaypoints : null);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      // Delete waypoint on double-click
+                      const newWaypoints = conn.waypoints.filter((_, i) => i !== idx);
+                      updateConnectionWaypoints(conn.id, newWaypoints.length > 0 ? newWaypoints : null);
+                    }}
                   />
                 ))}
               </g>
