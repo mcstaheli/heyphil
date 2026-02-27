@@ -3,7 +3,6 @@ import './App.css';
 import './Loading.css';
 import Landing from './Landing';
 import HotelVisual from './HotelVisual';
-import OrgCharts from './OrgCharts';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -123,11 +122,6 @@ function App() {
                 <h3>Origination Board</h3>
                 <p>Manage projects with your team</p>
               </div>
-              <div className="app-card" onClick={() => setCurrentApp('orgcharts')}>
-                <div className="app-icon">📊</div>
-                <h3>Org Charts</h3>
-                <p>Interactive organizational diagrams</p>
-              </div>
               <div className="app-card disabled">
                 <div className="app-icon">🏨</div>
                 <h3>Hotel Empire</h3>
@@ -156,21 +150,6 @@ function App() {
     return (
       <>
         <HotelVisual user={user} onBack={() => setCurrentApp(null)} />
-        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
-        {!showDevTools && (
-          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧 Dev Tools
-          </button>
-        )}
-      </>
-    );
-  }
-
-  // Org Charts app
-  if (currentApp === 'orgcharts') {
-    return (
-      <>
-        <OrgCharts user={user} onBack={() => setCurrentApp(null)} />
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>

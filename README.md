@@ -5,7 +5,6 @@ Project management and productivity tools for Chad's team.
 ## Current Apps
 
 - **Origination Board** - Kanban board for managing origination meeting projects, synced to Google Sheets
-- **Org Charts** - Interactive organizational charts with drag-and-drop editing
 
 ## Setup
 
@@ -43,12 +42,6 @@ npm run setup
 
 **Log** (Activity log):
 - Headers: `Timestamp | Card Title | Action | User | Details | Card ID`
-
-**OrgCharts** (Org chart metadata):
-- Headers: `ID | Name | Owner | Created At | Updated At | Node Count`
-
-**OrgChartNodes** (Org chart nodes):
-- Headers: `Chart ID | Node ID | Title | Name | Department | Email | Phone | Parent ID | X | Y`
 
 3. Copy the Sheet ID from the URL
 4. Share the sheet with the Google account you'll use to log in
