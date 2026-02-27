@@ -336,6 +336,26 @@ function OrgCharts({ user, onBack }) {
     }
   }, [zoom]);
 
+  // Handle Escape key to cancel connection mode
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (connectingFrom) {
+          setConnectingFrom(null);
+        }
+        if (selectedConnection) {
+          setSelectedConnection(null);
+        }
+        if (selectedNode) {
+          setSelectedNode(null);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [connectingFrom, selectedConnection, selectedNode]);
+
   const getNodePosition = (nodeId) => {
     const node = nodes.find(n => n.id === nodeId);
     return node ? {
@@ -674,6 +694,9 @@ function OrgCharts({ user, onBack }) {
         {connectingFrom && (
           <div className="connecting-hint">
             Click a connection port on another node
+            <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.8 }}>
+              Press ESC to cancel
+            </div>
           </div>
         )}
       </div>
