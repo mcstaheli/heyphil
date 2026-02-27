@@ -1258,6 +1258,12 @@ function OrgCharts({ user, onBack }) {
                     setEditingNode({ ...editingNode, text: newText });
                     updateNodeText(editingNode.id, newText);
                   }}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setEditingNode(null);
+                    }
+                  }}
                   placeholder="Enter node text"
                   autoFocus
                 />
@@ -1403,7 +1409,14 @@ function OrgCharts({ user, onBack }) {
                     setEditingConnection({ ...editingConnection, label: newLabel });
                     updateConnectionLabel(editingConnection.id, newLabel);
                   }}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setEditingConnection(null);
+                    }
+                  }}
                   placeholder="Optional label"
+                  autoFocus
                 />
               </div>
 
