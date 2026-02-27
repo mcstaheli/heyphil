@@ -58,20 +58,34 @@ function OrgCharts({ user, onBack }) {
     if (!name) return;
 
     try {
+      console.log('Creating chart:', name);
       const res = await fetch(`${API_BASE_URL}/api/orgcharts`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ name })
       });
+      
+      console.log('Create response status:', res.status);
+      
       if (res.ok) {
         const newChart = await res.json();
+        console.log('New chart created:', newChart);
+        
+        // Set current chart to open the editor
         setCurrentChart(newChart);
         setNodes([]);
         setConnections([]);
-        loadCharts(); // Refresh list
+        
+        // Refresh list in background
+        loadCharts();
+      } else {
+        const error = await res.text();
+        console.error('Failed to create chart:', error);
+        alert('Failed to create chart. Please try again.');
       }
     } catch (error) {
       console.error('Failed to create chart:', error);
+      alert('Network error. Please check your connection.');
     }
   };
 
