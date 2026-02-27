@@ -384,24 +384,28 @@ function OrgCharts({ user, onBack }) {
     // Don't check collision with source or destination nodes
     if (node.id === fromNodeId || node.id === toNodeId) return false;
     
-    const PADDING = 20; // Extra clearance around nodes
+    const PADDING = 30; // Increased clearance around nodes
     const left = node.x - PADDING;
     const right = node.x + node.width + PADDING;
     const top = node.y - PADDING;
     const bottom = node.y + node.height + PADDING;
     
-    // Check if horizontal line intersects node
-    if (y1 === y2) {
+    // Check if horizontal line intersects node (with tolerance for floating point)
+    if (Math.abs(y1 - y2) < 1) {
       const minX = Math.min(x1, x2);
       const maxX = Math.max(x1, x2);
-      return y1 >= top && y1 <= bottom && maxX >= left && minX <= right;
+      const y = (y1 + y2) / 2;
+      // Check if line passes through or very near the node
+      return y >= top && y <= bottom && maxX >= left && minX <= right;
     }
     
-    // Check if vertical line intersects node
-    if (x1 === x2) {
+    // Check if vertical line intersects node (with tolerance for floating point)
+    if (Math.abs(x1 - x2) < 1) {
       const minY = Math.min(y1, y2);
       const maxY = Math.max(y1, y2);
-      return x1 >= left && x1 <= right && maxY >= top && minY <= bottom;
+      const x = (x1 + x2) / 2;
+      // Check if line passes through or very near the node
+      return x >= left && x <= right && maxY >= top && minY <= bottom;
     }
     
     return false;
@@ -416,7 +420,7 @@ function OrgCharts({ user, onBack }) {
     const maxBottom = Math.max(...allNodes.map(n => n.y + n.height));
     const minTop = Math.min(...allNodes.map(n => n.y));
     
-    const GAP = 40;
+    const GAP = 60; // Increased clearance
     
     // If preferred is below, go below all
     if (preferredY > maxBottom) {
@@ -436,7 +440,7 @@ function OrgCharts({ user, onBack }) {
     const maxRight = Math.max(...allNodes.map(n => n.x + n.width));
     const minLeft = Math.min(...allNodes.map(n => n.x));
     
-    const GAP = 40;
+    const GAP = 60; // Increased clearance
     
     // If preferred is to the right, go right of all
     if (preferredX > maxRight) {
