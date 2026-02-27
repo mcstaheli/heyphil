@@ -261,28 +261,66 @@ function OrgCharts({ user, onBack }) {
     }));
   };
 
-  // Generate simple elbow path - always one 90° bend
+  // Smart orthogonal routing with multiple segments
   const getElbowPath = (x1, y1, x2, y2, fromPort, toPort) => {
-    // Horizontal connections (left/right ports)
+    const GAP = 20; // Spacing from node edge
+    
+    // Calculate offset directions based on ports
+    const getOffset = (port) => {
+      switch(port) {
+        case 'right': return { x: GAP, y: 0 };
+        case 'left': return { x: -GAP, y: 0 };
+        case 'bottom': return { x: 0, y: GAP };
+        case 'top': return { x: 0, y: -GAP };
+        default: return { x: 0, y: 0 };
+      }
+    };
+    
+    const startOffset = getOffset(fromPort);
+    const endOffset = getOffset(toPort);
+    
+    // Points just outside the nodes
+    const p1 = { x: x1 + startOffset.x, y: y1 + startOffset.y };
+    const p2 = { x: x2 + endOffset.x, y: y2 + endOffset.y };
+    
+    // Smart routing based on port combination and positions
+    
+    // Horizontal ports (right/left)
     if ((fromPort === 'right' || fromPort === 'left') && (toPort === 'right' || toPort === 'left')) {
-      const midX = (x1 + x2) / 2;
-      return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+      const midX = (p1.x + p2.x) / 2;
+      return `M ${x1} ${y1} L ${p1.x} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${p2.x} ${y2} L ${x2} ${y2}`;
     }
     
-    // Vertical connections (top/bottom ports)
+    // Vertical ports (top/bottom)
     if ((fromPort === 'top' || fromPort === 'bottom') && (toPort === 'top' || toPort === 'bottom')) {
-      const midY = (y1 + y2) / 2;
-      return `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+      const midY = (p1.y + p2.y) / 2;
+      return `M ${x1} ${y1} L ${x1} ${p1.y} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${p2.y} L ${x2} ${y2}`;
     }
     
-    // Mixed: right/left to top/bottom
+    // Right/Left to Top/Bottom - smart routing
     if ((fromPort === 'right' || fromPort === 'left') && (toPort === 'top' || toPort === 'bottom')) {
-      return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
+      // Check if we need to route around
+      if ((fromPort === 'right' && p1.x < x2) || (fromPort === 'left' && p1.x > x2)) {
+        // Simple 2-segment L-shape
+        return `M ${x1} ${y1} L ${p1.x} ${y1} L ${p1.x} ${y2} L ${x2} ${y2}`;
+      } else {
+        // Need to route around - 4 segments
+        const midY = (y1 + p2.y) / 2;
+        return `M ${x1} ${y1} L ${p1.x} ${y1} L ${p1.x} ${midY} L ${x2} ${midY} L ${x2} ${p2.y} L ${x2} ${y2}`;
+      }
     }
     
-    // Mixed: top/bottom to right/left
+    // Top/Bottom to Right/Left - smart routing  
     if ((fromPort === 'top' || fromPort === 'bottom') && (toPort === 'right' || toPort === 'left')) {
-      return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
+      // Check if we need to route around
+      if ((fromPort === 'bottom' && p1.y < y2) || (fromPort === 'top' && p1.y > y2)) {
+        // Simple 2-segment L-shape
+        return `M ${x1} ${y1} L ${x1} ${p1.y} L ${x2} ${p1.y} L ${x2} ${y2}`;
+      } else {
+        // Need to route around - 4 segments
+        const midX = (x1 + p2.x) / 2;
+        return `M ${x1} ${y1} L ${x1} ${p1.y} L ${midX} ${p1.y} L ${midX} ${y2} L ${p2.x} ${y2} L ${x2} ${y2}`;
+      }
     }
     
     // Fallback
