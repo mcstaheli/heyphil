@@ -31,6 +31,15 @@ function OrgCharts({ user, onBack }) {
   const [reconnecting, setReconnecting] = useState(null); // { connectionId, end: 'from' | 'to' }
   const [editingNode, setEditingNode] = useState(null); // Node being edited in modal
   
+  // Refs to always have latest state for auto-save
+  const nodesRef = useRef(nodes);
+  const connectionsRef = useRef(connections);
+  
+  useEffect(() => {
+    nodesRef.current = nodes;
+    connectionsRef.current = connections;
+  }, [nodes, connections]);
+  
   const GRID_SIZE = 20; // Grid snap size in pixels
   const SNAP_THRESHOLD = 5; // Pixels to trigger alignment guide
 
@@ -119,15 +128,21 @@ function OrgCharts({ user, onBack }) {
     }
   };
 
-  const saveChart = async (silent = false) => {
+  const saveChart = async (silent = false, useLatestState = false) => {
     if (!currentChart) return;
+
+    // Use latest state from refs if requested (for auto-save), otherwise use current props
+    const dataToSave = {
+      nodes: useLatestState ? nodesRef.current : nodes,
+      connections: useLatestState ? connectionsRef.current : connections
+    };
 
     try {
       setSaving(true);
       const res = await fetch(`${API_BASE_URL}/api/orgcharts/${currentChart.id}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ nodes, connections })
+        body: JSON.stringify(dataToSave)
       });
       if (res.ok) {
         setLastSaved(new Date());
@@ -157,7 +172,8 @@ function OrgCharts({ user, onBack }) {
 
     // Debounce auto-save by 2 seconds
     saveTimeout.current = setTimeout(() => {
-      saveChart(true); // Silent auto-save
+      // Use latest state from refs to avoid stale closure data
+      saveChart(true, true);
     }, 2000);
 
     return () => {
@@ -166,6 +182,28 @@ function OrgCharts({ user, onBack }) {
       }
     };
   }, [nodes, connections, currentChart]);
+
+  // Save on unmount/navigation to catch any pending changes
+  useEffect(() => {
+    return () => {
+      // If there's a pending save timeout, save immediately on unmount
+      if (saveTimeout.current && currentChart) {
+        clearTimeout(saveTimeout.current);
+        // Use synchronous approach with current ref values
+        const dataToSave = {
+          nodes: nodesRef.current,
+          connections: connectionsRef.current
+        };
+        // Fire-and-forget save (using fetch with keepalive to survive unmount)
+        fetch(`${API_BASE_URL}/api/orgcharts/${currentChart.id}`, {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(dataToSave),
+          keepalive: true // Ensures request completes even if page unloads
+        }).catch(err => console.error('Failed to save on unmount:', err));
+      }
+    };
+  }, [currentChart]);
 
   const deleteChart = async (chartId) => {
     if (!window.confirm('Delete this chart? This cannot be undone.')) return;
