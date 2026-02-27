@@ -13,6 +13,7 @@ function OrgCharts({ user, onBack }) {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [hoveredPort, setHoveredPort] = useState(null);
+  const [selectedConnection, setSelectedConnection] = useState(null);
 
   // Connection ports: top, right, bottom, left
   const getNodePorts = (node) => {
@@ -61,6 +62,11 @@ function OrgCharts({ user, onBack }) {
     setSelectedNode(null);
   };
 
+  const deleteConnection = (connId) => {
+    setConnections(connections.filter(c => c.id !== connId));
+    setSelectedConnection(null);
+  };
+
   const startConnection = (nodeId, port) => {
     setConnectingFrom({ nodeId, port });
   };
@@ -90,20 +96,32 @@ function OrgCharts({ user, onBack }) {
     }));
   };
 
-  // Generate elbow path between two points
+  // Generate simple elbow path - always one 90° bend
   const getElbowPath = (x1, y1, x2, y2, fromPort, toPort) => {
-    const midX = (x1 + x2) / 2;
-    const midY = (y1 + y2) / 2;
-    
-    // Determine elbow direction based on ports
-    if ((fromPort === 'right' && toPort === 'left') || (fromPort === 'left' && toPort === 'right')) {
-      return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
-    } else if ((fromPort === 'bottom' && toPort === 'top') || (fromPort === 'top' && toPort === 'bottom')) {
-      return `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
-    } else {
-      // Mixed directions - use two elbows
+    // Horizontal connections (left/right ports)
+    if ((fromPort === 'right' || fromPort === 'left') && (toPort === 'right' || toPort === 'left')) {
+      const midX = (x1 + x2) / 2;
       return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
     }
+    
+    // Vertical connections (top/bottom ports)
+    if ((fromPort === 'top' || fromPort === 'bottom') && (toPort === 'top' || toPort === 'bottom')) {
+      const midY = (y1 + y2) / 2;
+      return `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+    }
+    
+    // Mixed: right/left to top/bottom
+    if ((fromPort === 'right' || fromPort === 'left') && (toPort === 'top' || toPort === 'bottom')) {
+      return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
+    }
+    
+    // Mixed: top/bottom to right/left
+    if ((fromPort === 'top' || fromPort === 'bottom') && (toPort === 'right' || toPort === 'left')) {
+      return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
+    }
+    
+    // Fallback
+    return `M ${x1} ${y1} L ${x2} ${y2}`;
   };
 
   const handleCanvasMouseDown = (e) => {
@@ -111,6 +129,7 @@ function OrgCharts({ user, onBack }) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
       setSelectedNode(null);
+      setSelectedConnection(null);
     }
   };
 
@@ -207,9 +226,9 @@ function OrgCharts({ user, onBack }) {
         </div>
         <div className="canvas-info">
           {nodes.length} nodes • {connections.length} connections
-          {nodes.length > 0 && (
-            <span style={{ marginLeft: '12px', color: '#00f5ff' }}>
-              (Nodes exist! Look for bright blue boxes)
+          {selectedConnection && (
+            <span style={{ color: '#667eea', fontWeight: '600' }}>
+              {' '}• Connection selected (click ✕ to delete)
             </span>
           )}
         </div>
@@ -229,8 +248,7 @@ function OrgCharts({ user, onBack }) {
           top: 0, 
           left: 0, 
           width: '100%', 
-          height: '100%',
-          pointerEvents: 'none'
+          height: '100%'
         }}>
           {connections.map(conn => {
             const fromNode = nodes.find(n => n.id === conn.from);
@@ -250,17 +268,68 @@ function OrgCharts({ user, onBack }) {
               conn.toPort || 'top'
             );
 
+            const isSelected = selectedConnection === conn.id;
+
             return (
-              <path
-                key={conn.id}
-                d={path}
-                stroke="#666"
-                strokeWidth="2"
-                fill="none"
-              />
+              <g key={conn.id}>
+                {/* Invisible thick path for easier clicking */}
+                <path
+                  d={path}
+                  stroke="transparent"
+                  strokeWidth="20"
+                  fill="none"
+                  style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedConnection(conn.id);
+                    setSelectedNode(null);
+                  }}
+                />
+                {/* Visible path */}
+                <path
+                  d={path}
+                  stroke={isSelected ? '#667eea' : '#999'}
+                  strokeWidth={isSelected ? '3' : '2'}
+                  fill="none"
+                  style={{ pointerEvents: 'none' }}
+                />
+              </g>
             );
           })}
         </svg>
+        
+        {/* Connection delete button */}
+        {selectedConnection && (() => {
+          const conn = connections.find(c => c.id === selectedConnection);
+          if (!conn) return null;
+          
+          const fromNode = nodes.find(n => n.id === conn.from);
+          const toNode = nodes.find(n => n.id === conn.to);
+          if (!fromNode || !toNode) return null;
+          
+          const fromPorts = getNodePorts(fromNode);
+          const toPorts = getNodePorts(toNode);
+          const fromPoint = fromPorts[conn.fromPort || 'bottom'];
+          const toPoint = toPorts[conn.toPort || 'top'];
+          
+          const midX = (fromPoint.x + toPoint.x) / 2;
+          const midY = (fromPoint.y + toPoint.y) / 2;
+          
+          return (
+            <button
+              className="connection-delete-btn"
+              style={{
+                position: 'absolute',
+                left: midX - 12,
+                top: midY - 12
+              }}
+              onClick={() => deleteConnection(conn.id)}
+              title="Delete connection"
+            >
+              ✕
+            </button>
+          );
+        })()}
 
         {/* Render nodes */}
         {nodes.map(node => (
