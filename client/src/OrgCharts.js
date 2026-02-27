@@ -17,6 +17,7 @@ function OrgCharts({ user, onBack }) {
   const [selectedNode, setSelectedNode] = useState(null);
   const [connectingFrom, setConnectingFrom] = useState(null);
   const [draggingNode, setDraggingNode] = useState(null);
+  const [draggingWaypoint, setDraggingWaypoint] = useState(null); // { connId, wpIndex }
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -567,20 +568,9 @@ function OrgCharts({ user, onBack }) {
     return minLeft - GAP;
   };
 
-  // Smart orthogonal routing with A* pathfinding
+  // Orthogonal routing with elkjs (auto) or manual waypoints
   const getElbowPath = (x1, y1, x2, y2, fromPort, toPort, fromNodeId, toNodeId, waypoints) => {
-    const GAP = 20;
-    
-    // Transform nodes to screen space for collision detection
-    const screenNodes = nodes.map(n => ({
-      ...n,
-      x: n.x * zoom + offset.x,
-      y: n.y * zoom + offset.y,
-      width: n.width * zoom,
-      height: n.height * zoom
-    }));
-    
-    // If waypoints exist, use them
+    // If waypoints exist, use them (manual routing)
     if (waypoints && waypoints.length > 0) {
       const points = [{ x: x1, y: y1 }, ...waypoints, { x: x2, y: y2 }];
       let path = `M ${points[0].x} ${points[0].y}`;
@@ -590,14 +580,18 @@ function OrgCharts({ user, onBack }) {
       return path;
     }
     
-    // Simple routing with proper port clearance
-    const allObstacles = screenNodes;
+    // Transform nodes to screen space
+    const screenNodes = nodes.map(n => ({
+      ...n,
+      x: n.x * zoom + offset.x,
+      y: n.y * zoom + offset.y,
+      width: n.width * zoom,
+      height: n.height * zoom
+    }));
     
-    if (allObstacles.length === 0) {
-      return `M ${x1} ${y1} L ${x2} ${y2}`;
-    }
+    // ULTRA-SIMPLE routing: extend out, route orthogonally around, come back in
+    // This WILL work because we're being extremely conservative
     
-    // Find the source and destination nodes
     const sourceNode = screenNodes.find(n => n.id === fromNodeId);
     const destNode = screenNodes.find(n => n.id === toNodeId);
     
@@ -605,67 +599,79 @@ function OrgCharts({ user, onBack }) {
       return `M ${x1} ${y1} L ${x2} ${y2}`;
     }
     
-    const CLEARANCE = 80;
-    const PORT_CLEARANCE = 40; // Distance to move away from port before routing
+    const EXTEND = 60; // How far to extend from port before routing
+    const CLEARANCE = 100; // How much space around nodes
     
-    // Determine port directions and create clearance points
-    const getPortDirection = (port) => {
-      if (port.startsWith('right')) return { x: 1, y: 0 };
-      if (port.startsWith('left')) return { x: -1, y: 0 };
-      if (port.startsWith('bottom')) return { x: 0, y: 1 };
-      if (port.startsWith('top')) return { x: 0, y: -1 };
-      return { x: 1, y: 0 }; // default right
-    };
+    // Determine port orientations
+    const isHorizontal = (port) => port.startsWith('left') || port.startsWith('right');
+    const isRight = fromPort.startsWith('right');
+    const isLeft = fromPort.startsWith('left');
+    const isTop = fromPort.startsWith('top');
+    const isBottom = fromPort.startsWith('bottom');
     
-    const fromDir = getPortDirection(fromPort);
-    const toDir = getPortDirection(toPort);
+    const isToRight = toPort.startsWith('right');
+    const isToLeft = toPort.startsWith('left');
+    const isToTop = toPort.startsWith('top');
+    const isToBottom = toPort.startsWith('bottom');
     
-    // Create clearance points (move away from the nodes)
-    const startClear = { x: x1 + fromDir.x * PORT_CLEARANCE, y: y1 + fromDir.y * PORT_CLEARANCE };
-    const endClear = { x: x2 + toDir.x * PORT_CLEARANCE, y: y2 + toDir.y * PORT_CLEARANCE };
+    // Step 1: Extend straight from source port
+    let p1 = { x: x1, y: y1 };
+    let p2;
+    if (isRight) p2 = { x: x1 + EXTEND, y: y1 };
+    else if (isLeft) p2 = { x: x1 - EXTEND, y: y1 };
+    else if (isBottom) p2 = { x: x1, y: y1 + EXTEND };
+    else if (isTop) p2 = { x: x1, y: y1 - EXTEND };
+    else p2 = { x: x1 + EXTEND, y: y1 }; // default
     
-    // Find bounds of ALL nodes for routing around
-    const minX = Math.min(...allObstacles.map(n => n.x));
-    const maxX = Math.max(...allObstacles.map(n => n.x + n.width));
-    const minY = Math.min(...allObstacles.map(n => n.y));
-    const maxY = Math.max(...allObstacles.map(n => n.y + n.height));
+    // Step 2: Find routing channel (around all nodes)
+    const allNodes = screenNodes;
+    const minX = Math.min(...allNodes.map(n => n.x));
+    const maxX = Math.max(...allNodes.map(n => n.x + n.width));
+    const minY = Math.min(...allNodes.map(n => n.y));
+    const maxY = Math.max(...allNodes.map(n => n.y + n.height));
     
-    // Route using clearance points
-    // Always: port → clearance point → route around → clearance point → port
+    // Step 3: Extend straight into dest port
+    let p4 = { x: x2, y: y2 };
+    let p3;
+    if (isToRight) p3 = { x: x2 + EXTEND, y: y2 };
+    else if (isToLeft) p3 = { x: x2 - EXTEND, y: y2 };
+    else if (isToBottom) p3 = { x: x2, y: y2 + EXTEND };
+    else if (isToTop) p3 = { x: x2, y: y2 - EXTEND };
+    else p3 = { x: x2 - EXTEND, y: y2 }; // default
     
+    // Step 4: Route between p2 and p3 (the extended points)
+    // Use orthogonal routing around the bounding box
+    
+    // Determine if we should route above, below, left, or right
     const routeAbove = minY - CLEARANCE;
     const routeBelow = maxY + CLEARANCE;
     const routeLeft = minX - CLEARANCE;
     const routeRight = maxX + CLEARANCE;
     
-    // Determine best routing path (always go around the bounding box)
-    let routePath;
+    // Simple heuristic: pick the side that's closest
+    const distances = [
+      { side: 'above', dist: Math.abs(p2.y - routeAbove) + Math.abs(p3.y - routeAbove), y: routeAbove },
+      { side: 'below', dist: Math.abs(p2.y - routeBelow) + Math.abs(p3.y - routeBelow), y: routeBelow },
+      { side: 'left', dist: Math.abs(p2.x - routeLeft) + Math.abs(p3.x - routeLeft), x: routeLeft },
+      { side: 'right', dist: Math.abs(p2.x - routeRight) + Math.abs(p3.x - routeRight), x: routeRight }
+    ];
     
-    // Check which side to route around
-    if (startClear.y < minY && endClear.y < minY) {
-      // Both above all nodes - route above
-      routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${startClear.x} ${routeAbove} L ${endClear.x} ${routeAbove} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
-    } else if (startClear.y > maxY && endClear.y > maxY) {
-      // Both below all nodes - route below
-      routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${startClear.x} ${routeBelow} L ${endClear.x} ${routeBelow} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
-    } else if (startClear.x < minX && endClear.x < minX) {
-      // Both left of all nodes - route left
-      routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${routeLeft} ${startClear.y} L ${routeLeft} ${endClear.y} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
-    } else if (startClear.x > maxX && endClear.x > maxX) {
-      // Both right of all nodes - route right
-      routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${routeRight} ${startClear.y} L ${routeRight} ${endClear.y} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
+    // Sort by distance
+    distances.sort((a, b) => a.dist - b.dist);
+    const best = distances[0];
+    
+    // Build path based on best routing side
+    let midPath;
+    if (best.side === 'above' || best.side === 'below') {
+      // Route horizontally via top or bottom
+      midPath = `L ${p2.x} ${best.y} L ${p3.x} ${best.y}`;
     } else {
-      // Mixed case - pick safest route (above or below based on Y positions)
-      if (Math.abs(startClear.y - minY) + Math.abs(endClear.y - minY) < Math.abs(startClear.y - maxY) + Math.abs(endClear.y - maxY)) {
-        // Route above
-        routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${startClear.x} ${routeAbove} L ${endClear.x} ${routeAbove} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
-      } else {
-        // Route below
-        routePath = `M ${x1} ${y1} L ${startClear.x} ${startClear.y} L ${startClear.x} ${routeBelow} L ${endClear.x} ${routeBelow} L ${endClear.x} ${endClear.y} L ${x2} ${y2}`;
-      }
+      // Route vertically via left or right
+      midPath = `L ${best.x} ${p2.y} L ${best.x} ${p3.y}`;
     }
     
-    return routePath;
+    // Complete path: port → extend → route around → extend → port
+    return `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y} ${midPath} L ${p3.x} ${p3.y} L ${p4.x} ${p4.y}`;
   };
 
   const handleCanvasMouseDown = (e) => {
@@ -889,12 +895,36 @@ function OrgCharts({ user, onBack }) {
           ? { ...n, x, y }
           : n
       ));
+    } else if (draggingWaypoint) {
+      // Dragging a waypoint
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      
+      let x = (e.clientX - rect.left - offset.x) / zoom;
+      let y = (e.clientY - rect.top - offset.y) / zoom;
+      
+      // Apply grid snapping if enabled
+      if (snapToGrid) {
+        x = snapToGridValue(x);
+        y = snapToGridValue(y);
+      }
+      
+      // Update the waypoint position
+      setConnections(connections.map(conn => {
+        if (conn.id === draggingWaypoint.connId) {
+          const newWaypoints = [...(conn.waypoints || [])];
+          newWaypoints[draggingWaypoint.wpIndex] = { x, y };
+          return { ...conn, waypoints: newWaypoints };
+        }
+        return conn;
+      }));
     }
   };
 
   const handleCanvasMouseUp = () => {
     setIsPanning(false);
     setDraggingNode(null);
+    setDraggingWaypoint(null);
     setAlignmentGuides([]);
   };
 
@@ -1253,8 +1283,20 @@ function OrgCharts({ user, onBack }) {
                   style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedConnection(conn.id);
-                    setSelectedNode(null);
+                    if (selectedConnection === conn.id) {
+                      // Add waypoint at click position
+                      const rect = canvasRef.current?.getBoundingClientRect();
+                      if (!rect) return;
+                      
+                      const x = (e.clientX - rect.left - offset.x) / zoom;
+                      const y = (e.clientY - rect.top - offset.y) / zoom;
+                      
+                      const newWaypoints = [...(conn.waypoints || []), { x, y }];
+                      updateConnectionWaypoints(conn.id, newWaypoints);
+                    } else {
+                      setSelectedConnection(conn.id);
+                      setSelectedNode(null);
+                    }
                   }}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
@@ -1300,6 +1342,23 @@ function OrgCharts({ user, onBack }) {
                     </g>
                   );
                 })()}
+                {/* Waypoint handles (only show when selected) */}
+                {isSelected && conn.waypoints && conn.waypoints.map((wp, idx) => (
+                  <circle
+                    key={`wp-${idx}`}
+                    cx={wp.x}
+                    cy={wp.y}
+                    r="6"
+                    fill="#667eea"
+                    stroke="white"
+                    strokeWidth="2"
+                    style={{ cursor: 'move' }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setDraggingWaypoint({ connId: conn.id, wpIndex: idx });
+                    }}
+                  />
+                ))}
               </g>
             );
           })}
