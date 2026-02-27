@@ -597,6 +597,7 @@ function OrgCharts({ user, onBack }) {
     }
     
     const CLEARANCE = 80;
+    const EXTEND = 30; // Distance to extend from port before routing
     
     // Find ALL nodes bounds (including source and dest for routing calc)
     const allY = screenNodes.map(n => [n.y, n.y + n.height]).flat();
@@ -606,9 +607,23 @@ function OrgCharts({ user, onBack }) {
     const minX = Math.min(...allX);
     const maxX = Math.max(...allX);
     
-    // Determine port orientations
+    // Determine port orientations and extension points
     const isVerticalFrom = fromPort.startsWith('top') || fromPort.startsWith('bottom');
     const isVerticalTo = toPort.startsWith('top') || toPort.startsWith('bottom');
+    
+    // Calculate extension points (move away from node edge)
+    let extendFrom = { x: x1, y: y1 };
+    let extendTo = { x: x2, y: y2 };
+    
+    if (fromPort.startsWith('bottom')) extendFrom.y = y1 + EXTEND;
+    else if (fromPort.startsWith('top')) extendFrom.y = y1 - EXTEND;
+    else if (fromPort.startsWith('right')) extendFrom.x = x1 + EXTEND;
+    else if (fromPort.startsWith('left')) extendFrom.x = x1 - EXTEND;
+    
+    if (toPort.startsWith('bottom')) extendTo.y = y2 + EXTEND;
+    else if (toPort.startsWith('top')) extendTo.y = y2 - EXTEND;
+    else if (toPort.startsWith('right')) extendTo.x = x2 + EXTEND;
+    else if (toPort.startsWith('left')) extendTo.x = x2 - EXTEND;
     
     // Helper: check if direct path is clear (no nodes in between)
     const isDirectPathClear = () => {
@@ -616,10 +631,10 @@ function OrgCharts({ user, onBack }) {
       if (obstacleNodes.length === 0) return true;
       
       // Check if any obstacle intersects the direct path corridor
-      const pathMinX = Math.min(x1, x2) - CLEARANCE;
-      const pathMaxX = Math.max(x1, x2) + CLEARANCE;
-      const pathMinY = Math.min(y1, y2) - CLEARANCE;
-      const pathMaxY = Math.max(y1, y2) + CLEARANCE;
+      const pathMinX = Math.min(extendFrom.x, extendTo.x) - CLEARANCE;
+      const pathMaxX = Math.max(extendFrom.x, extendTo.x) + CLEARANCE;
+      const pathMinY = Math.min(extendFrom.y, extendTo.y) - CLEARANCE;
+      const pathMaxY = Math.max(extendFrom.y, extendTo.y) + CLEARANCE;
       
       for (const node of obstacleNodes) {
         const nodeRight = node.x + node.width;
@@ -637,40 +652,40 @@ function OrgCharts({ user, onBack }) {
     // TRY DIRECT PATH FIRST (if clear)
     if (isDirectPathClear()) {
       if (isVerticalFrom && isVerticalTo) {
-        // Straight vertical line
-        return `M ${x1} ${y1} L ${x2} ${y2}`;
+        // Straight vertical line with extensions
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
       } else if (!isVerticalFrom && !isVerticalTo) {
-        // Straight horizontal line
-        return `M ${x1} ${y1} L ${x2} ${y2}`;
+        // Straight horizontal line with extensions
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
       } else {
-        // Simple L-shape
+        // Simple L-shape with extensions
         if (isVerticalFrom) {
-          return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
+          return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendTo.x} ${extendFrom.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
         } else {
-          return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
+          return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendFrom.x} ${extendTo.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
         }
       }
     }
     
-    // FALLBACK: Route around obstacles
+    // FALLBACK: Route around obstacles (with proper extensions)
     if (isVerticalFrom && isVerticalTo) {
       // Both vertical ports - route via left or right side
-      const routeX = (x1 < minX && x2 < minX) ? minX - CLEARANCE : maxX + CLEARANCE;
-      return `M ${x1} ${y1} L ${routeX} ${y1} L ${routeX} ${y2} L ${x2} ${y2}`;
+      const routeX = (extendFrom.x < minX && extendTo.x < minX) ? minX - CLEARANCE : maxX + CLEARANCE;
+      return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${routeX} ${extendFrom.y} L ${routeX} ${extendTo.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
     } else if (!isVerticalFrom && !isVerticalTo) {
       // Both horizontal ports - route via top or bottom
-      const routeY = (y1 < minY && y2 < minY) ? minY - CLEARANCE : maxY + CLEARANCE;
-      return `M ${x1} ${y1} L ${x1} ${routeY} L ${x2} ${routeY} L ${x2} ${y2}`;
+      const routeY = (extendFrom.y < minY && extendTo.y < minY) ? minY - CLEARANCE : maxY + CLEARANCE;
+      return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendFrom.x} ${routeY} L ${extendTo.x} ${routeY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
     } else {
       // Mixed ports - use Z-shape via perimeter
       if (isVerticalFrom) {
         // From vertical, to horizontal
-        const routeY = y1 < minY ? minY - CLEARANCE : maxY + CLEARANCE;
-        return `M ${x1} ${y1} L ${x1} ${routeY} L ${x2} ${routeY} L ${x2} ${y2}`;
+        const routeY = extendFrom.y < minY ? minY - CLEARANCE : maxY + CLEARANCE;
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${extendFrom.x} ${routeY} L ${extendTo.x} ${routeY} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
       } else {
         // From horizontal, to vertical
-        const routeX = x1 < minX ? minX - CLEARANCE : maxX + CLEARANCE;
-        return `M ${x1} ${y1} L ${routeX} ${y1} L ${routeX} ${y2} L ${x2} ${y2}`;
+        const routeX = extendFrom.x < minX ? minX - CLEARANCE : maxX + CLEARANCE;
+        return `M ${x1} ${y1} L ${extendFrom.x} ${extendFrom.y} L ${routeX} ${extendFrom.y} L ${routeX} ${extendTo.y} L ${extendTo.x} ${extendTo.y} L ${x2} ${y2}`;
       }
     }
   };
