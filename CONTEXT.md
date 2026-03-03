@@ -2,7 +2,7 @@
 
 ## What This Is
 Personal project management and productivity tool with multiple apps:
-- **Origination Board**: Kanban-style deal pipeline with 11 stages
+- **Project Board**: Kanban-style project pipeline with 11 stages
 - Email Triage: (planned)
 
 ## Stack
@@ -12,14 +12,15 @@ Personal project management and productivity tool with multiple apps:
 - **Auth**: Google OAuth
 
 ## Current Work
-- Just added two new stages to Origination Board:
+- Renamed "Origination Board" to "Project Board"
+- Board has 11 stages including:
   - Assets (blue, after IC - Close)
   - IC - Assets (gray, after Assets)
 
 ## Key Files
-- `/client/src/App.js` - Main React app with Origination Board component
+- `/client/src/App.js` - Main React app with Project Board component
 - `/server/index.js` - API server with auth and board endpoints
-- `/server/origination-data.js` - Google Sheets integration
+- `/server/origination-data.js` - Google Sheets integration (backend uses 'origination' naming)
 
 ## Deployment
 **⚠️ WE WORK ON PRODUCTION - NOT LOCALHOST**

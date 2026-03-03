@@ -120,7 +120,7 @@ function App() {
             <div className="app-grid">
               <div className="app-card" onClick={() => setCurrentApp('origination')}>
                 <div className="app-icon">📋</div>
-                <h3>Origination Board</h3>
+                <h3>Project Board</h3>
                 <p>Manage projects with your team</p>
               </div>
               <div className="app-card" onClick={() => setCurrentApp('orgcharts')}>
@@ -181,7 +181,7 @@ function App() {
     );
   }
 
-  // Origination Board app
+  // Project Board app
   if (currentApp === 'origination') {
     return (
       <>
@@ -546,7 +546,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
       <header className="app-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button className="btn-secondary" onClick={onBack}>← Back</button>
-          <h1>📋 Origination Board</h1>
+          <h1>📋 Project Board</h1>
         </div>
         <div className="user-info">
           {user?.picture && <img src={user.picture} alt={user.name} />}
