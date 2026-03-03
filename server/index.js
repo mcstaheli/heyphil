@@ -989,6 +989,7 @@ if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
 
 // Start server
 const host = process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : 'localhost';
-app.listen(PORT, host, () => {
+httpServer.listen(PORT, host, () => {
   console.log(`🚀 HeyPhil API running on http://${host}:${PORT}`);
+  console.log(`🔌 WebSocket server ready for real-time updates`);
 });
