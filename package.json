@@ -8,7 +8,9 @@
     "client": "cd client && npm start",
     "build": "cd client && npm install && npm run build",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "setup": "npm install && cd client && npm install"
+    "setup": "npm install && cd client && npm install",
+    "migrate": "node server/migrate-from-sheets.js",
+    "db:init": "node server/init-db.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -19,7 +21,9 @@
     "googleapis": "^131.0.0",
     "jsonwebtoken": "^9.0.3",
     "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0"
+    "passport-google-oauth20": "^2.0.0",
+    "pg": "^8.11.3",
+    "socket.io": "^4.7.2"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

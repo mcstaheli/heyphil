@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
 import express from 'express';
-import { createServer } from 'http';
-import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
@@ -12,20 +10,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import 'dotenv/config';
-import * as boardDb from './board-db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const httpServer = createServer(app);
-const io = new SocketIOServer(httpServer, {
-  cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
-    credentials: true
-  }
-});
-
 const PORT = process.env.PORT || 3002;
 
 // Allowed users
@@ -99,29 +88,6 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-
-// ========== WEBSOCKET CONNECTION ==========
-io.on('connection', (socket) => {
-  console.log('✅ Client connected:', socket.id);
-  
-  socket.on('disconnect', () => {
-    console.log('❌ Client disconnected:', socket.id);
-  });
-  
-  // Clients will receive:
-  // - card:created
-  // - card:updated
-  // - card:deleted
-  // - action:toggled
-  // - action:created
-  // - action:deleted
-});
-
-// Helper: Broadcast change to all connected clients
-function broadcastChange(event, data) {
-  io.emit(event, data);
-  console.log(`📡 Broadcast: ${event}`, data.id || data.cardId || '');
-}
 
 // Routes
 app.get('/auth/google', passport.authenticate('google'));
@@ -498,37 +464,6 @@ app.delete('/api/orgcharts/:id', requireAuth, async (req, res) => {
 // ========== ORIGINATION BOARD ENDPOINTS ==========
 app.get('/api/origination/board', requireAuth, async (req, res) => {
   try {
-    const data = await boardDb.getBoardData();
-    
-    // Calculate metrics (same as before)
-    const filteredCards = data.cards.filter(c => 
-      c.column !== 'ideation' && c.column !== 'closed' && c.column !== 'abandoned'
-    );
-    
-    const metrics = {
-      totalDealValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.dealValue) || 0), 0),
-      totalProjects: filteredCards.length,
-      activeProjects: filteredCards.filter(c => 
-        c.column !== 'backlog' && c.column !== 'closed' && c.column !== 'abandoned'
-      ).length
-    };
-    
-    res.json({ 
-      cards: data.cards,
-      people: data.people,
-      ownerColors: data.ownerColors,
-      projectTypeColors: data.projectTypeColors,
-      metrics
-    });
-  } catch (error) {
-    console.error('Failed to fetch board:', error);
-    res.status(500).json({ error: 'Failed to fetch board data' });
-  }
-});
-
-// DEPRECATED: Old Sheets-based endpoint (keeping structure for reference)
-app.get('/api/origination/board__OLD_SHEETS', requireAuth, async (req, res) => {
-  try {
     const sheets = getSheets();
     const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
@@ -657,102 +592,117 @@ app.get('/api/origination/board__OLD_SHEETS', requireAuth, async (req, res) => {
 app.post('/api/origination/card', requireAuth, async (req, res) => {
   try {
     const { title, description, column, owner, notes, dealValue, projectType } = req.body;
+    const sheets = getSheets();
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
-    // Generate unique card ID
-    const cardId = `card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Get all existing cards to find highest ID
+    const allData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Board!F:F'
+    });
+    const rows = allData.data.values || [];
     
-    // Create card in database
-    const card = await boardDb.createCard({
-      id: cardId,
-      title,
-      description,
-      column,
-      owner,
-      notes,
-      dealValue: dealValue || 0,
-      dateCreated: new Date(),
-      projectType
+    // Find highest numeric ID (skip header row)
+    let maxId = 999;
+    rows.slice(1).forEach(row => {
+      const id = parseInt(row[0]);
+      if (!isNaN(id) && id > maxId) {
+        maxId = id;
+      }
+    });
+    
+    // Increment for new card
+    const cardId = maxId + 1;
+    const dateCreated = new Date().toISOString();
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'Board!A:I',
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[title, description, column, owner, notes, cardId, dealValue || 0, dateCreated, projectType || '']]
+      }
     });
     
     // Log creation
-    await boardDb.addLog(
-      cardId,
+    await logActivity(
+      sheets,
+      spreadsheetId,
       title,
       'Created',
-      req.user.name || req.user.email,
-      `New card in ${column}. Owner: ${owner || 'Unassigned'}`
+      req.user.email,
+      `New card in ${column}. Owner: ${owner || 'Unassigned'}`,
+      cardId
     );
     
-    // Broadcast to all clients
-    broadcastChange('card:created', card);
-    
-    res.json({ success: true, card });
+    res.json({ success: true });
   } catch (error) {
     console.error('Failed to create card:', error);
     res.status(500).json({ 
       error: 'Failed to create card',
-      details: error.message
+      details: error.message,
+      stack: error.stack 
     });
   }
 });
 
 app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = req.params; // Numeric card ID
     const { title, description, column, owner, notes, dealValue, projectType } = req.body;
+    const sheets = getSheets();
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
-    // Get old card for change tracking
-    const oldCard = await boardDb.getCardById(id);
-    if (!oldCard) {
+    // Find the row by Card ID
+    const allData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Board!A:I'
+    });
+    const rows = allData.data.values || [];
+    const rowIndex = rows.findIndex((row, idx) => idx > 0 && String(row[5]) === String(id));
+    
+    if (rowIndex === -1) {
       return res.status(404).json({ error: 'Card not found' });
     }
     
-    // Update in database
-    const updatedCard = await boardDb.updateCard(id, {
-      title,
-      description,
-      column,
-      owner,
-      notes,
-      dealValue,
-      projectType
+    const actualRow = rowIndex + 1; // Convert to 1-indexed
+    const oldRow = rows[rowIndex];
+    const [oldTitle, oldDesc, oldColumn, oldOwner, oldNotes, cardId, oldDealValue, dateCreated, oldProjectType] = oldRow;
+    
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `Board!A${actualRow}:I${actualRow}`,
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[title, description, column, owner, notes, id, dealValue || 0, dateCreated || new Date().toISOString(), projectType || '']]
+      }
     });
     
     // Log changes
     const changes = [];
-    if (oldCard.column_name !== column) changes.push(`Status: ${oldCard.column_name} → ${column}`);
-    if (oldCard.owner !== owner) changes.push(`Owner: ${oldCard.owner || 'Unassigned'} → ${owner || 'Unassigned'}`);
-    if (oldCard.title !== title) changes.push(`Title changed`);
-    if (oldCard.description !== description) changes.push(`Description updated`);
-    if (oldCard.notes !== notes) changes.push(`Notes updated`);
-    if (parseFloat(oldCard.deal_value || 0) !== parseFloat(dealValue || 0)) {
-      changes.push(`Deal value: $${oldCard.deal_value || 0} → $${dealValue || 0}`);
+    if (oldColumn !== column) changes.push(`Status: ${oldColumn} → ${column}`);
+    if (oldOwner !== owner) changes.push(`Owner: ${oldOwner || 'Unassigned'} → ${owner || 'Unassigned'}`);
+    if (oldTitle !== title) changes.push(`Title changed`);
+    if (oldDesc !== description) changes.push(`Description updated`);
+    if (oldNotes !== notes) changes.push(`Notes updated`);
+    if (parseFloat(oldDealValue || 0) !== parseFloat(dealValue || 0)) {
+      changes.push(`Deal value: $${oldDealValue || 0} → $${dealValue || 0}`);
     }
-    if ((oldCard.project_type || '') !== (projectType || '')) {
-      changes.push(`Project type: ${oldCard.project_type || 'None'} → ${projectType || 'None'}`);
+    if ((oldProjectType || '') !== (projectType || '')) {
+      changes.push(`Project type: ${oldProjectType || 'None'} → ${projectType || 'None'}`);
     }
     
     if (changes.length > 0) {
-      await boardDb.addLog(
-        id,
+      await logActivity(
+        sheets,
+        spreadsheetId,
         title,
         'Updated',
-        req.user.name || req.user.email,
-        changes.join(', ')
+        req.user.email,
+        changes.join(', '),
+        id
       );
     }
-    
-    // Broadcast to all clients
-    broadcastChange('card:updated', {
-      id,
-      title,
-      description,
-      column,
-      owner,
-      notes,
-      dealValue,
-      projectType
-    });
     
     res.json({ success: true });
   } catch (error) {
@@ -763,28 +713,37 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
 
 app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = req.params; // Numeric card ID
+    const sheets = getSheets();
+    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
-    // Get card details before deletion for logging
-    const card = await boardDb.getCardById(id);
-    if (!card) {
+    // Find the row by Card ID
+    const allData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Board!A:I'
+    });
+    const rows = allData.data.values || [];
+    const rowIndex = rows.findIndex((row, idx) => idx > 0 && String(row[5]) === String(id));
+    
+    if (rowIndex === -1) {
       return res.status(404).json({ error: 'Card not found' });
     }
     
-    // Delete from database (cascades to actions)
-    await boardDb.deleteCard(id);
-    
-    // Log deletion
-    await boardDb.addLog(
-      id,
-      card.title,
-      'Deleted',
-      req.user.name || req.user.email,
-      `Card removed from board`
-    );
-    
-    // Broadcast to all clients
-    broadcastChange('card:deleted', { id });
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      resource: {
+        requests: [{
+          deleteDimension: {
+            range: {
+              sheetId: 0,
+              dimension: 'ROWS',
+              startIndex: rowIndex,
+              endIndex: rowIndex + 1
+            }
+          }
+        }]
+      }
+    });
     
     res.json({ success: true });
   } catch (error) {
