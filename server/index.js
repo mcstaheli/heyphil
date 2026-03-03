@@ -796,35 +796,31 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
 // Toggle action item completion
 app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
   try {
-    const { rowIndex, completed, cardId, cardTitle } = req.body;
-    const sheets = getSheets();
-    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    const { actionId, completed, cardId, cardTitle } = req.body;
     const user = req.user.name || req.user.email;
     
-    const timestamp = completed ? new Date().toISOString() : '';
-    const completedBy = completed ? user : '';
-    
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `Actions!D${rowIndex}:E${rowIndex}`,
-      valueInputOption: 'RAW',
-      resource: {
-        values: [[timestamp, completedBy]]
-      }
-    });
+    // Toggle action in database
+    const action = await boardDb.toggleAction(actionId, completed, user);
     
     // Log activity
-    await logActivity(
-      sheets,
-      spreadsheetId,
+    await boardDb.addLog(
+      cardId,
       cardTitle,
       completed ? 'Action Completed' : 'Action Uncompleted',
       user,
-      `Row ${rowIndex}`,
-      cardId
+      action.text
     );
     
-    res.json({ success: true });
+    // Broadcast to all clients
+    broadcastChange('action:toggled', {
+      actionId,
+      cardId,
+      completed,
+      completedOn: action.completed_on,
+      completedBy: action.completed_by
+    });
+    
+    res.json({ success: true, action });
   } catch (error) {
     console.error('Failed to toggle action:', error);
     res.status(500).json({ error: 'Failed to toggle action' });
@@ -835,22 +831,48 @@ app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
 app.post('/api/origination/action', requireAuth, async (req, res) => {
   try {
     const { cardId, cardTitle, text } = req.body;
-    const sheets = getSheets();
-    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: 'Actions!A:E',
-      valueInputOption: 'RAW',
-      resource: {
-        values: [[cardId, cardTitle, text, '', '']]
-      }
+    // Create action in database
+    const action = await boardDb.createAction(cardId, cardTitle, text);
+    
+    // Broadcast to all clients
+    broadcastChange('action:created', {
+      actionId: action.id,
+      cardId,
+      cardTitle,
+      text
     });
     
-    res.json({ success: true });
+    res.json({ success: true, action });
   } catch (error) {
     console.error('Failed to add action:', error);
     res.status(500).json({ error: 'Failed to add action' });
+  }
+});
+
+// Delete action item
+app.delete('/api/origination/action/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get action details for cardId before deletion
+    const actions = await boardDb.getAllActions();
+    const action = actions.find(a => a.id === parseInt(id));
+    
+    if (action) {
+      await boardDb.deleteAction(id);
+      
+      // Broadcast to all clients
+      broadcastChange('action:deleted', {
+        actionId: parseInt(id),
+        cardId: action.card_id
+      });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete action:', error);
+    res.status(500).json({ error: 'Failed to delete action' });
   }
 });
 
@@ -858,60 +880,39 @@ app.post('/api/origination/action', requireAuth, async (req, res) => {
 app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
   try {
     const { cardIds, updates } = req.body; // updates: { column?, owner? }
-    const sheets = getSheets();
-    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    const user = req.user.name || req.user.email;
     
-    const allData = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Board!A:H'
-    });
-    const rows = allData.data.values || [];
-    
+    // Update each card
     for (const cardId of cardIds) {
-      const rowIndex = rows.findIndex((row, idx) => idx > 0 && row[5] === cardId);
-      if (rowIndex === -1) continue;
+      const oldCard = await boardDb.getCardById(cardId);
+      if (!oldCard) continue;
       
-      const actualRow = rowIndex + 1;
-      const row = rows[rowIndex];
-      
-      const updatedRow = [
-        row[0], // title
-        row[1], // description
-        updates.column !== undefined ? updates.column : row[2],
-        updates.owner !== undefined ? updates.owner : row[3],
-        row[4], // notes
-        row[5], // card ID
-        row[6], // deal value
-        row[7]  // date created
-      ];
-      
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `Board!A${actualRow}:H${actualRow}`,
-        valueInputOption: 'RAW',
-        resource: { values: [updatedRow] }
-      });
+      await boardDb.updateCard(cardId, updates);
       
       // Log bulk update
       const changes = [];
-      if (updates.column && row[2] !== updates.column) {
-        changes.push(`Bulk moved: ${row[2]} → ${updates.column}`);
+      if (updates.column && oldCard.column_name !== updates.column) {
+        changes.push(`Bulk moved: ${oldCard.column_name} → ${updates.column}`);
       }
-      if (updates.owner && row[3] !== updates.owner) {
+      if (updates.owner && oldCard.owner !== updates.owner) {
         changes.push(`Bulk assigned: ${updates.owner}`);
       }
       
       if (changes.length > 0) {
-        await logActivity(
-          sheets,
-          spreadsheetId,
-          row[0],
+        await boardDb.addLog(
+          cardId,
+          oldCard.title,
           'Bulk Update',
-          req.user.email,
-          changes.join(', '),
-          cardId
+          user,
+          changes.join(', ')
         );
       }
+      
+      // Broadcast each update
+      broadcastChange('card:updated', {
+        id: cardId,
+        ...updates
+      });
     }
     
     res.json({ success: true, updated: cardIds.length });
@@ -924,37 +925,31 @@ app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
 // Export to CSV
 app.get('/api/origination/export', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets();
-    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
+    const cards = await boardDb.getAllCards();
     
-    const boardResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Board!A:H'
-    });
-    const rows = boardResponse.data.values || [];
+    const escapeCsv = (val) => {
+      if (!val) return '';
+      const str = String(val).replace(/"/g, '""');
+      return str.includes(',') || str.includes('"') ? `"${str}"` : str;
+    };
     
     // CSV header
     const csv = [
-      'Title,Description,Stage,Owner,Notes,Card ID,Deal Value,Date Created'
+      'Title,Description,Stage,Owner,Notes,Card ID,Deal Value,Date Created,Project Type'
     ];
     
     // Add data rows
-    rows.slice(1).forEach(row => {
-      const escapeCsv = (val) => {
-        if (!val) return '';
-        const str = String(val).replace(/"/g, '""');
-        return str.includes(',') || str.includes('"') ? `"${str}"` : str;
-      };
-      
+    cards.forEach(card => {
       csv.push([
-        escapeCsv(row[0]),
-        escapeCsv(row[1]),
-        escapeCsv(row[2]),
-        escapeCsv(row[3]),
-        escapeCsv(row[4]),
-        escapeCsv(row[5]),
-        escapeCsv(row[6]),
-        escapeCsv(row[7])
+        escapeCsv(card.title),
+        escapeCsv(card.description),
+        escapeCsv(card.column),
+        escapeCsv(card.owner),
+        escapeCsv(card.notes),
+        escapeCsv(card.id),
+        escapeCsv(card.deal_value),
+        escapeCsv(card.date_created),
+        escapeCsv(card.project_type)
       ].join(','));
     });
     
