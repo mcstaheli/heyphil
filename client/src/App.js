@@ -216,6 +216,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('dateCreated');
   const [showMetrics, setShowMetrics] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
 
   const columns = [
     { id: 'ideation', title: 'Ideation', color: '#bbdefb' },
@@ -321,18 +322,33 @@ function OriginationBoard({ user, onBack, onLogout }) {
   
   useEffect(() => {
     // Connect to WebSocket server
-    socketRef.current = io(WS_URL, {
-      transports: ['websocket', 'polling']
-    });
+    const wsUrl = WS_URL || API_BASE_URL;
+    console.log('🔌 Connecting to WebSocket server:', wsUrl);
     
-    console.log('🔌 Connecting to WebSocket server...');
+    socketRef.current = io(wsUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 10
+    });
     
     socketRef.current.on('connect', () => {
-      console.log('✅ WebSocket connected');
+      console.log('✅ WebSocket connected to', wsUrl, '(ID:', socketRef.current.id + ')');
+      setWsConnected(true);
     });
     
-    socketRef.current.on('disconnect', () => {
-      console.log('❌ WebSocket disconnected');
+    socketRef.current.on('disconnect', (reason) => {
+      console.log('❌ WebSocket disconnected:', reason);
+      setWsConnected(false);
+    });
+    
+    socketRef.current.on('connect_error', (err) => {
+      console.error('❌ WebSocket connection error:', err.message);
+      setWsConnected(false);
+    });
+    
+    socketRef.current.on('error', (err) => {
+      console.error('❌ WebSocket error:', err);
     });
     
     // Listen for card changes
@@ -603,6 +619,19 @@ function OriginationBoard({ user, onBack, onLogout }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button className="btn-secondary" onClick={onBack}>← Back</button>
           <h1>📋 Project Board</h1>
+          <span 
+            style={{ 
+              fontSize: '12px', 
+              padding: '4px 8px', 
+              borderRadius: '4px',
+              backgroundColor: wsConnected ? '#4caf50' : '#ff9800',
+              color: 'white',
+              fontWeight: 'bold'
+            }}
+            title={wsConnected ? 'Real-time updates active' : 'Connecting...'}
+          >
+            {wsConnected ? '● LIVE' : '○ Connecting...'}
+          </span>
         </div>
         <div className="user-info">
           {user?.picture && <img src={user.picture} alt={user.name} />}

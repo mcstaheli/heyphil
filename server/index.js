@@ -21,7 +21,12 @@ const app = express();
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: [
+      'http://localhost:3000',
+      'https://heyphil.bot',
+      'https://www.heyphil.bot',
+      process.env.CLIENT_URL
+    ].filter(Boolean),
     credentials: true
   }
 });
@@ -102,10 +107,16 @@ app.get('/health', (req, res) => {
 
 // ========== WEBSOCKET CONNECTION ==========
 io.on('connection', (socket) => {
-  console.log('✅ Client connected:', socket.id);
+  console.log('✅ WebSocket client connected:', socket.id, 'from', socket.handshake.address);
+  console.log('   Total clients:', io.engine.clientsCount);
   
-  socket.on('disconnect', () => {
-    console.log('❌ Client disconnected:', socket.id);
+  socket.on('disconnect', (reason) => {
+    console.log('❌ WebSocket client disconnected:', socket.id, 'reason:', reason);
+    console.log('   Remaining clients:', io.engine.clientsCount);
+  });
+  
+  socket.on('error', (err) => {
+    console.error('❌ WebSocket error:', socket.id, err);
   });
   
   // Clients will receive:
@@ -119,8 +130,9 @@ io.on('connection', (socket) => {
 
 // Helper: Broadcast change to all connected clients
 function broadcastChange(event, data) {
+  const clientCount = io.engine.clientsCount;
+  console.log(`📡 Broadcasting ${event} to ${clientCount} clients:`, data.id || data.cardId || data.actionId || '');
   io.emit(event, data);
-  console.log(`📡 Broadcast: ${event}`, data.id || data.cardId || '');
 }
 
 // Routes
