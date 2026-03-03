@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { io } from 'socket.io-client';
 import './App.css';
 import './Loading.css';
 import Landing from './Landing';
@@ -6,6 +7,7 @@ import HotelVisual from './HotelVisual';
 import OrgCharts from './OrgCharts';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 
 function App() {
   const [authenticated, setAuthenticated] = useState(null);
@@ -314,6 +316,111 @@ function OriginationBoard({ user, onBack, onLogout }) {
     }
   };
 
+  // Socket.io real-time updates
+  const socketRef = useRef(null);
+  
+  useEffect(() => {
+    // Connect to WebSocket server
+    socketRef.current = io(WS_URL, {
+      transports: ['websocket', 'polling']
+    });
+    
+    console.log('🔌 Connecting to WebSocket server...');
+    
+    socketRef.current.on('connect', () => {
+      console.log('✅ WebSocket connected');
+    });
+    
+    socketRef.current.on('disconnect', () => {
+      console.log('❌ WebSocket disconnected');
+    });
+    
+    // Listen for card changes
+    socketRef.current.on('card:created', (card) => {
+      console.log('📨 Card created:', card.id);
+      setCards(prevCards => [...prevCards, {
+        id: card.id,
+        title: card.title || 'Untitled',
+        description: card.description || '',
+        column: card.column || 'backlog',
+        owner: card.owner || '',
+        notes: card.notes || '',
+        dealValue: card.dealValue || 0,
+        dateCreated: card.dateCreated || new Date(),
+        projectType: card.projectType || '',
+        actions: [],
+        log: []
+      }]);
+    });
+    
+    socketRef.current.on('card:updated', (update) => {
+      console.log('📨 Card updated:', update.id);
+      setCards(prevCards => prevCards.map(c => 
+        c.id === update.id ? { ...c, ...update } : c
+      ));
+    });
+    
+    socketRef.current.on('card:deleted', ({ id }) => {
+      console.log('📨 Card deleted:', id);
+      setCards(prevCards => prevCards.filter(c => c.id !== id));
+    });
+    
+    // Listen for action changes
+    socketRef.current.on('action:created', ({ actionId, cardId, text }) => {
+      console.log('📨 Action created:', actionId, 'for card:', cardId);
+      setCards(prevCards => prevCards.map(c => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            actions: [...(c.actions || []), {
+              id: actionId,
+              cardId,
+              text,
+              completedOn: null,
+              completedBy: null
+            }]
+          };
+        }
+        return c;
+      }));
+    });
+    
+    socketRef.current.on('action:toggled', ({ actionId, cardId, completed, completedOn, completedBy }) => {
+      console.log('📨 Action toggled:', actionId, 'completed:', completed);
+      setCards(prevCards => prevCards.map(c => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            actions: (c.actions || []).map(a => 
+              a.id === actionId ? { ...a, completedOn, completedBy } : a
+            )
+          };
+        }
+        return c;
+      }));
+    });
+    
+    socketRef.current.on('action:deleted', ({ actionId, cardId }) => {
+      console.log('📨 Action deleted:', actionId);
+      setCards(prevCards => prevCards.map(c => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            actions: (c.actions || []).filter(a => a.id !== actionId)
+          };
+        }
+        return c;
+      }));
+    });
+    
+    // Cleanup on unmount
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, []);
+
   const createCard = async (cardData, pendingActions = []) => {
     try {
       const response = await apiFetch(`${API_BASE_URL}/api/origination/card`, {
@@ -420,49 +527,17 @@ function OriginationBoard({ user, onBack, onLogout }) {
     }
   };
   
-  const toggleAction = async (rowIndex, completed, cardId, cardTitle) => {
+  const toggleAction = async (actionId, completed, cardId, cardTitle) => {
     try {
       const response = await apiFetch(`${API_BASE_URL}/api/origination/action/toggle`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ rowIndex, completed, cardId, cardTitle })
+        body: JSON.stringify({ actionId, completed, cardId, cardTitle })
       });
       
       if (response.ok) {
-        // Update all cards with this action
-        setCards(prevCards => prevCards.map(card => {
-          if (card.id === cardId) {
-            return {
-              ...card,
-              actions: card.actions.map(action => 
-                action.rowIndex === rowIndex
-                  ? {
-                      ...action,
-                      completedOn: completed ? new Date().toISOString() : null,
-                      completedBy: completed ? user?.name || user?.email : null
-                    }
-                  : action
-              )
-            };
-          }
-          return card;
-        }));
-        
-        // Update editing card if open
-        if (editingCard && editingCard.id === cardId) {
-          setEditingCard(prev => ({
-            ...prev,
-            actions: prev.actions.map(action => 
-              action.rowIndex === rowIndex
-                ? {
-                    ...action,
-                    completedOn: completed ? new Date().toISOString() : null,
-                    completedBy: completed ? user?.name || user?.email : null
-                  }
-                : action
-            )
-          }));
-        }
+        // State will be updated via Socket.io event
+        // No need to manually update here anymore
       }
     } catch (error) {
       console.error('Failed to toggle action:', error);
@@ -496,28 +571,9 @@ function OriginationBoard({ user, onBack, onLogout }) {
         body: JSON.stringify({ cardId, cardTitle, text })
       });
       
-      if (response.ok && editingCard) {
-        // Update the editing card locally without full reload
-        const updatedCard = {
-          ...editingCard,
-          actions: [
-            ...(editingCard.actions || []),
-            {
-              cardId,
-              cardTitle,
-              text,
-              completedOn: null,
-              completedBy: null,
-              rowIndex: -1 // Will be updated on next full refresh
-            }
-          ]
-        };
-        setEditingCard(updatedCard);
-        
-        // Update cards array in background for card view
-        setCards(prevCards => prevCards.map(c => 
-          c.id === cardId ? updatedCard : c
-        ));
+      if (response.ok) {
+        // State will be updated via Socket.io event
+        // No need to manually update here anymore
       }
     } catch (error) {
       console.error('Failed to add action:', error);
@@ -700,9 +756,9 @@ function OriginationBoard({ user, onBack, onLogout }) {
                     {!isPrePost && card.actions && card.actions.filter(a => !a.completedOn).length > 0 && (
                       <div className="card-actions-section">
                         {card.actions.filter(a => !a.completedOn).slice(0, 3).map((action) => (
-                          <div key={action.rowIndex} className="card-action-item" onClick={(e) => {
+                          <div key={action.id} className="card-action-item" onClick={(e) => {
                             e.stopPropagation();
-                            toggleAction(action.rowIndex, true, action.cardId, action.cardTitle);
+                            toggleAction(action.id, true, action.cardId, action.cardTitle);
                           }}>
                             <input type="checkbox" checked={false} readOnly />
                             <span>{action.text}</span>
@@ -885,11 +941,11 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
             {card && card.actions && card.actions.length > 0 && (
               <div className="modal-actions-list">
                 {[...card.actions].reverse().map((action, idx) => (
-                  <div key={idx} className={`modal-action-item ${action.completedOn ? 'completed' : ''}`}>
+                  <div key={action.id || idx} className={`modal-action-item ${action.completedOn ? 'completed' : ''}`}>
                     <input
                       type="checkbox"
                       checked={!!action.completedOn}
-                      onChange={() => toggleAction && toggleAction(action.rowIndex, !action.completedOn, action.cardId, action.cardTitle)}
+                      onChange={() => toggleAction && toggleAction(action.id, !action.completedOn, action.cardId, action.cardTitle)}
                     />
                     <span className="action-text">{action.text}</span>
                     {action.completedOn && (
