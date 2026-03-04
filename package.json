@@ -10,7 +10,9 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "setup": "npm install && cd client && npm install",
     "migrate": "node server/migrate-from-sheets.js",
-    "db:init": "node server/init-db.js"
+    "db:init": "node server/init-db.js",
+    "railway:build": "npm install && cd client && npm install && npm run build",
+    "start": "node server/index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
