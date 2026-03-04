@@ -922,6 +922,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
           toggleAction={toggleAction}
           onAddAction={addAction}
           projectTypeColors={projectTypeColors}
+          people={people}
         />
       )}
 
@@ -950,6 +951,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
           toggleAction={toggleAction}
           onAddAction={addAction}
           projectTypeColors={projectTypeColors}
+          people={people}
         />
       )}
 
@@ -967,7 +969,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction, projectTypeColors }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction, projectTypeColors, people }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -1047,9 +1049,9 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
             >
               <option value="">Unassigned</option>
-              <option value="Chad">Chad</option>
-              <option value="Greg">Greg</option>
-              <option value="Scott">Scott</option>
+              {people && Object.keys(people).sort().map(person => (
+                <option key={person} value={person}>{person}</option>
+              ))}
             </select>
           </div>
           <div className="form-group">
