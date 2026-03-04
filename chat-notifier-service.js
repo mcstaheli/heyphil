@@ -52,24 +52,42 @@ async function checkAndNotify() {
       console.log('💭 Typing indicator activated');
       
       for (const msg of result.rows) {
-        const preview = msg.content.length > 200 ? msg.content.substring(0, 200) + '...' : msg.content;
-        const notification = `💬 New Web Chat from ${msg.user_name}:\n\n"${preview}"${msg.screenshot ? '\n\n📸 Screenshot attached' : ''}\n\nID: ${msg.id}\nRespond: cd /Users/philo/clawd/heyphil-app && ./respond-to-chat.sh "your response"`;
-        
         console.log('━'.repeat(60));
-        console.log(notification);
+        console.log(`💬 Web Chat from ${msg.user_name} (ID: ${msg.id})`);
+        console.log(`   Message: "${msg.content.substring(0, 100)}${msg.content.length > 100 ? '...' : ''}"`);
         console.log('━'.repeat(60));
         
-        // Send via Clawdbot message tool
+        // Spawn a Clawdbot sub-agent to handle this message
         try {
-          // Write message to temp file to preserve formatting
-          const tmpFile = path.join(__dirname, '.tmp-notification.txt');
-          fs.writeFileSync(tmpFile, notification);
-          await execAsync(`clawdbot message send --channel telegram --target 8469369979 --message "$(cat ${tmpFile})"`);
-          fs.unlinkSync(tmpFile);
-          console.log('✅ Telegram notification sent');
+          const task = `You received a web chat message from ${msg.user_name}:
+
+"${msg.content}"
+
+Respond naturally and helpfully. When you have your response ready, post it back to the web chat using:
+
+cd /Users/philo/clawd/heyphil-app && ./respond-to-chat.sh "your response text here"
+
+Make sure to actually run the command - don't just suggest it.`;
+
+          console.log('🤖 Spawning Clawdbot sub-agent to respond...');
+          
+          // Use sessions_spawn via Clawdbot CLI
+          await execAsync(`clawdbot session spawn --label "webchat-${msg.id}" --task "${task.replace(/"/g, '\\"')}" --cleanup delete`);
+          
+          console.log('✅ Sub-agent spawned - it will respond automatically');
         } catch (err) {
-          console.error('⚠️  Failed to send Telegram notification:', err.message);
-          // Continue anyway
+          console.error('⚠️  Failed to spawn sub-agent:', err.message);
+          
+          // Fallback: just notify the main session
+          const fallbackMsg = `❌ Auto-response failed. Manual response needed:\n\nFrom ${msg.user_name}: "${msg.content}"\n\nID: ${msg.id}\nRespond: cd /Users/philo/clawd/heyphil-app && ./respond-to-chat.sh "your response"`;
+          try {
+            const tmpFile = path.join(__dirname, '.tmp-notification.txt');
+            fs.writeFileSync(tmpFile, fallbackMsg);
+            await execAsync(`clawdbot message send --channel telegram --target 8469369979 --message "$(cat ${tmpFile})"`);
+            fs.unlinkSync(tmpFile);
+          } catch (e) {
+            console.error('⚠️  Fallback notification also failed:', e.message);
+          }
         }
         
         saveLastNotifiedId(msg.id);
