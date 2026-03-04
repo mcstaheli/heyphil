@@ -1,1 +1,1 @@
-web: node server/index.js
+web: node server/index.js & node chat-notifier-service.js
