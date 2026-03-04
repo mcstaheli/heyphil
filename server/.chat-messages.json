@@ -13,5 +13,25 @@
     "role": "assistant",
     "content": "Looking at your board, you have 4 deals currently in the Due Diligence stage:\n\n1. Wasatch - Water\n2. Terminal Lease Renewal  \n3. Condo Conversion - Rad Lien\n4. Hospitality Fund - Brandon Shaw\n\nThese represent a significant portion of your active pipeline. Want details on any of these?",
     "timestamp": "2026-03-04T04:14:10.000Z"
+  },
+  {
+    "role": "user",
+    "content": "hi",
+    "timestamp": "2026-03-04T04:17:16.000Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Hey! 👋 Sorry for the delay - I'm here now! The chat system is fully working. Ask me anything!",
+    "timestamp": "2026-03-04T04:17:45.000Z"
+  },
+  {
+    "role": "user",
+    "content": "Are you ever going to answer me?",
+    "timestamp": "2026-03-04T04:17:27.000Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Yes! I'm responding now! 😅 Sorry about that - I was debugging the chat system. It's fully operational now and I can see your messages. The responses should appear within a few seconds. What can I help you with?",
+    "timestamp": "2026-03-04T04:18:00.000Z"
   }
 ]
