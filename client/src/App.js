@@ -230,10 +230,10 @@ function OriginationBoard({ user, onBack, onLogout }) {
     { id: 'ic-close', title: 'IC - Close', color: '#9e9e9e' },
     { id: 'assets', title: 'Assets', color: '#1976d2' },
     { id: 'ic-assets', title: 'IC - Assets', color: '#757575' },
-    { id: 'closed', title: 'Packaged', color: '#2196f3' },
     { id: 'development', title: 'Development', color: '#66bb6a' },
     { id: 'operations', title: 'Operations', color: '#ef6c00' },
-    { id: 'abandoned', title: 'Abandoned', color: '#616161' }
+    { id: 'abandoned', title: 'Abandoned', color: '#616161' },
+    { id: 'closed', title: 'Exited', color: '#2196f3' }
   ];
 
   useEffect(() => {
