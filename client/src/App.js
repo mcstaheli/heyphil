@@ -39,7 +39,43 @@ function App() {
     }
     
     checkAuth();
+    
+    // Check token expiry every 5 minutes
+    const tokenCheckInterval = setInterval(() => {
+      checkTokenExpiry();
+    }, 5 * 60 * 1000);
+    
+    return () => clearInterval(tokenCheckInterval);
   }, []);
+  
+  const checkTokenExpiry = () => {
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+    
+    try {
+      // Decode JWT (simple base64 decode of payload)
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const exp = payload.exp * 1000; // Convert to milliseconds
+      const now = Date.now();
+      const timeLeft = exp - now;
+      
+      // Warn if less than 30 minutes left
+      if (timeLeft < 30 * 60 * 1000 && timeLeft > 0) {
+        console.warn('Token expires in', Math.floor(timeLeft / 60000), 'minutes');
+        // Could show a toast notification here
+      }
+      
+      // Auto-logout if expired
+      if (timeLeft <= 0) {
+        console.error('Token expired');
+        localStorage.removeItem('authToken');
+        setAuthenticated(false);
+        alert('Your session has expired. Please log in again.');
+      }
+    } catch (error) {
+      console.error('Failed to check token expiry:', error);
+    }
+  };
 
   const checkAuth = async () => {
     const token = localStorage.getItem('authToken');
@@ -310,9 +346,36 @@ function OriginationBoard({ user, onBack, onLogout }) {
     return res;
   };
 
-  const apiFetch = async (url, options = {}) => {
-    const res = await fetch(url, options);
-    return handleApiResponse(res);
+  const apiFetch = async (url, options = {}, retries = 3) => {
+    let lastError;
+    
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const res = await fetch(url, options);
+        return await handleApiResponse(res);
+      } catch (error) {
+        lastError = error;
+        
+        // Don't retry on session expired
+        if (error.message === 'Session expired') {
+          throw error;
+        }
+        
+        // Don't retry on 400 errors (bad request)
+        if (error.status >= 400 && error.status < 500) {
+          throw error;
+        }
+        
+        // Wait before retry (exponential backoff)
+        if (attempt < retries - 1) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+          console.log(`API call failed, retrying in ${delay}ms... (attempt ${attempt + 1}/${retries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    throw lastError;
   };
 
   const loadBoard = async (showLoading = true) => {
@@ -526,28 +589,28 @@ function OriginationBoard({ user, onBack, onLogout }) {
         return;
       }
       
-      // Add card locally without loading screen
-      const tempId = Math.max(...cards.map(c => parseInt(c.id) || 0), 999) + 1;
+      // Use server-generated card ID (critical fix)
+      const serverCardId = result.card?.id || result.id;
       const newCard = {
         ...cardData,
-        id: tempId,
+        id: serverCardId,
         actions: [],
-        activity: [],
+        links: [],
+        log: [],
         daysInStage: 0,
         dateCreated: new Date().toISOString()
       };
       setCards(prevCards => [...prevCards, newCard]);
       setShowNewCard(false);
       
-      // Add pending actions if any
+      // Add pending actions if any (now using correct server ID)
       if (pendingActions.length > 0) {
         for (const actionText of pendingActions) {
-          await addAction(tempId, cardData.title, actionText);
+          await addAction(serverCardId, cardData.title, actionText);
         }
       }
       
-      // Refresh in background to sync (no loading screen)
-      setTimeout(() => loadBoard(false), 2000);
+      // No need for background refresh - WebSocket will sync
     } catch (error) {
       console.error('Failed to create card:', error);
       alert('Failed to create card - check console for details');

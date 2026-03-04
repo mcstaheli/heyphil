@@ -685,6 +685,26 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
   try {
     const { title, description, column, owner, notes, dealValue, projectType } = req.body;
     
+    // Input validation
+    if (!title || title.trim().length === 0) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    if (title.length > 500) {
+      return res.status(400).json({ error: 'Title must be 500 characters or less' });
+    }
+    if (description && description.length > 10000) {
+      return res.status(400).json({ error: 'Description must be 10,000 characters or less' });
+    }
+    if (!column || column.trim().length === 0) {
+      return res.status(400).json({ error: 'Column is required' });
+    }
+    if (dealValue && (isNaN(dealValue) || dealValue < 0 || dealValue > 999999999999)) {
+      return res.status(400).json({ error: 'Deal value must be a valid positive number' });
+    }
+    if (notes && notes.length > 10000) {
+      return res.status(400).json({ error: 'Notes must be 10,000 characters or less' });
+    }
+    
     // Generate unique card ID
     const cardId = `card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
@@ -859,6 +879,17 @@ app.post('/api/origination/action', requireAuth, async (req, res) => {
   try {
     const { cardId, cardTitle, text } = req.body;
     
+    // Input validation
+    if (!cardId || cardId.trim().length === 0) {
+      return res.status(400).json({ error: 'Card ID is required' });
+    }
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ error: 'Action text is required' });
+    }
+    if (text.length > 1000) {
+      return res.status(400).json({ error: 'Action text must be 1,000 characters or less' });
+    }
+    
     // Create action in database
     const action = await boardDb.createAction(cardId, cardTitle, text);
     
@@ -882,6 +913,14 @@ app.put('/api/origination/action/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { text } = req.body;
+    
+    // Input validation
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ error: 'Action text is required' });
+    }
+    if (text.length > 1000) {
+      return res.status(400).json({ error: 'Action text must be 1,000 characters or less' });
+    }
     
     // Get action details for cardId before update
     const actions = await boardDb.getAllActions();
@@ -935,6 +974,27 @@ app.delete('/api/origination/action/:id', requireAuth, async (req, res) => {
 app.post('/api/origination/link', requireAuth, async (req, res) => {
   try {
     const { cardId, title, url } = req.body;
+    
+    // Input validation
+    if (!cardId || cardId.trim().length === 0) {
+      return res.status(400).json({ error: 'Card ID is required' });
+    }
+    if (!title || title.trim().length === 0) {
+      return res.status(400).json({ error: 'Link title is required' });
+    }
+    if (title.length > 255) {
+      return res.status(400).json({ error: 'Link title must be 255 characters or less' });
+    }
+    if (!url || url.trim().length === 0) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+    // Basic URL validation
+    try {
+      new URL(url);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid URL format' });
+    }
+    
     const link = await boardDb.createLink(cardId, title, url);
     
     // Broadcast to all clients
