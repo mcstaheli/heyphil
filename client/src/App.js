@@ -940,9 +940,11 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
         <h2>{card ? 'Edit Project' : 'New Project'}</h2>
         <form onSubmit={handleSubmit}>
+          <div className="modal-two-column">
+            <div className="modal-left-column">
           <div className="form-group">
             <label>Title *</label>
             <input
@@ -1016,9 +1018,11 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               placeholder="Additional notes..."
             />
           </div>
-          
+            </div>
+            
+            <div className="modal-right-column">
+              <h3>Next Actions</h3>
           <div className="action-items-section">
-            <label>Next Actions</label>
             {card && card.actions && card.actions.length > 0 && (
               <div className="modal-actions-list">
                 {[...card.actions].reverse().map((action, idx) => (
@@ -1076,6 +1080,8 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                   + Add
                 </button>
               </div>
+          </div>
+            </div>
           </div>
           
           {card && card.activity && card.activity.length > 0 && (
