@@ -977,29 +977,34 @@ app.get('/api/origination/export', requireAuth, async (req, res) => {
 // Save settings (people, project types, colors)
 app.post('/api/origination/settings', requireAuth, async (req, res) => {
   try {
+    console.log('📝 Saving settings:', JSON.stringify(req.body, null, 2));
     const { people, ownerColors, projectTypeColors } = req.body;
     
     // Save people (name, photo, border color)
-    const peopleToSave = Object.keys(people).concat(Object.keys(ownerColors || {}));
+    const peopleToSave = Object.keys(people || {}).concat(Object.keys(ownerColors || {}));
     const uniquePeople = [...new Set(peopleToSave)];
     
+    console.log(`   Saving ${uniquePeople.length} people...`);
     for (const name of uniquePeople) {
       await boardDb.createPerson(
         name,
-        people[name] || null,
+        (people || {})[name] || null,
         (ownerColors || {})[name] || null
       );
     }
     
     // Save project types
+    const projectTypeCount = Object.keys(projectTypeColors || {}).length;
+    console.log(`   Saving ${projectTypeCount} project types...`);
     for (const [name, color] of Object.entries(projectTypeColors || {})) {
       await boardDb.createProjectType(name, color);
     }
     
+    console.log('✅ Settings saved successfully');
     res.json({ success: true });
   } catch (error) {
-    console.error('Failed to save settings:', error);
-    res.status(500).json({ error: 'Failed to save settings' });
+    console.error('❌ Failed to save settings:', error);
+    res.status(500).json({ error: 'Failed to save settings', details: error.message });
   }
 });
 

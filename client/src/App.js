@@ -602,25 +602,38 @@ function OriginationBoard({ user, onBack, onLogout }) {
 
   const handleSaveSettings = async (settings) => {
     try {
-      const response = await apiFetch(`${API_BASE_URL}/api/origination/settings`, {
+      console.log('Saving settings to backend:', settings);
+      
+      const response = await fetch(`${API_BASE_URL}/api/origination/settings`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(settings)
       });
 
-      if (response.ok) {
-        // Update local state
-        setPeople(settings.people);
-        setOwnerColors(settings.ownerColors);
-        setProjectTypeColors(settings.projectTypeColors);
-        setShowSettings(false);
-        
-        // Reload board to reflect changes
-        await loadBoard(false);
+      console.log('Settings save response:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Settings save failed:', errorData);
+        throw new Error(errorData.error || 'Failed to save settings');
       }
+
+      const result = await response.json();
+      console.log('Settings saved successfully:', result);
+
+      // Update local state
+      setPeople(settings.people);
+      setOwnerColors(settings.ownerColors);
+      setProjectTypeColors(settings.projectTypeColors);
+      setShowSettings(false);
+      
+      // Reload board to reflect changes
+      await loadBoard(false);
+      
+      alert('Settings saved successfully!');
     } catch (error) {
       console.error('Failed to save settings:', error);
-      alert('Failed to save settings. Please try again.');
+      alert(`Failed to save settings: ${error.message}`);
     }
   };
 

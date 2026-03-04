@@ -53,14 +53,18 @@ function Settings({ people, ownerColors, projectTypeColors, onClose, onSave }) {
     const updatedPeople = {};
     const updatedOwnerColors = {};
     users.forEach(user => {
-      if (user.photoUrl) updatedPeople[user.name] = user.photoUrl;
-      if (user.borderColor) updatedOwnerColors[user.name] = user.borderColor;
+      if (!user.name.trim()) return; // Skip empty names
+      updatedPeople[user.name] = user.photoUrl || ''; // Always include user, even without photo
+      updatedOwnerColors[user.name] = user.borderColor || '#cccccc';
     });
 
     const updatedProjectTypeColors = {};
     projectTypes.forEach(pt => {
+      if (!pt.name.trim()) return; // Skip empty names
       updatedProjectTypeColors[pt.name] = pt.color;
     });
+
+    console.log('Saving settings:', { updatedPeople, updatedOwnerColors, updatedProjectTypeColors });
 
     onSave({
       people: updatedPeople,
