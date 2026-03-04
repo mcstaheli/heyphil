@@ -11,6 +11,7 @@ fi
 
 DATABASE_URL="postgresql://postgres:gOcOEhhjWYhlYGKYEtCsryktTycBEVbH@gondola.proxy.rlwy.net:25917/railway"
 
+# Post the message
 node -e "
 const { Pool } = require('pg');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -23,3 +24,6 @@ pool.query('INSERT INTO chat_messages (role, content, user_name) VALUES (\$1, \$
   pool.end();
 });
 " "$MESSAGE"
+
+# Clear typing indicator
+node set-typing.js off > /dev/null 2>&1

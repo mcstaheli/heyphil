@@ -14,6 +14,7 @@ import fs from 'fs';
 import 'dotenv/config';
 import * as boardDb from './board-db.js';
 import pool from './db.js';
+import { getTypingStatus } from './typing-status.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1160,6 +1161,12 @@ app.get('/api/chat/unread', requireAuth, async (req, res) => {
     console.error('Failed to fetch unread messages:', error);
     res.json({ messages: [] });
   }
+});
+
+// Get typing status
+app.get('/api/chat/typing', requireAuth, (req, res) => {
+  const isTyping = getTypingStatus();
+  res.json({ isTyping });
 });
 
 // Serve static files from React app in production (MUST be after all API routes)

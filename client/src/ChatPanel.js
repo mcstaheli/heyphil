@@ -9,6 +9,7 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
   const [sessionKey, setSessionKey] = useState(null);
   const [screenshot, setScreenshot] = useState(null);
   const [screenshotLoading, setScreenshotLoading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
   const pollIntervalRef = useRef(null);
 
@@ -74,18 +75,26 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
     if (!sessionKey) return;
     
     try {
-      const response = await fetch(`${apiBaseUrl}/api/chat/messages?sessionKey=${sessionKey}`, {
-        headers: authHeaders()
-      });
-      const data = await response.json();
+      // Fetch messages and typing status in parallel
+      const [messagesRes, typingRes] = await Promise.all([
+        fetch(`${apiBaseUrl}/api/chat/messages?sessionKey=${sessionKey}`, {
+          headers: authHeaders()
+        }),
+        fetch(`${apiBaseUrl}/api/chat/typing`, {
+          headers: authHeaders()
+        })
+      ]);
       
-      console.log('📥 Polled for messages:', data.messages?.length || 0, 'messages');
+      const messagesData = await messagesRes.json();
+      const typingData = await typingRes.json();
       
-      if (data.messages && data.messages.length > 0) {
-        // Always update messages to catch new ones
-        setMessages(data.messages);
-        console.log('✅ Messages updated');
+      console.log('📥 Poll:', messagesData.messages?.length || 0, 'messages, typing:', typingData.isTyping);
+      
+      if (messagesData.messages && messagesData.messages.length > 0) {
+        setMessages(messagesData.messages);
       }
+      
+      setIsTyping(typingData.isTyping || false);
     } catch (error) {
       console.error('❌ Polling error:', error);
     }
@@ -235,7 +244,7 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
               </div>
             ))
           )}
-          {loading && (
+          {(loading || isTyping) && (
             <div className="chat-message assistant">
               <div className="message-avatar">🤖</div>
               <div className="message-content">

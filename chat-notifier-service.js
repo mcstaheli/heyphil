@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { setTyping } from './server/typing-status.js';
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
@@ -45,6 +46,10 @@ async function checkAndNotify() {
     
     if (result.rows.length > 0) {
       console.log(`\n🔔 ${result.rows.length} new message(s) found!`);
+      
+      // Set typing indicator immediately
+      setTyping(true);
+      console.log('💭 Typing indicator activated');
       
       for (const msg of result.rows) {
         const preview = msg.content.length > 200 ? msg.content.substring(0, 200) + '...' : msg.content;
