@@ -512,17 +512,30 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
   try {
     const data = await boardDb.getBoardData();
     
-    // Calculate metrics (same as before)
+    // Calculate metrics with proper null handling
     const filteredCards = data.cards.filter(c => 
       c.column !== 'ideation' && c.column !== 'closed' && c.column !== 'abandoned'
     );
     
+    // Group by stage for detailed metrics
+    const byStage = {};
+    filteredCards.forEach(card => {
+      if (!byStage[card.column]) {
+        byStage[card.column] = { count: 0, value: 0 };
+      }
+      byStage[card.column].count++;
+      byStage[card.column].value += parseFloat(card.dealValue) || 0;
+    });
+    
     const metrics = {
+      totalDeals: filteredCards.length,
+      totalValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.dealValue) || 0), 0),
       totalDealValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.dealValue) || 0), 0),
       totalProjects: filteredCards.length,
       activeProjects: filteredCards.filter(c => 
         c.column !== 'backlog' && c.column !== 'closed' && c.column !== 'abandoned'
-      ).length
+      ).length,
+      byStage
     };
     
     res.json({ 

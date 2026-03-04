@@ -245,7 +245,7 @@ export async function getBoardData() {
     column: card.column,
     owner: card.owner,
     notes: card.notes,
-    dealValue: card.deal_value,
+    dealValue: parseFloat(card.deal_value) || 0,
     dateCreated: card.date_created,
     projectType: card.project_type,
     actions: actionsByCard[card.id] || [],
