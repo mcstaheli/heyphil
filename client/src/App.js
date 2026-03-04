@@ -219,26 +219,43 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [showMetrics, setShowMetrics] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [visibleSections, setVisibleSections] = useState({
+    origination: true,
+    studio: true,
+    development: true,
+    operations: true,
+    other: true
+  });
 
-  const columns = [
-    { id: 'ideation', title: 'Ideation', color: '#bbdefb' },
-    { id: 'on-deck', title: 'On Deck', color: '#90caf9' },
-    { id: 'ic-diligence', title: 'IC - Diligence', color: '#e0e0e0' },
-    { id: 'due-diligence', title: 'Due Diligence', color: '#64b5f6' },
-    { id: 'ic-capitalization', title: 'IC - Capitalization', color: '#bdbdbd' },
-    { id: 'capitalization', title: 'Capitalization', color: '#42a5f5' },
-    { id: 'ic-close', title: 'IC - Close', color: '#9e9e9e' },
-    { id: 'assets', title: 'Assets', color: '#1976d2' },
-    { id: 'ic-assets', title: 'IC - Assets', color: '#757575' },
-    { id: 'studio-diligence', title: 'Studio - Diligence', color: '#e1bee7' },
-    { id: 'studio-validation', title: 'Studio - Validation', color: '#ce93d8' },
-    { id: 'studio-launch', title: 'Studio - Launch', color: '#ba68c8' },
-    { id: 'studio-spinout', title: 'Studio - Spinout', color: '#ab47bc' },
-    { id: 'development', title: 'Development', color: '#66bb6a' },
-    { id: 'operations', title: 'Operations', color: '#ef6c00' },
-    { id: 'abandoned', title: 'Abandoned', color: '#616161' },
-    { id: 'closed', title: 'Exited', color: '#2196f3' }
+  const allColumns = [
+    { id: 'ideation', title: 'Ideation', color: '#bbdefb', section: 'origination' },
+    { id: 'on-deck', title: 'On Deck', color: '#90caf9', section: 'origination' },
+    { id: 'ic-diligence', title: 'IC - Diligence', color: '#e0e0e0', section: 'origination' },
+    { id: 'due-diligence', title: 'Due Diligence', color: '#64b5f6', section: 'origination' },
+    { id: 'ic-capitalization', title: 'IC - Capitalization', color: '#bdbdbd', section: 'origination' },
+    { id: 'capitalization', title: 'Capitalization', color: '#42a5f5', section: 'origination' },
+    { id: 'ic-close', title: 'IC - Close', color: '#9e9e9e', section: 'origination' },
+    { id: 'assets', title: 'Assets', color: '#1976d2', section: 'origination' },
+    { id: 'ic-assets', title: 'IC - Assets', color: '#757575', section: 'origination' },
+    { id: 'studio-diligence', title: 'Studio - Diligence', color: '#e1bee7', section: 'studio' },
+    { id: 'studio-validation', title: 'Studio - Validation', color: '#ce93d8', section: 'studio' },
+    { id: 'studio-launch', title: 'Studio - Launch', color: '#ba68c8', section: 'studio' },
+    { id: 'studio-spinout', title: 'Studio - Spinout', color: '#ab47bc', section: 'studio' },
+    { id: 'development', title: 'Development', color: '#66bb6a', section: 'development' },
+    { id: 'operations', title: 'Operations', color: '#ef6c00', section: 'operations' },
+    { id: 'abandoned', title: 'Abandoned', color: '#616161', section: 'other' },
+    { id: 'closed', title: 'Exited', color: '#2196f3', section: 'other' }
   ];
+
+  // Filter columns based on visible sections
+  const columns = allColumns.filter(col => visibleSections[col.section]);
+
+  const toggleSection = (section) => {
+    setVisibleSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
   useEffect(() => {
     loadBoard();
@@ -687,6 +704,49 @@ function OriginationBoard({ user, onBack, onLogout }) {
       </header>
 
       <div className="board-toolbar">
+        <div className="board-section-filters">
+          <label className="section-filter-label">Show Sections:</label>
+          <label className="section-filter-checkbox">
+            <input
+              type="checkbox"
+              checked={visibleSections.origination}
+              onChange={() => toggleSection('origination')}
+            />
+            <span>Origination</span>
+          </label>
+          <label className="section-filter-checkbox">
+            <input
+              type="checkbox"
+              checked={visibleSections.studio}
+              onChange={() => toggleSection('studio')}
+            />
+            <span>Studio</span>
+          </label>
+          <label className="section-filter-checkbox">
+            <input
+              type="checkbox"
+              checked={visibleSections.development}
+              onChange={() => toggleSection('development')}
+            />
+            <span>Development</span>
+          </label>
+          <label className="section-filter-checkbox">
+            <input
+              type="checkbox"
+              checked={visibleSections.operations}
+              onChange={() => toggleSection('operations')}
+            />
+            <span>Operations</span>
+          </label>
+          <label className="section-filter-checkbox">
+            <input
+              type="checkbox"
+              checked={visibleSections.other}
+              onChange={() => toggleSection('other')}
+            />
+            <span>Other</span>
+          </label>
+        </div>
         <div className="board-filters">
           <input
             type="text"
