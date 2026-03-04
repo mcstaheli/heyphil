@@ -1,0 +1,8 @@
+💬 Test notification
+
+This is a test with:
+- Multiple lines
+- Proper formatting
+- No escaped \n characters
+
+Let's see if this works!

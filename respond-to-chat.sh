@@ -9,10 +9,11 @@ if [ -z "$MESSAGE" ]; then
     exit 1
 fi
 
-DATABASE_URL="postgresql://postgres:gOcOEhhjWYhlYGKYEtCsryktTycBEVbH@gondola.proxy.rlwy.net:25917/railway"
+# Load DATABASE_URL from .env
+export DATABASE_URL="postgresql://postgres:gOcOEhhjWYhlYGKYEtCsryktTycBEVbH@gondola.proxy.rlwy.net:25917/railway"
 
 # Post the message
-node -e "
+DATABASE_URL="$DATABASE_URL" node -e "
 const { Pool } = require('pg');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const message = process.argv[1];
@@ -20,10 +21,11 @@ pool.query('INSERT INTO chat_messages (role, content, user_name) VALUES (\$1, \$
   console.log('✅ Response posted! Message ID:', result.rows[0].id);
   pool.end();
 }).catch(err => {
-  console.error('❌ Error:', err);
+  console.error('❌ Error:', err.message);
   pool.end();
+  process.exit(1);
 });
 " "$MESSAGE"
 
 # Clear typing indicator
-node set-typing.js off > /dev/null 2>&1
+DATABASE_URL="$DATABASE_URL" node set-typing.js off > /dev/null 2>&1

@@ -61,8 +61,11 @@ async function checkAndNotify() {
         
         // Send via Clawdbot message tool
         try {
-          const escapedMsg = notification.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-          await execAsync(`clawdbot message send --channel telegram --target 8469369979 --message "${escapedMsg}"`);
+          // Write message to temp file to preserve formatting
+          const tmpFile = path.join(__dirname, '.tmp-notification.txt');
+          fs.writeFileSync(tmpFile, notification);
+          await execAsync(`clawdbot message send --channel telegram --target 8469369979 --message "$(cat ${tmpFile})"`);
+          fs.unlinkSync(tmpFile);
           console.log('✅ Telegram notification sent');
         } catch (err) {
           console.error('⚠️  Failed to send Telegram notification:', err.message);
