@@ -441,6 +441,21 @@ function OriginationBoard({ user, onBack, onLogout }) {
       }));
     });
     
+    socketRef.current.on('action:updated', ({ actionId, cardId, text }) => {
+      console.log('📨 Action updated:', actionId);
+      setCards(prevCards => prevCards.map(c => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            actions: (c.actions || []).map(a => 
+              a.id === actionId ? { ...a, text } : a
+            )
+          };
+        }
+        return c;
+      }));
+    });
+    
     socketRef.current.on('action:deleted', ({ actionId, cardId }) => {
       console.log('📨 Action deleted:', actionId);
       setCards(prevCards => prevCards.map(c => {
@@ -650,6 +665,22 @@ function OriginationBoard({ user, onBack, onLogout }) {
       }
     } catch (error) {
       console.error('Failed to add action:', error);
+    }
+  };
+
+  const updateAction = async (actionId, text) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/action/${actionId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ text })
+      });
+      
+      if (response.ok) {
+        // State will be updated via Socket.io event
+      }
+    } catch (error) {
+      console.error('Failed to update action:', error);
     }
   };
 
@@ -999,6 +1030,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
           initialColumn={newCardColumn}
           toggleAction={toggleAction}
           onAddAction={addAction}
+          onUpdateAction={updateAction}
           onAddLink={addLink}
           onDeleteLink={deleteLink}
           projectTypeColors={projectTypeColors}
@@ -1030,6 +1062,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
           columns={columns}
           toggleAction={toggleAction}
           onAddAction={addAction}
+          onUpdateAction={updateAction}
           onDeleteAction={deleteAction}
           onAddLink={addLink}
           onDeleteLink={deleteLink}
@@ -1053,7 +1086,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -1067,6 +1100,8 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const [pendingActions, setPendingActions] = useState([]);
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [editingActionId, setEditingActionId] = useState(null);
+  const [editingActionText, setEditingActionText] = useState('');
   const [showActivity, setShowActivity] = useState(false);
   
   // Memoize sorted lists to prevent recomputing on every render
@@ -1284,7 +1319,44 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                       }}
                       onClick={(e) => e.stopPropagation()}
                     />
-                    <span className="action-text">{action.text}</span>
+                    {editingActionId === action.id ? (
+                      <input
+                        type="text"
+                        value={editingActionText}
+                        onChange={(e) => setEditingActionText(e.target.value)}
+                        onBlur={() => {
+                          if (editingActionText.trim() && editingActionText !== action.text) {
+                            onUpdateAction(action.id, editingActionText.trim());
+                          }
+                          setEditingActionId(null);
+                          setEditingActionText('');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.target.blur();
+                          }
+                          if (e.key === 'Escape') {
+                            setEditingActionId(null);
+                            setEditingActionText('');
+                          }
+                        }}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ flex: 1, padding: '4px', border: '1px solid #2196f3' }}
+                      />
+                    ) : (
+                      <span 
+                        className="action-text"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingActionId(action.id);
+                          setEditingActionText(action.text);
+                        }}
+                        style={{ cursor: 'text' }}
+                      >
+                        {action.text}
+                      </span>
+                    )}
                     {action.completedOn && (
                       <span className="action-meta">
                         ✓ {action.completedBy} • {new Date(action.completedOn).toLocaleDateString()}

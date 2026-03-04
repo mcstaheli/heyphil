@@ -877,6 +877,34 @@ app.post('/api/origination/action', requireAuth, async (req, res) => {
   }
 });
 
+// Update action item
+app.put('/api/origination/action/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { text } = req.body;
+    
+    // Get action details for cardId before update
+    const actions = await boardDb.getAllActions();
+    const action = actions.find(a => a.id === parseInt(id));
+    
+    if (action) {
+      await boardDb.updateAction(id, text);
+      
+      // Broadcast to all clients
+      broadcastChange('action:updated', {
+        actionId: parseInt(id),
+        cardId: action.card_id,
+        text
+      });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to update action:', error);
+    res.status(500).json({ error: 'Failed to update action' });
+  }
+});
+
 // Delete action item
 app.delete('/api/origination/action/:id', requireAuth, async (req, res) => {
   try {

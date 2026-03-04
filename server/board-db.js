@@ -124,6 +124,17 @@ export async function toggleAction(actionId, completed, userName) {
   return result.rows[0];
 }
 
+export async function updateAction(actionId, text) {
+  const result = await pool.query(
+    `UPDATE actions 
+     SET text = $1 
+     WHERE id = $2 
+     RETURNING *`,
+    [text, actionId]
+  );
+  return result.rows[0];
+}
+
 export async function deleteAction(actionId) {
   await pool.query('DELETE FROM actions WHERE id = $1', [actionId]);
 }

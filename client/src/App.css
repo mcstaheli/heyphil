@@ -83,6 +83,7 @@ body {
   background: #f5f7fa;
   display: flex;
   flex-direction: column;
+  zoom: 0.8;
 }
 
 .app-header {
