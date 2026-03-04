@@ -974,6 +974,35 @@ app.get('/api/origination/export', requireAuth, async (req, res) => {
   }
 });
 
+// Save settings (people, project types, colors)
+app.post('/api/origination/settings', requireAuth, async (req, res) => {
+  try {
+    const { people, ownerColors, projectTypeColors } = req.body;
+    
+    // Save people (name, photo, border color)
+    const peopleToSave = Object.keys(people).concat(Object.keys(ownerColors || {}));
+    const uniquePeople = [...new Set(peopleToSave)];
+    
+    for (const name of uniquePeople) {
+      await boardDb.createPerson(
+        name,
+        people[name] || null,
+        (ownerColors || {})[name] || null
+      );
+    }
+    
+    // Save project types
+    for (const [name, color] of Object.entries(projectTypeColors || {})) {
+      await boardDb.createProjectType(name, color);
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to save settings:', error);
+    res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
 // Serve static files from React app in production (MUST be after all API routes)
 if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
   // Serve static files with proper cache headers

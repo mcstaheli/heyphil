@@ -5,6 +5,7 @@ import './Loading.css';
 import Landing from './Landing';
 import HotelVisual from './HotelVisual';
 import OrgCharts from './OrgCharts';
+import Settings from './Settings';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -217,6 +218,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [sortBy, setSortBy] = useState('dateCreated');
   const [showMetrics, setShowMetrics] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const columns = [
     { id: 'ideation', title: 'Ideation', color: '#bbdefb' },
@@ -598,6 +600,30 @@ function OriginationBoard({ user, onBack, onLogout }) {
     }
   };
 
+  const handleSaveSettings = async (settings) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/settings`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(settings)
+      });
+
+      if (response.ok) {
+        // Update local state
+        setPeople(settings.people);
+        setOwnerColors(settings.ownerColors);
+        setProjectTypeColors(settings.projectTypeColors);
+        setShowSettings(false);
+        
+        // Reload board to reflect changes
+        await loadBoard(false);
+      }
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      alert('Failed to save settings. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="loading">
@@ -638,6 +664,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
         <div className="user-info">
           {user?.picture && <img src={user.picture} alt={user.name} />}
           <span>{user?.name}</span>
+          <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙️ Settings</button>
           <button className="btn-secondary" onClick={onLogout}>Logout</button>
         </div>
       </header>
@@ -846,6 +873,16 @@ function OriginationBoard({ user, onBack, onLogout }) {
           toggleAction={toggleAction}
           onAddAction={addAction}
           projectTypeColors={projectTypeColors}
+        />
+      )}
+
+      {showSettings && (
+        <Settings
+          people={people}
+          ownerColors={_ownerColors}
+          projectTypeColors={projectTypeColors}
+          onClose={() => setShowSettings(false)}
+          onSave={handleSaveSettings}
         />
       )}
       
