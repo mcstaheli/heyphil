@@ -13,7 +13,7 @@
   overflow: hidden;
 }
 
-/* Rotating Batman logo in center */
+/* Rotating Philo logo in center */
 .batman-logo {
   position: relative;
   z-index: 3;
@@ -32,22 +32,18 @@
 }
 
 .batman-logo-inner {
-  width: 85%;
-  height: 85%;
-  background: #000;
-  clip-path: polygon(
-    50% 15%,
-    35% 35%,
-    15% 35%,
-    35% 50%,
-    30% 70%,
-    50% 60%,
-    70% 70%,
-    65% 50%,
-    85% 35%,
-    65% 35%
-  );
+  width: 75%;
+  height: 75%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   animation: pulseBat 1s ease-in-out infinite;
+}
+
+.batman-logo-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .batman-transition-content {

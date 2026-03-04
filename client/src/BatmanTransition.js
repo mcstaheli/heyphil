@@ -23,9 +23,11 @@ function BatmanTransition({ onComplete }) {
       {/* Background diagonal wipe bars */}
       <div className="batman-wipe"></div>
 
-      {/* Rotating Batman logo in center */}
+      {/* Rotating Philo logo in center */}
       <div className="batman-logo">
-        <div className="batman-logo-inner"></div>
+        <div className="batman-logo-inner">
+          <img src="/philo-logo.jpg" alt="Philo Ventures" />
+        </div>
       </div>
 
       {/* Corner Batman emblems */}
@@ -41,9 +43,8 @@ function BatmanTransition({ onComplete }) {
 
       {/* Audio element - Batman transition sound */}
       <audio ref={audioRef} preload="auto">
-        {/* Using a creative commons retro transition sound */}
         <source 
-          src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" 
+          src="/batman-transition.mp3" 
           type="audio/mpeg" 
         />
       </audio>
