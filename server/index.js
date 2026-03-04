@@ -1022,41 +1022,105 @@ app.post('/api/origination/settings', requireAuth, async (req, res) => {
 });
 
 // ========== CHAT API ==========
-// These endpoints connect to the current Clawdbot session
+// Messages are stored in a simple JSON file for communication between web and Clawdbot
+
+const chatMessagesFile = path.join(__dirname, '.chat-messages.json');
+
+// Helper to read chat messages
+const getChatMessages = () => {
+  try {
+    if (fs.existsSync(chatMessagesFile)) {
+      const data = fs.readFileSync(chatMessagesFile, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Error reading chat messages:', error);
+  }
+  return [];
+};
+
+// Helper to save chat messages
+const saveChatMessages = (messages) => {
+  try {
+    fs.writeFileSync(chatMessagesFile, JSON.stringify(messages, null, 2));
+  } catch (error) {
+    console.error('Error saving chat messages:', error);
+  }
+};
+
+// Helper to add a message
+const addChatMessage = (role, content) => {
+  const messages = getChatMessages();
+  messages.push({
+    role,
+    content,
+    timestamp: new Date().toISOString()
+  });
+  // Keep last 100 messages
+  if (messages.length > 100) {
+    messages.splice(0, messages.length - 100);
+  }
+  saveChatMessages(messages);
+  return messages;
+};
 
 // Get session info
-app.get('/api/chat/session', requireAuth, (req, res) => {
+app.get('/api/chat/session', requireAuth, async (req, res) => {
+  const messages = getChatMessages();
   res.json({
-    sessionKey: process.env.SESSION_KEY || 'current',
-    recentMessages: [] // Will be populated from session history
+    sessionKey: 'main',
+    recentMessages: messages.slice(-20) // Last 20 messages
   });
 });
 
-// Get recent messages (placeholder - would integrate with Clawdbot session history)
-app.get('/api/chat/messages', requireAuth, (req, res) => {
-  // In a full implementation, this would fetch from Clawdbot session history
+// Get recent messages
+app.get('/api/chat/messages', requireAuth, async (req, res) => {
+  const messages = getChatMessages();
   res.json({
-    messages: []
+    messages: messages.slice(-50) // Last 50 messages
   });
 });
 
-// Send message to Clawdbot
+// Send message to Clawdbot  
 app.post('/api/chat/send', requireAuth, async (req, res) => {
   try {
     const { message } = req.body;
+    const userName = req.user.name || req.user.email;
     
-    console.log('💬 Chat message received:', message);
-    console.log('   From user:', req.user.name || req.user.email);
+    console.log('💬 Web chat message from', userName + ':', message);
     
-    // For now, send a simple response
-    // In production, this would integrate with Clawdbot sessions API
+    // Add user message to history
+    addChatMessage('user', message);
+    
+    // Write to a pending messages file that I can monitor
+    const pendingFile = path.join(__dirname, '.chat-pending.txt');
+    const pendingMessage = `[${new Date().toISOString()}] ${userName}: ${message}\n`;
+    fs.appendFileSync(pendingFile, pendingMessage);
+    
+    console.log(`📝 Web chat message saved to pending queue`);
+    console.log(`   The Clawdbot agent will process it and respond`);
+    console.log(`   File: ${pendingFile}`);
+    
     res.json({
       success: true,
-      reply: "I received your message! Full chat integration is coming soon. For now, continue using Telegram to chat with me. 🤖"
+      reply: 'Message sent! I\'ll respond in the chat shortly. 🤖'
     });
   } catch (error) {
     console.error('❌ Failed to send chat message:', error);
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Endpoint for Clawdbot agent to post responses
+app.post('/api/chat/respond', requireAuth, async (req, res) => {
+  try {
+    const { message } = req.body;
+    addChatMessage('assistant', message);
+    console.log('🤖 Clawdbot response added to chat');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to post response:', error);
+    res.status(500).json({ error: 'Failed to post response' });
   }
 });
 
