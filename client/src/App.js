@@ -6,6 +6,7 @@ import Landing from './Landing';
 import HotelVisual from './HotelVisual';
 import OrgCharts from './OrgCharts';
 import Settings from './Settings';
+import BatmanTransition from './BatmanTransition';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -17,14 +18,31 @@ function App() {
     return localStorage.getItem('currentApp') || null;
   });
   const [showDevTools, setShowDevTools] = useState(false);
+  const [showBatmanTransition, setShowBatmanTransition] = useState(false);
+  const [pendingApp, setPendingApp] = useState(null);
   
   const setCurrentApp = (app) => {
-    setCurrentAppState(app);
-    if (app) {
-      localStorage.setItem('currentApp', app);
+    // Show Batman transition for Studio Board
+    if (app === 'studio') {
+      setPendingApp(app);
+      setShowBatmanTransition(true);
     } else {
-      localStorage.removeItem('currentApp');
+      setCurrentAppState(app);
+      if (app) {
+        localStorage.setItem('currentApp', app);
+      } else {
+        localStorage.removeItem('currentApp');
+      }
     }
+  };
+  
+  const handleTransitionComplete = () => {
+    setShowBatmanTransition(false);
+    setCurrentAppState(pendingApp);
+    if (pendingApp) {
+      localStorage.setItem('currentApp', pendingApp);
+    }
+    setPendingApp(null);
   };
 
   useEffect(() => {
@@ -118,6 +136,11 @@ function App() {
     setCurrentApp(null);
   };
 
+  // Batman transition
+  if (showBatmanTransition) {
+    return <BatmanTransition onComplete={handleTransitionComplete} />;
+  }
+
   // Login screen
   if (authenticated === false) {
     return <Landing onSignIn={handleLogin} />;
@@ -161,6 +184,11 @@ function App() {
                 <div className="app-icon">📋</div>
                 <h3>Project Board</h3>
                 <p>Manage projects with your team</p>
+              </div>
+              <div className="app-card" onClick={() => setCurrentApp('studio')}>
+                <div className="app-icon">🎬</div>
+                <h3>Studio Board</h3>
+                <p>Venture studio pipeline</p>
               </div>
               <div className="app-card" onClick={() => setCurrentApp('orgcharts')}>
                 <div className="app-icon">📊</div>
@@ -235,9 +263,29 @@ function App() {
     );
   }
 
+  // Studio Board app
+  if (currentApp === 'studio') {
+    return (
+      <>
+        <OriginationBoard 
+          user={user} 
+          onBack={() => setCurrentApp(null)} 
+          onLogout={handleLogout}
+          studioMode={true}
+        />
+        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
+        {!showDevTools && (
+          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
+            🔧
+          </button>
+        )}
+      </>
+    );
+  }
+
 }
 
-function OriginationBoard({ user, onBack, onLogout }) {
+function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
   const [cards, setCards] = useState([]);
   const [people, setPeople] = useState({});
   const [_ownerColors, setOwnerColors] = useState({});
@@ -255,13 +303,17 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [showMetrics, setShowMetrics] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [visibleSections, setVisibleSections] = useState({
-    origination: true,
-    studio: true,
-    development: true,
-    operations: true,
-    other: true
-  });
+  const [visibleSections, setVisibleSections] = useState(
+    studioMode 
+      ? { studio: true } 
+      : {
+          origination: true,
+          studio: true,
+          development: true,
+          operations: true,
+          other: true
+        }
+  );
 
   const allColumns = [
     { id: 'ideation', title: 'Ideation', color: '#bbdefb', section: 'origination' },
@@ -836,7 +888,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
         <div className="loading-content">
           <div className="loading-icon">⚙️</div>
           <h2 className="loading-text">Loading</h2>
-          <p className="loading-subtext">Project Board</p>
+          <p className="loading-subtext">{studioMode ? 'Studio Board' : 'Project Board'}</p>
           <div className="loading-spinner">
             <div className="spinner-dot"></div>
             <div className="spinner-dot"></div>
@@ -852,7 +904,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
       <header className="app-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button className="btn-secondary" onClick={onBack}>← Back</button>
-          <h1>📋 Project Board</h1>
+          <h1>{studioMode ? '🎬 Studio Board' : '📋 Project Board'}</h1>
           <span 
             style={{ 
               fontSize: '12px', 
@@ -903,48 +955,50 @@ function OriginationBoard({ user, onBack, onLogout }) {
             <option value="daysInStage">Time in Stage</option>
           </select>
           
-          <div className="board-section-filters">
-            <label className="section-filter-checkbox">
-              <input
-                type="checkbox"
-                checked={visibleSections.origination}
-                onChange={() => toggleSection('origination')}
-              />
-              <span>Origination</span>
-            </label>
-            <label className="section-filter-checkbox">
-              <input
-                type="checkbox"
-                checked={visibleSections.studio}
-                onChange={() => toggleSection('studio')}
-              />
-              <span>Studio</span>
-            </label>
-            <label className="section-filter-checkbox">
-              <input
-                type="checkbox"
-                checked={visibleSections.development}
-                onChange={() => toggleSection('development')}
-              />
-              <span>Development</span>
-            </label>
-            <label className="section-filter-checkbox">
-              <input
-                type="checkbox"
-                checked={visibleSections.operations}
-                onChange={() => toggleSection('operations')}
-              />
-              <span>Operations</span>
-            </label>
-            <label className="section-filter-checkbox">
-              <input
-                type="checkbox"
-                checked={visibleSections.other}
-                onChange={() => toggleSection('other')}
-              />
-              <span>Other</span>
-            </label>
-          </div>
+          {!studioMode && (
+            <div className="board-section-filters">
+              <label className="section-filter-checkbox">
+                <input
+                  type="checkbox"
+                  checked={visibleSections.origination}
+                  onChange={() => toggleSection('origination')}
+                />
+                <span>Origination</span>
+              </label>
+              <label className="section-filter-checkbox">
+                <input
+                  type="checkbox"
+                  checked={visibleSections.studio}
+                  onChange={() => toggleSection('studio')}
+                />
+                <span>Studio</span>
+              </label>
+              <label className="section-filter-checkbox">
+                <input
+                  type="checkbox"
+                  checked={visibleSections.development}
+                  onChange={() => toggleSection('development')}
+                />
+                <span>Development</span>
+              </label>
+              <label className="section-filter-checkbox">
+                <input
+                  type="checkbox"
+                  checked={visibleSections.operations}
+                  onChange={() => toggleSection('operations')}
+                />
+                <span>Operations</span>
+              </label>
+              <label className="section-filter-checkbox">
+                <input
+                  type="checkbox"
+                  checked={visibleSections.other}
+                  onChange={() => toggleSection('other')}
+                />
+                <span>Other</span>
+              </label>
+            </div>
+          )}
         </div>
         <div className="board-actions">
           <button className="btn-secondary" onClick={() => setShowMetrics(!showMetrics)}>

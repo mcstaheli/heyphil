@@ -1,0 +1,222 @@
+/* 1950s Batman Scene Transition */
+.batman-transition {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background: black;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.batman-transition-content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  animation: pulseGlow 1s ease-in-out infinite;
+}
+
+.batman-title {
+  font-family: 'Impact', 'Arial Black', sans-serif;
+  font-size: 72px;
+  font-weight: 900;
+  color: #FFD700;
+  text-shadow: 
+    4px 4px 0 #FF0000,
+    8px 8px 0 #000,
+    -2px -2px 0 #FFF,
+    0 0 20px #FFD700,
+    0 0 40px #FF0000;
+  letter-spacing: 8px;
+  text-transform: uppercase;
+  margin: 0;
+  transform: rotate(-3deg);
+  animation: wobble 0.5s ease-in-out infinite alternate;
+}
+
+/* Diagonal wipe effect */
+.batman-wipe {
+  position: absolute;
+  top: -100%;
+  left: -100%;
+  width: 300%;
+  height: 300%;
+  background: linear-gradient(
+    45deg,
+    transparent 0%,
+    transparent 45%,
+    #FF0000 45%,
+    #FFD700 50%,
+    #00F 50%,
+    #00F 55%,
+    transparent 55%,
+    transparent 100%
+  );
+  animation: diagonalWipe 2s ease-in-out infinite;
+  z-index: 1;
+}
+
+/* Star bursts */
+.batman-starburst {
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  animation: spin 3s linear infinite, pulse 1s ease-in-out infinite;
+}
+
+.batman-starburst.star1 {
+  top: 10%;
+  left: 10%;
+  color: #FFD700;
+}
+
+.batman-starburst.star2 {
+  top: 20%;
+  right: 15%;
+  color: #FF0000;
+  animation-delay: 0.5s;
+}
+
+.batman-starburst.star3 {
+  bottom: 15%;
+  left: 20%;
+  color: #00F;
+  animation-delay: 1s;
+}
+
+.batman-starburst.star4 {
+  bottom: 10%;
+  right: 10%;
+  color: #FFD700;
+  animation-delay: 1.5s;
+}
+
+/* Action words (POW! ZAP! style) */
+.batman-word {
+  position: absolute;
+  font-family: 'Impact', 'Arial Black', sans-serif;
+  font-size: 48px;
+  font-weight: 900;
+  color: #FFD700;
+  text-shadow: 
+    3px 3px 0 #000,
+    -2px -2px 0 #FFF,
+    0 0 20px #FF0000;
+  border: 4px solid #000;
+  background: linear-gradient(45deg, #FF0000, #FFD700, #00F);
+  padding: 10px 20px;
+  transform: rotate(-15deg);
+  animation: popIn 0.5s ease-out;
+}
+
+.batman-word.word1 {
+  top: 30%;
+  left: 15%;
+  animation-delay: 0.2s;
+}
+
+.batman-word.word2 {
+  top: 50%;
+  right: 20%;
+  transform: rotate(12deg);
+  animation-delay: 0.8s;
+}
+
+/* Animations */
+@keyframes diagonalWipe {
+  0% {
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
+  50% {
+    transform: translate(0%, 0%) rotate(45deg);
+  }
+  100% {
+    transform: translate(50%, 50%) rotate(45deg);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+@keyframes wobble {
+  0% {
+    transform: rotate(-3deg);
+  }
+  100% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.3);
+  }
+}
+
+@keyframes popIn {
+  0% {
+    transform: scale(0) rotate(-15deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.2) rotate(-15deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-15deg);
+    opacity: 1;
+  }
+}
+
+/* Retro scanlines effect */
+.batman-transition::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.1) 0px,
+    transparent 1px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.1) 3px
+  );
+  pointer-events: none;
+  z-index: 999;
+  animation: scanlines 8s linear infinite;
+}
+
+@keyframes scanlines {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(10px);
+  }
+}
