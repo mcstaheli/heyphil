@@ -1021,6 +1021,45 @@ app.post('/api/origination/settings', requireAuth, async (req, res) => {
   }
 });
 
+// ========== CHAT API ==========
+// These endpoints connect to the current Clawdbot session
+
+// Get session info
+app.get('/api/chat/session', requireAuth, (req, res) => {
+  res.json({
+    sessionKey: process.env.SESSION_KEY || 'current',
+    recentMessages: [] // Will be populated from session history
+  });
+});
+
+// Get recent messages (placeholder - would integrate with Clawdbot session history)
+app.get('/api/chat/messages', requireAuth, (req, res) => {
+  // In a full implementation, this would fetch from Clawdbot session history
+  res.json({
+    messages: []
+  });
+});
+
+// Send message to Clawdbot
+app.post('/api/chat/send', requireAuth, async (req, res) => {
+  try {
+    const { message } = req.body;
+    
+    console.log('💬 Chat message received:', message);
+    console.log('   From user:', req.user.name || req.user.email);
+    
+    // For now, send a simple response
+    // In production, this would integrate with Clawdbot sessions API
+    res.json({
+      success: true,
+      reply: "I received your message! Full chat integration is coming soon. For now, continue using Telegram to chat with me. 🤖"
+    });
+  } catch (error) {
+    console.error('❌ Failed to send chat message:', error);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
 // Serve static files from React app in production (MUST be after all API routes)
 if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
   // Serve static files with proper cache headers
