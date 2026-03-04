@@ -1195,6 +1195,75 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               placeholder="Additional notes..."
             />
           </div>
+
+          <div className="form-group">
+            <label>Links</label>
+            {card && card.links && card.links.length > 0 && (
+              <div style={{ marginBottom: '8px' }}>
+                {card.links.map((link) => (
+                  <div key={link.id} style={{ display: 'flex', alignItems: 'center', marginBottom: '4px', gap: '8px' }}>
+                    <a 
+                      href={link.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      style={{ color: '#2196f3', textDecoration: 'none', flex: 1 }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      🔗 {link.title}
+                    </a>
+                    {onDeleteLink && (
+                      <button 
+                        type="button"
+                        className="btn-remove-action"
+                        onClick={() => {
+                          if (window.confirm('Delete this link?')) {
+                            onDeleteLink(link.id);
+                          }
+                        }}
+                        title="Delete link"
+                        style={{ padding: '2px 6px', fontSize: '14px' }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {card && (
+              <div>
+                <input
+                  type="text"
+                  placeholder="Link title (e.g., SmartSheets)"
+                  value={newLinkTitle}
+                  onChange={(e) => setNewLinkTitle(e.target.value)}
+                  style={{ width: '100%', marginBottom: '4px' }}
+                />
+                <input
+                  type="url"
+                  placeholder="URL (https://...)"
+                  value={newLinkUrl}
+                  onChange={(e) => setNewLinkUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddLink();
+                    }
+                  }}
+                  style={{ width: '100%', marginBottom: '4px' }}
+                />
+                <button 
+                  type="button" 
+                  className="btn-secondary"
+                  onClick={handleAddLink}
+                  disabled={!newLinkTitle.trim() || !newLinkUrl.trim()}
+                  style={{ width: '100%' }}
+                >
+                  + Add Link
+                </button>
+              </div>
+            )}
+          </div>
             </div>
             
             <div className="modal-right-column">
@@ -1277,72 +1346,6 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                   + Add
                 </button>
               </div>
-          </div>
-
-          <h3 style={{ marginTop: '24px' }}>Links</h3>
-          <div className="action-items-section">
-            {card && card.links && card.links.length > 0 && (
-              <div className="modal-actions-list">
-                {card.links.map((link) => (
-                  <div key={link.id} className="modal-action-item">
-                    <a 
-                      href={link.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="link-item"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      🔗 {link.title}
-                    </a>
-                    {onDeleteLink && (
-                      <button 
-                        type="button"
-                        className="btn-remove-action"
-                        onClick={() => {
-                          if (window.confirm('Delete this link?')) {
-                            onDeleteLink(link.id);
-                          }
-                        }}
-                        title="Delete link"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {card && (
-              <div className="add-action-input" style={{ marginTop: '8px' }}>
-                <input
-                  type="text"
-                  placeholder="Link title (e.g., SmartSheets)"
-                  value={newLinkTitle}
-                  onChange={(e) => setNewLinkTitle(e.target.value)}
-                  style={{ marginBottom: '4px' }}
-                />
-                <input
-                  type="url"
-                  placeholder="URL (https://...)"
-                  value={newLinkUrl}
-                  onChange={(e) => setNewLinkUrl(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddLink();
-                    }
-                  }}
-                />
-                <button 
-                  type="button" 
-                  className="btn-add-action"
-                  onClick={handleAddLink}
-                  disabled={!newLinkTitle.trim() || !newLinkUrl.trim()}
-                >
-                  + Add Link
-                </button>
-              </div>
-            )}
           </div>
             </div>
           </div>
