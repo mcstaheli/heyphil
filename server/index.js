@@ -1028,7 +1028,7 @@ app.post('/api/origination/settings', requireAuth, async (req, res) => {
 const getChatMessages = async (limit = 100) => {
   try {
     const result = await pool.query(
-      'SELECT id, role, content, user_name, created_at as timestamp FROM chat_messages ORDER BY created_at DESC LIMIT $1',
+      'SELECT id, role, content, user_name, screenshot, created_at as timestamp FROM chat_messages ORDER BY created_at DESC LIMIT $1',
       [limit]
     );
     return result.rows.reverse(); // Return oldest first for chat display
@@ -1039,11 +1039,11 @@ const getChatMessages = async (limit = 100) => {
 };
 
 // Helper to add a message
-const addChatMessage = async (role, content, userName = null) => {
+const addChatMessage = async (role, content, userName = null, screenshot = null) => {
   try {
     const result = await pool.query(
-      'INSERT INTO chat_messages (role, content, user_name) VALUES ($1, $2, $3) RETURNING id, role, content, user_name, created_at as timestamp',
-      [role, content, userName]
+      'INSERT INTO chat_messages (role, content, user_name, screenshot) VALUES ($1, $2, $3, $4) RETURNING id, role, content, user_name, screenshot, created_at as timestamp',
+      [role, content, userName, screenshot]
     );
     return result.rows[0];
   } catch (error) {
@@ -1094,13 +1094,16 @@ app.get('/api/chat/messages', requireAuth, async (req, res) => {
 // Send message to Clawdbot  
 app.post('/api/chat/send', requireAuth, async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, screenshot } = req.body;
     const userName = req.user.name || req.user.email;
     
     console.log('💬 Web chat message from', userName + ':', message);
+    if (screenshot) {
+      console.log('   📸 Screenshot attached');
+    }
     
     // Add user message to database
-    await addChatMessage('user', message, userName);
+    await addChatMessage('user', message, userName, screenshot);
     
     console.log(`📝 Web chat message saved to database`);
     console.log(`   The Clawdbot agent will monitor and respond`);

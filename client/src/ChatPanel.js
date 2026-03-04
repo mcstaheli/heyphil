@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import html2canvas from 'html2canvas';
 import './ChatPanel.css';
 
 function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
@@ -6,6 +7,8 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [sessionKey, setSessionKey] = useState(null);
+  const [screenshot, setScreenshot] = useState(null);
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const pollIntervalRef = useRef(null);
 
@@ -75,19 +78,67 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
     }
   };
 
+  const takeScreenshot = async () => {
+    setScreenshotLoading(true);
+    try {
+      // Capture the entire document body, excluding the chat panel
+      const chatPanel = document.querySelector('.chat-panel');
+      if (chatPanel) {
+        chatPanel.style.display = 'none';
+      }
+
+      const canvas = await html2canvas(document.body, {
+        allowTaint: true,
+        useCORS: true,
+        backgroundColor: '#f5f5f5',
+        scale: 1
+      });
+
+      if (chatPanel) {
+        chatPanel.style.display = '';
+      }
+
+      const dataUrl = canvas.toDataURL('image/png');
+      setScreenshot(dataUrl);
+      setInputText('🖼️ Screenshot attached - ');
+    } catch (error) {
+      console.error('Failed to capture screenshot:', error);
+      alert('Failed to capture screenshot. Please try again.');
+    } finally {
+      setScreenshotLoading(false);
+    }
+  };
+
+  const clearScreenshot = () => {
+    setScreenshot(null);
+    if (inputText.startsWith('🖼️ Screenshot attached - ')) {
+      setInputText('');
+    }
+  };
+
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!inputText.trim() || loading) return;
 
+    let messageContent = inputText;
+    
+    // If there's a screenshot, mention it in the message
+    if (screenshot) {
+      messageContent = inputText + '\n\n[Screenshot attached - see image above]';
+    }
+
     const userMessage = {
       role: 'user',
-      content: inputText,
-      timestamp: new Date().toISOString()
+      content: messageContent,
+      timestamp: new Date().toISOString(),
+      screenshot: screenshot || undefined
     };
 
     // Optimistically add user message
     setMessages(prev => [...prev, userMessage]);
     setInputText('');
+    const capturedScreenshot = screenshot;
+    setScreenshot(null);
     setLoading(true);
 
     try {
@@ -98,7 +149,8 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          message: inputText,
+          message: messageContent,
+          screenshot: capturedScreenshot,
           sessionKey
         })
       });
@@ -131,7 +183,17 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
             <span className="chat-icon">💬</span>
             <h3>Chat with Phil</h3>
           </div>
-          <button className="chat-close" onClick={onClose}>✕</button>
+          <div className="chat-header-actions">
+            <button 
+              className="chat-screenshot-btn" 
+              onClick={takeScreenshot}
+              disabled={screenshotLoading}
+              title="Take screenshot for bug report or feature request"
+            >
+              {screenshotLoading ? '⏳' : '📸'}
+            </button>
+            <button className="chat-close" onClick={onClose}>✕</button>
+          </div>
         </div>
 
         <div className="chat-messages">
@@ -147,6 +209,11 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
                   {msg.role === 'user' ? '👤' : '🤖'}
                 </div>
                 <div className="message-content">
+                  {msg.screenshot && (
+                    <div className="message-screenshot">
+                      <img src={msg.screenshot} alt="Screenshot" />
+                    </div>
+                  )}
                   <div className="message-text">{msg.content}</div>
                   <div className="message-time">
                     {new Date(msg.timestamp).toLocaleTimeString()}
@@ -171,17 +238,33 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
         </div>
 
         <form className="chat-input-form" onSubmit={sendMessage}>
-          <input
-            type="text"
-            placeholder="Type your message..."
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            disabled={loading}
-            autoFocus
-          />
-          <button type="submit" disabled={!inputText.trim() || loading}>
-            ➤
-          </button>
+          {screenshot && (
+            <div className="screenshot-preview">
+              <img src={screenshot} alt="Screenshot preview" />
+              <button 
+                type="button" 
+                className="screenshot-remove" 
+                onClick={clearScreenshot}
+                title="Remove screenshot"
+              >
+                ✕
+              </button>
+              <p className="screenshot-hint">Screenshot attached - Add your message below</p>
+            </div>
+          )}
+          <div className="input-row">
+            <input
+              type="text"
+              placeholder={screenshot ? "Describe the issue or feature request..." : "Type your message..."}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              disabled={loading}
+              autoFocus
+            />
+            <button type="submit" disabled={!inputText.trim() || loading}>
+              ➤
+            </button>
+          </div>
         </form>
       </div>
     </div>
