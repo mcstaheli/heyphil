@@ -880,6 +880,10 @@ body {
   width: 18px;
   height: 18px;
   cursor: pointer;
+  pointer-events: auto;
+  z-index: 10;
+  position: relative;
+  flex-shrink: 0;
 }
 
 .modal-action-item .action-text {
@@ -892,6 +896,12 @@ body {
 .modal-action-item.completed .action-text {
   text-decoration: line-through;
   color: #999;
+}
+
+.modal-action-item.completed input[type="checkbox"] {
+  /* Ensure completed checkboxes are still clickable */
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .modal-action-item .action-meta {

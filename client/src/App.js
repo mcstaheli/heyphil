@@ -1099,7 +1099,13 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                     <input
                       type="checkbox"
                       checked={!!action.completedOn}
-                      onChange={() => toggleAction && toggleAction(action.id, !action.completedOn, action.cardId, action.cardTitle)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        if (toggleAction) {
+                          toggleAction(action.id, !action.completedOn, action.cardId, action.cardTitle);
+                        }
+                      }}
+                      onClick={(e) => e.stopPropagation()}
                     />
                     <span className="action-text">{action.text}</span>
                     {action.completedOn && (
