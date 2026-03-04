@@ -1033,22 +1033,18 @@ body {
   background: white;
   border-bottom: 2px solid #e0e0e0;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .board-section-filters {
   display: flex;
   gap: 16px;
   align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.section-filter-label {
-  font-weight: 600;
-  color: #666;
-  font-size: 14px;
+  padding-left: 16px;
+  border-left: 2px solid #e0e0e0;
 }
 
 .section-filter-checkbox {
@@ -1059,6 +1055,7 @@ body {
   font-size: 14px;
   color: #333;
   user-select: none;
+  white-space: nowrap;
 }
 
 .section-filter-checkbox input[type="checkbox"] {
@@ -1069,15 +1066,6 @@ body {
 
 .section-filter-checkbox:hover span {
   color: #2196f3;
-}
-
-.board-toolbar > div:last-child {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  width: 100%;
 }
 
 .board-filters {

@@ -704,49 +704,6 @@ function OriginationBoard({ user, onBack, onLogout }) {
       </header>
 
       <div className="board-toolbar">
-        <div className="board-section-filters">
-          <label className="section-filter-label">Show Sections:</label>
-          <label className="section-filter-checkbox">
-            <input
-              type="checkbox"
-              checked={visibleSections.origination}
-              onChange={() => toggleSection('origination')}
-            />
-            <span>Origination</span>
-          </label>
-          <label className="section-filter-checkbox">
-            <input
-              type="checkbox"
-              checked={visibleSections.studio}
-              onChange={() => toggleSection('studio')}
-            />
-            <span>Studio</span>
-          </label>
-          <label className="section-filter-checkbox">
-            <input
-              type="checkbox"
-              checked={visibleSections.development}
-              onChange={() => toggleSection('development')}
-            />
-            <span>Development</span>
-          </label>
-          <label className="section-filter-checkbox">
-            <input
-              type="checkbox"
-              checked={visibleSections.operations}
-              onChange={() => toggleSection('operations')}
-            />
-            <span>Operations</span>
-          </label>
-          <label className="section-filter-checkbox">
-            <input
-              type="checkbox"
-              checked={visibleSections.other}
-              onChange={() => toggleSection('other')}
-            />
-            <span>Other</span>
-          </label>
-        </div>
         <div className="board-filters">
           <input
             type="text"
@@ -773,6 +730,49 @@ function OriginationBoard({ user, onBack, onLogout }) {
             <option value="dealValue">Deal Size</option>
             <option value="daysInStage">Time in Stage</option>
           </select>
+          
+          <div className="board-section-filters">
+            <label className="section-filter-checkbox">
+              <input
+                type="checkbox"
+                checked={visibleSections.origination}
+                onChange={() => toggleSection('origination')}
+              />
+              <span>Origination</span>
+            </label>
+            <label className="section-filter-checkbox">
+              <input
+                type="checkbox"
+                checked={visibleSections.studio}
+                onChange={() => toggleSection('studio')}
+              />
+              <span>Studio</span>
+            </label>
+            <label className="section-filter-checkbox">
+              <input
+                type="checkbox"
+                checked={visibleSections.development}
+                onChange={() => toggleSection('development')}
+              />
+              <span>Development</span>
+            </label>
+            <label className="section-filter-checkbox">
+              <input
+                type="checkbox"
+                checked={visibleSections.operations}
+                onChange={() => toggleSection('operations')}
+              />
+              <span>Operations</span>
+            </label>
+            <label className="section-filter-checkbox">
+              <input
+                type="checkbox"
+                checked={visibleSections.other}
+                onChange={() => toggleSection('other')}
+              />
+              <span>Other</span>
+            </label>
+          </div>
         </div>
         <div className="board-actions">
           <button className="btn-secondary" onClick={() => setShowMetrics(!showMetrics)}>
