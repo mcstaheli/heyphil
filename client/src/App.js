@@ -148,7 +148,7 @@ function App() {
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧 Dev Tools
+            🔧
           </button>
         )}
       </>
@@ -163,7 +163,7 @@ function App() {
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧 Dev Tools
+            🔧
           </button>
         )}
       </>
@@ -178,7 +178,7 @@ function App() {
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧 Dev Tools
+            🔧
           </button>
         )}
       </>
@@ -193,7 +193,7 @@ function App() {
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧 Dev Tools
+            🔧
           </button>
         )}
       </>
@@ -700,7 +700,6 @@ function OriginationBoard({ user, onBack, onLogout }) {
         <div className="user-info">
           {user?.picture && <img src={user.picture} alt={user.name} />}
           <span>{user?.name}</span>
-          <button className="btn-secondary" onClick={() => setShowChat(true)}>💬 Chat</button>
           <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙️ Settings</button>
           <button className="btn-secondary" onClick={onLogout}>Logout</button>
         </div>
@@ -966,6 +965,12 @@ function OriginationBoard({ user, onBack, onLogout }) {
           onClose={() => setShowSettings(false)}
           onSave={handleSaveSettings}
         />
+      )}
+
+      {!showChat && (
+        <button className="floating-chat-button" onClick={() => setShowChat(true)} title="Chat with Phil">
+          💬
+        </button>
       )}
 
       <ChatPanel
@@ -1246,7 +1251,7 @@ function DevTools({ user, onClose }) {
   return (
     <div className="devtools-panel">
       <div className="devtools-header">
-        <h3>🔧 Dev Tools</h3>
+        <h3>🔧</h3>
         <button onClick={onClose}>✕</button>
       </div>
       
