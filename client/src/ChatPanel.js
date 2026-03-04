@@ -25,13 +25,21 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
   useEffect(() => {
     if (isOpen) {
       fetchSessionInfo();
-      startPolling();
     } else {
       stopPolling();
     }
     
     return () => stopPolling();
   }, [isOpen]);
+  
+  // Start polling when we have a session key
+  useEffect(() => {
+    if (isOpen && sessionKey) {
+      console.log('🔄 Starting message polling (every 3s)');
+      startPolling();
+    }
+    return () => stopPolling();
+  }, [isOpen, sessionKey]);
 
   const fetchSessionInfo = async () => {
     try {
@@ -70,11 +78,16 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
         headers: authHeaders()
       });
       const data = await response.json();
+      
+      console.log('📥 Polled for messages:', data.messages?.length || 0, 'messages');
+      
       if (data.messages && data.messages.length > 0) {
+        // Always update messages to catch new ones
         setMessages(data.messages);
+        console.log('✅ Messages updated');
       }
     } catch (error) {
-      // Silent fail - don't spam console during polling
+      console.error('❌ Polling error:', error);
     }
   };
 
