@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
 import './Loading.css';
@@ -984,6 +984,17 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const [pendingActions, setPendingActions] = useState([]);
   const [showActivity, setShowActivity] = useState(false);
   
+  // Memoize sorted lists to prevent recomputing on every render
+  const sortedPeople = useMemo(() => 
+    people ? Object.keys(people).sort() : [], 
+    [people]
+  );
+  
+  const sortedProjectTypes = useMemo(() =>
+    projectTypeColors ? Object.keys(projectTypeColors) : [],
+    [projectTypeColors]
+  );
+  
   const handleAddAction = async () => {
     if (!newActionText.trim()) return;
     
@@ -1050,7 +1061,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
             >
               <option value="">Unassigned</option>
-              {people && Object.keys(people).sort().map(person => (
+              {sortedPeople.map(person => (
                 <option key={person} value={person}>{person}</option>
               ))}
             </select>
@@ -1062,7 +1073,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               onChange={(e) => setFormData({ ...formData, projectType: e.target.value })}
             >
               <option value="">Select type...</option>
-              {projectTypeColors && Object.keys(projectTypeColors).map(type => (
+              {sortedProjectTypes.map(type => (
                 <option key={type} value={type}>{type}</option>
               ))}
             </select>
