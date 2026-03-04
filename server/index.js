@@ -1105,23 +1105,24 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
     // Add user message to database
     const savedMessage = await addChatMessage('user', message, userName, screenshot);
     
-    // Instantly notify via Telegram
-    if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+    // Instantly notify via webhook to Clawdbot gateway
+    if (process.env.CLAWDBOT_WEBHOOK_URL) {
       try {
-        const notificationText = `💬 *New web chat message*\n\n*From:* ${userName}\n*Message:* ${message.substring(0, 300)}${message.length > 300 ? '...' : ''}${screenshot ? '\n\n📸 Screenshot attached' : ''}\n\n_Message ID: ${savedMessage.id}_`;
+        const notificationText = `💬 *New web chat message from ${userName}*\n\n${message.substring(0, 500)}${message.length > 500 ? '...' : ''}${screenshot ? '\n\n📸 Screenshot attached' : ''}\n\n_Reply using: ./respond-to-chat.sh "your message"_`;
         
-        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        await fetch(process.env.CLAWDBOT_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            chat_id: process.env.TELEGRAM_CHAT_ID,
-            text: notificationText,
-            parse_mode: 'Markdown'
+            message: notificationText,
+            messageId: savedMessage.id,
+            user: userName,
+            hasScreenshot: !!screenshot
           })
         });
-        console.log('   ✅ Telegram notification sent');
+        console.log('   ✅ Clawdbot webhook notification sent');
       } catch (webhookError) {
-        console.error('   ⚠️  Telegram notification failed:', webhookError.message);
+        console.error('   ⚠️  Webhook notification failed:', webhookError.message);
         // Don't fail the request if notification fails
       }
     }
