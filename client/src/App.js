@@ -621,6 +621,21 @@ function OriginationBoard({ user, onBack, onLogout }) {
     }
   };
 
+  const deleteAction = async (actionId) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/action/${actionId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      
+      if (response.ok) {
+        // State will be updated via Socket.io event
+      }
+    } catch (error) {
+      console.error('Failed to delete action:', error);
+    }
+  };
+
   const handleSaveSettings = async (settings) => {
     try {
       console.log('Saving settings to backend:', settings);
@@ -928,7 +943,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
 
       {editingCard && (
         <CardModal
-          card={editingCard}
+          card={cards.find(c => c.id === editingCard.id) || editingCard}
           onClose={() => setEditingCard(null)}
           onSave={(data) => updateCard(editingCard.id, data)}
           onDelete={async (id) => {
@@ -950,6 +965,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
           columns={columns}
           toggleAction={toggleAction}
           onAddAction={addAction}
+          onDeleteAction={deleteAction}
           projectTypeColors={projectTypeColors}
           people={people}
         />
@@ -970,7 +986,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction, projectTypeColors, people }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction, onDeleteAction, projectTypeColors, people }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -1124,6 +1140,20 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                       <span className="action-meta">
                         ✓ {action.completedBy} • {new Date(action.completedOn).toLocaleDateString()}
                       </span>
+                    )}
+                    {onDeleteAction && (
+                      <button 
+                        type="button"
+                        className="btn-remove-action"
+                        onClick={() => {
+                          if (window.confirm('Delete this action?')) {
+                            onDeleteAction(action.id);
+                          }
+                        }}
+                        title="Delete action"
+                      >
+                        ×
+                      </button>
                     )}
                   </div>
                 ))}
