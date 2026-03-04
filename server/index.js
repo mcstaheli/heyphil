@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import 'dotenv/config';
 import * as boardDb from './board-db.js';
+import pool from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1021,64 +1022,73 @@ app.post('/api/origination/settings', requireAuth, async (req, res) => {
   }
 });
 
-// ========== CHAT API ==========
-// Messages are stored in a simple JSON file for communication between web and Clawdbot
+// ========== CHAT API (Database-backed) ==========
 
-const chatMessagesFile = path.join(__dirname, '.chat-messages.json');
-
-// Helper to read chat messages
-const getChatMessages = () => {
+// Helper to get chat messages from database
+const getChatMessages = async (limit = 100) => {
   try {
-    if (fs.existsSync(chatMessagesFile)) {
-      const data = fs.readFileSync(chatMessagesFile, 'utf8');
-      return JSON.parse(data);
-    }
+    const result = await pool.query(
+      'SELECT id, role, content, user_name, created_at as timestamp FROM chat_messages ORDER BY created_at DESC LIMIT $1',
+      [limit]
+    );
+    return result.rows.reverse(); // Return oldest first for chat display
   } catch (error) {
     console.error('Error reading chat messages:', error);
-  }
-  return [];
-};
-
-// Helper to save chat messages
-const saveChatMessages = (messages) => {
-  try {
-    fs.writeFileSync(chatMessagesFile, JSON.stringify(messages, null, 2));
-  } catch (error) {
-    console.error('Error saving chat messages:', error);
+    return [];
   }
 };
 
 // Helper to add a message
-const addChatMessage = (role, content) => {
-  const messages = getChatMessages();
-  messages.push({
-    role,
-    content,
-    timestamp: new Date().toISOString()
-  });
-  // Keep last 100 messages
-  if (messages.length > 100) {
-    messages.splice(0, messages.length - 100);
+const addChatMessage = async (role, content, userName = null) => {
+  try {
+    const result = await pool.query(
+      'INSERT INTO chat_messages (role, content, user_name) VALUES ($1, $2, $3) RETURNING id, role, content, user_name, created_at as timestamp',
+      [role, content, userName]
+    );
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error adding chat message:', error);
+    return null;
   }
-  saveChatMessages(messages);
-  return messages;
+};
+
+// Helper to get unread messages (for monitoring)
+const getUnreadMessages = async (sinceId = 0) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, role, content, user_name, created_at as timestamp FROM chat_messages WHERE id > $1 ORDER BY created_at ASC',
+      [sinceId]
+    );
+    return result.rows;
+  } catch (error) {
+    console.error('Error fetching unread messages:', error);
+    return [];
+  }
 };
 
 // Get session info
 app.get('/api/chat/session', requireAuth, async (req, res) => {
-  const messages = getChatMessages();
-  res.json({
-    sessionKey: 'main',
-    recentMessages: messages.slice(-20) // Last 20 messages
-  });
+  try {
+    const messages = await getChatMessages(20);
+    res.json({
+      sessionKey: 'main',
+      recentMessages: messages
+    });
+  } catch (error) {
+    console.error('Error fetching session:', error);
+    res.json({ sessionKey: 'main', recentMessages: [] });
+  }
 });
 
 // Get recent messages
 app.get('/api/chat/messages', requireAuth, async (req, res) => {
-  const messages = getChatMessages();
-  res.json({
-    messages: messages.slice(-50) // Last 50 messages
-  });
+  try {
+    const messages = await getChatMessages(50);
+    res.json({ messages });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.json({ messages: [] });
+  }
 });
 
 // Send message to Clawdbot  
@@ -1089,23 +1099,13 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
     
     console.log('💬 Web chat message from', userName + ':', message);
     
-    // Add user message to history
-    addChatMessage('user', message);
+    // Add user message to database
+    await addChatMessage('user', message, userName);
     
-    // Write to a pending messages file that I can monitor
-    const pendingFile = path.join(__dirname, '.chat-pending.txt');
-    const pendingMessage = `[${new Date().toISOString()}] ${userName}: ${message}\n`;
-    fs.appendFileSync(pendingFile, pendingMessage);
+    console.log(`📝 Web chat message saved to database`);
+    console.log(`   The Clawdbot agent will monitor and respond`);
     
-    console.log(`📝 Web chat message saved to pending queue`);
-    console.log(`   The Clawdbot agent will process it and respond`);
-    console.log(`   File: ${pendingFile}`);
-    
-    // Don't send a reply - just acknowledge receipt
-    // The agent will respond with actual content
-    res.json({
-      success: true
-    });
+    res.json({ success: true });
   } catch (error) {
     console.error('❌ Failed to send chat message:', error);
     res.status(500).json({ error: 'Failed to send message' });
@@ -1116,12 +1116,25 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
 app.post('/api/chat/respond', requireAuth, async (req, res) => {
   try {
     const { message } = req.body;
-    addChatMessage('assistant', message);
+    await addChatMessage('assistant', message, 'Phil');
     console.log('🤖 Clawdbot response added to chat');
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to post response:', error);
     res.status(500).json({ error: 'Failed to post response' });
+  }
+});
+
+// Endpoint to get unread user messages (for agent monitoring)
+app.get('/api/chat/unread', requireAuth, async (req, res) => {
+  try {
+    const sinceId = parseInt(req.query.sinceId || '0');
+    const messages = await getUnreadMessages(sinceId);
+    const userMessages = messages.filter(m => m.role === 'user');
+    res.json({ messages: userMessages });
+  } catch (error) {
+    console.error('Failed to fetch unread messages:', error);
+    res.json({ messages: [] });
   }
 });
 
