@@ -6,7 +6,6 @@ import Landing from './Landing';
 import HotelVisual from './HotelVisual';
 import OrgCharts from './OrgCharts';
 import Settings from './Settings';
-import ChatPanel from './ChatPanel';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -220,7 +219,6 @@ function OriginationBoard({ user, onBack, onLogout }) {
   const [showMetrics, setShowMetrics] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showChat, setShowChat] = useState(false);
   const [visibleSections, setVisibleSections] = useState({
     origination: true,
     studio: true,
@@ -968,19 +966,6 @@ function OriginationBoard({ user, onBack, onLogout }) {
       )}
 
       {/* CHAT FEATURE TEMPORARILY DISABLED */}
-      {/* {!showChat && (
-        <button className="floating-chat-button" onClick={() => setShowChat(true)} title="Chat with Phil">
-          💬
-        </button>
-      )}
-
-      <ChatPanel
-        isOpen={showChat}
-        onClose={() => setShowChat(false)}
-        apiBaseUrl={API_BASE_URL}
-        authHeaders={getAuthHeaders}
-      /> */}
-      
     </div>
   );
 }
