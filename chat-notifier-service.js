@@ -72,7 +72,7 @@ Make sure to actually run the command - don't just suggest it.`;
           console.log('🤖 Spawning Clawdbot sub-agent to respond...');
           
           // Use sessions_spawn via Clawdbot CLI
-          await execAsync(`clawdbot session spawn --label "webchat-${msg.id}" --task "${task.replace(/"/g, '\\"')}" --cleanup delete`);
+          await execAsync(`clawdbot sessions spawn --label "webchat-${msg.id}" --task "${task.replace(/"/g, '\\"')}" --cleanup delete`);
           
           console.log('✅ Sub-agent spawned - it will respond automatically');
         } catch (err) {
