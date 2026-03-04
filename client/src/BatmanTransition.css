@@ -1,4 +1,4 @@
-/* 1960s Batman TV Show Scene Transition */
+/* Studio Transition - Simple gradient with spinning/zooming Philo logo */
 .batman-transition {
   position: fixed;
   top: 0;
@@ -6,188 +6,50 @@
   width: 100vw;
   height: 100vh;
   z-index: 9999;
-  background: #000;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
 
-/* Rotating Philo logo in center */
+/* Spinning and zooming Philo logo */
 .batman-logo {
   position: relative;
   z-index: 3;
-  width: 400px;
-  height: 400px;
-  background: #FFD700;
-  border-radius: 50%;
+  width: 300px;
+  height: 300px;
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: spinLogo 3s linear infinite;
-  border: 12px solid #000;
-  box-shadow: 
-    0 0 40px rgba(255, 215, 0, 0.8),
-    inset 0 0 40px rgba(0, 0, 0, 0.3);
+  animation: spinAndZoom 1s ease-in-out infinite;
 }
 
 .batman-logo-inner {
-  width: 75%;
-  height: 75%;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: pulseBat 1s ease-in-out infinite;
 }
 
 .batman-logo-inner img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-
-.batman-transition-content {
-  position: absolute;
-  z-index: 4;
-  text-align: center;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 100%;
-}
-
-.batman-title {
-  font-family: 'Impact', 'Arial Black', sans-serif;
-  font-size: 64px;
-  font-weight: 900;
-  color: #FFD700;
-  text-shadow: 
-    3px 3px 0 #FF0000,
-    6px 6px 0 #000,
-    -2px -2px 0 #FFF,
-    0 0 30px #FFD700;
-  letter-spacing: 6px;
-  text-transform: uppercase;
-  margin: 0;
-  padding: 20px 40px;
-  background: rgba(0, 0, 0, 0.7);
-  border: 6px solid #FFD700;
-  border-radius: 20px;
-  display: inline-block;
-  animation: titlePulse 0.5s ease-in-out infinite alternate;
-}
-
-/* Classic diagonal wipe bars */
-.batman-wipe {
-  position: absolute;
-  top: -100%;
-  left: -100%;
-  width: 400%;
-  height: 400%;
-  background: repeating-linear-gradient(
-    45deg,
-    #FFD700 0px,
-    #FFD700 100px,
-    #FF0000 100px,
-    #FF0000 200px,
-    #00F 200px,
-    #00F 300px
-  );
-  animation: diagonalWipe 3s linear infinite;
-  z-index: 1;
-  opacity: 0.9;
-}
-
-/* Corner emblems */
-.batman-emblem {
-  position: absolute;
-  font-family: 'Impact', 'Arial Black', sans-serif;
-  font-size: 120px;
-  font-weight: 900;
-  color: #FFD700;
-  text-shadow: 
-    4px 4px 0 #000,
-    -2px -2px 0 #FFF;
-  z-index: 2;
-  animation: rotate360 4s linear infinite;
-}
-
-.batman-emblem.top-left {
-  top: 5%;
-  left: 5%;
-  animation-delay: 0s;
-}
-
-.batman-emblem.top-right {
-  top: 5%;
-  right: 5%;
-  animation-delay: 1s;
-}
-
-.batman-emblem.bottom-left {
-  bottom: 5%;
-  left: 5%;
-  animation-delay: 2s;
-}
-
-.batman-emblem.bottom-right {
-  bottom: 5%;
-  right: 5%;
-  animation-delay: 3s;
+  filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.5));
 }
 
 /* Animations */
-@keyframes diagonalWipe {
+@keyframes spinAndZoom {
   0% {
-    transform: translate(-75%, -75%) rotate(45deg);
-  }
-  100% {
-    transform: translate(25%, 25%) rotate(45deg);
-  }
-}
-
-@keyframes spinLogo {
-  0% {
-    transform: rotate(0deg) scale(1);
-  }
-  25% {
-    transform: rotate(90deg) scale(1.1);
+    transform: rotate(0deg) scale(0.8);
   }
   50% {
-    transform: rotate(180deg) scale(1);
-  }
-  75% {
-    transform: rotate(270deg) scale(1.1);
+    transform: rotate(180deg) scale(1.2);
   }
   100% {
-    transform: rotate(360deg) scale(1);
-  }
-}
-
-@keyframes pulseBat {
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-}
-
-@keyframes titlePulse {
-  0% {
-    transform: scale(1);
-  }
-  100% {
-    transform: scale(1.05);
-  }
-}
-
-@keyframes rotate360 {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
+    transform: rotate(360deg) scale(0.8);
   }
 }
 

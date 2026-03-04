@@ -346,7 +346,8 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
   };
 
   useEffect(() => {
-    loadBoard();
+    // Skip loading screen for studio mode (transition already shown)
+    loadBoard(!studioMode);
   }, []);
   
   // Recalculate metrics based on filtered cards (exclude Ideation, Closed, and Abandoned)

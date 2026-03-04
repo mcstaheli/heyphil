@@ -20,28 +20,14 @@ function BatmanTransition({ onComplete }) {
 
   return (
     <div className="batman-transition">
-      {/* Background diagonal wipe bars */}
-      <div className="batman-wipe"></div>
-
-      {/* Rotating Philo logo in center */}
+      {/* Spinning and zooming Philo logo */}
       <div className="batman-logo">
         <div className="batman-logo-inner">
           <img src="/philo-logo.jpg" alt="Philo Ventures" />
         </div>
       </div>
 
-      {/* Corner Batman emblems */}
-      <div className="batman-emblem top-left">🦇</div>
-      <div className="batman-emblem top-right">🦇</div>
-      <div className="batman-emblem bottom-left">🦇</div>
-      <div className="batman-emblem bottom-right">🦇</div>
-
-      {/* Main title overlaying center */}
-      <div className="batman-transition-content">
-        <h1 className="batman-title">To The Studio...</h1>
-      </div>
-
-      {/* Audio element - Batman transition sound */}
+      {/* Transition audio */}
       <audio ref={audioRef} preload="auto">
         <source 
           src="/batman-transition.mp3" 
