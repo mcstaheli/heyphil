@@ -3,5 +3,15 @@
     "role": "assistant",
     "content": "👋 Hi! I'm Phil, your AI assistant. I'm now available right here in the web app! Ask me anything about your projects, and I'll help you out. This chat is connected to our Telegram conversation, so you can reach me from either place.",
     "timestamp": "2026-03-04T04:05:00.000Z"
+  },
+  {
+    "role": "user",
+    "content": "How many deals in due diligence",
+    "timestamp": "2026-03-04T04:13:45.000Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Looking at your board, you have 4 deals currently in the Due Diligence stage:\n\n1. Wasatch - Water\n2. Terminal Lease Renewal  \n3. Condo Conversion - Rad Lien\n4. Hospitality Fund - Brandon Shaw\n\nThese represent a significant portion of your active pipeline. Want details on any of these?",
+    "timestamp": "2026-03-04T04:14:10.000Z"
   }
 ]

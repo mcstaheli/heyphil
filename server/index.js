@@ -1101,9 +1101,10 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
     console.log(`   The Clawdbot agent will process it and respond`);
     console.log(`   File: ${pendingFile}`);
     
+    // Don't send a reply - just acknowledge receipt
+    // The agent will respond with actual content
     res.json({
-      success: true,
-      reply: 'Message sent! I\'ll respond in the chat shortly. 🤖'
+      success: true
     });
   } catch (error) {
     console.error('❌ Failed to send chat message:', error);

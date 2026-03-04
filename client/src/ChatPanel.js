@@ -107,21 +107,13 @@ function ChatPanel({ isOpen, onClose, apiBaseUrl, authHeaders }) {
         throw new Error('Failed to send message');
       }
 
-      const data = await response.json();
-      
-      // Add assistant response
-      if (data.reply) {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: data.reply,
-          timestamp: new Date().toISOString()
-        }]);
-      }
+      // Message sent successfully - responses will come via polling
+      // Don't add any placeholder response
     } catch (error) {
       console.error('Failed to send message:', error);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: '❌ Sorry, I encountered an error. Please try again.',
+        content: '❌ Sorry, I encountered an error sending your message. Please try again.',
         timestamp: new Date().toISOString()
       }]);
     } finally {
