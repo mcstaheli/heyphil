@@ -941,8 +941,11 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
-        <h2>{card ? 'Edit Project' : 'New Project'}</h2>
-        <form onSubmit={handleSubmit}>
+        <div className="modal-header">
+          <h2>{card ? 'Edit Project' : 'New Project'}</h2>
+        </div>
+        <form onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div className="modal-body">
           <div className="modal-two-column">
             <div className="modal-left-column">
           <div className="form-group">
@@ -1083,31 +1086,9 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
           </div>
             </div>
           </div>
+          </div>
           
-          {card && card.activity && card.activity.length > 0 && (
-            <div className="activity-section">
-              <button 
-                type="button"
-                className="btn-secondary"
-                onClick={() => setShowActivity(!showActivity)}
-              >
-                📅 {showActivity ? 'Hide' : 'Show'} Activity ({card.activity.length})
-              </button>
-              {showActivity && (
-                <div className="activity-timeline">
-                  {card.activity.slice().reverse().map((log, idx) => (
-                    <div key={idx} className="activity-item">
-                      <span className="activity-time">{new Date(log.timestamp).toLocaleString()}</span>
-                      <span className="activity-action">{log.action}</span>
-                      <span className="activity-user">{log.user}</span>
-                      {log.details && <span className="activity-details">{log.details}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          
+          <div className="modal-footer">
           <div className="modal-actions">
             <div>
               {card && onDelete && (
@@ -1122,14 +1103,16 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
             </div>
             <div>
               <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-              <button type="submit" className="btn-primary">Save</button>
+              <button type="submit" className="btn-primary">💾 Save</button>
             </div>
+          </div>
           </div>
         </form>
       </div>
     </div>
   );
 }
+
 
 function DevTools({ user, onClose }) {
   const [logs, setLogs] = useState([]);
