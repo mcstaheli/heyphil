@@ -967,7 +967,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
         />
       )}
 
-      {!showChat && (
+      {/* CHAT FEATURE TEMPORARILY DISABLED */}
+      {/* {!showChat && (
         <button className="floating-chat-button" onClick={() => setShowChat(true)} title="Chat with Phil">
           💬
         </button>
@@ -978,7 +979,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
         onClose={() => setShowChat(false)}
         apiBaseUrl={API_BASE_URL}
         authHeaders={getAuthHeaders}
-      />
+      /> */}
       
     </div>
   );
