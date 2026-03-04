@@ -20,20 +20,21 @@ function BatmanTransition({ onComplete }) {
 
   return (
     <div className="batman-transition">
-      {/* Background diagonal wipe */}
+      {/* Background diagonal wipe bars */}
       <div className="batman-wipe"></div>
 
-      {/* Star bursts */}
-      <div className="batman-starburst star1">★</div>
-      <div className="batman-starburst star2">★</div>
-      <div className="batman-starburst star3">★</div>
-      <div className="batman-starburst star4">★</div>
+      {/* Rotating Batman logo in center */}
+      <div className="batman-logo">
+        <div className="batman-logo-inner"></div>
+      </div>
 
-      {/* Action words */}
-      <div className="batman-word word1">STUDIO!</div>
-      <div className="batman-word word2">ACTION!</div>
+      {/* Corner Batman emblems */}
+      <div className="batman-emblem top-left">🦇</div>
+      <div className="batman-emblem top-right">🦇</div>
+      <div className="batman-emblem bottom-left">🦇</div>
+      <div className="batman-emblem bottom-right">🦇</div>
 
-      {/* Main title */}
+      {/* Main title overlaying center */}
       <div className="batman-transition-content">
         <h1 className="batman-title">To The Studio...</h1>
       </div>
