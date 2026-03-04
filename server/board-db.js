@@ -128,6 +128,33 @@ export async function deleteAction(actionId) {
   await pool.query('DELETE FROM actions WHERE id = $1', [actionId]);
 }
 
+// ========== LINKS ==========
+
+export async function getLinksByCardId(cardId) {
+  const result = await pool.query(
+    'SELECT * FROM links WHERE card_id = $1 ORDER BY id',
+    [cardId]
+  );
+  return result.rows;
+}
+
+export async function getAllLinks() {
+  const result = await pool.query('SELECT * FROM links ORDER BY id');
+  return result.rows;
+}
+
+export async function createLink(cardId, title, url) {
+  const result = await pool.query(
+    'INSERT INTO links (card_id, title, url) VALUES ($1, $2, $3) RETURNING *',
+    [cardId, title, url]
+  );
+  return result.rows[0];
+}
+
+export async function deleteLink(linkId) {
+  await pool.query('DELETE FROM links WHERE id = $1', [linkId]);
+}
+
 // ========== ACTIVITY LOG ==========
 
 export async function getLogsByCardId(cardId) {
@@ -198,9 +225,10 @@ export async function createProjectType(name, color) {
 
 export async function getBoardData() {
   // Get all data in parallel
-  const [cardsResult, actionsResult, logsResult, peopleData, projectTypeColors] = await Promise.all([
+  const [cardsResult, actionsResult, linksResult, logsResult, peopleData, projectTypeColors] = await Promise.all([
     getAllCards(),
     getAllActions(),
+    getAllLinks(),
     pool.query('SELECT * FROM activity_log ORDER BY timestamp DESC'),
     getAllPeople(),
     getAllProjectTypes()
@@ -217,6 +245,18 @@ export async function getBoardData() {
       text: action.text,
       completedOn: action.completed_on,
       completedBy: action.completed_by
+    });
+  });
+  
+  // Group links by card
+  const linksByCard = {};
+  linksResult.forEach(link => {
+    if (!linksByCard[link.card_id]) linksByCard[link.card_id] = [];
+    linksByCard[link.card_id].push({
+      id: link.id,
+      cardId: link.card_id,
+      title: link.title,
+      url: link.url
     });
   });
   
@@ -237,7 +277,7 @@ export async function getBoardData() {
     }
   });
   
-  // Build complete cards with actions and logs
+  // Build complete cards with actions, links, and logs
   const cards = cardsResult.map(card => ({
     id: card.id,
     title: card.title,
@@ -249,6 +289,7 @@ export async function getBoardData() {
     dateCreated: card.date_created,
     projectType: card.project_type,
     actions: actionsByCard[card.id] || [],
+    links: linksByCard[card.id] || [],
     log: logsByCard[card.id] || []
   }));
   

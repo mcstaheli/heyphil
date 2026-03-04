@@ -903,6 +903,53 @@ app.delete('/api/origination/action/:id', requireAuth, async (req, res) => {
   }
 });
 
+// Add link to card
+app.post('/api/origination/link', requireAuth, async (req, res) => {
+  try {
+    const { cardId, title, url } = req.body;
+    const link = await boardDb.createLink(cardId, title, url);
+    
+    // Broadcast to all clients
+    broadcastChange('link:created', {
+      linkId: link.id,
+      cardId,
+      title,
+      url
+    });
+    
+    res.json({ success: true, link });
+  } catch (error) {
+    console.error('Failed to add link:', error);
+    res.status(500).json({ error: 'Failed to add link' });
+  }
+});
+
+// Delete link
+app.delete('/api/origination/link/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get link details for cardId before deletion
+    const links = await boardDb.getAllLinks();
+    const link = links.find(l => l.id === parseInt(id));
+    
+    if (link) {
+      await boardDb.deleteLink(id);
+      
+      // Broadcast to all clients
+      broadcastChange('link:deleted', {
+        linkId: parseInt(id),
+        cardId: link.card_id
+      });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete link:', error);
+    res.status(500).json({ error: 'Failed to delete link' });
+  }
+});
+
 // Bulk update cards
 app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
   try {

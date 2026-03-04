@@ -454,6 +454,38 @@ function OriginationBoard({ user, onBack, onLogout }) {
       }));
     });
     
+    // Listen for link changes
+    socketRef.current.on('link:created', ({ linkId, cardId, title, url }) => {
+      console.log('📨 Link created:', linkId, 'for card:', cardId);
+      setCards(prevCards => prevCards.map(c => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            links: [...(c.links || []), {
+              id: linkId,
+              cardId,
+              title,
+              url
+            }]
+          };
+        }
+        return c;
+      }));
+    });
+    
+    socketRef.current.on('link:deleted', ({ linkId, cardId }) => {
+      console.log('📨 Link deleted:', linkId);
+      setCards(prevCards => prevCards.map(c => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            links: (c.links || []).filter(l => l.id !== linkId)
+          };
+        }
+        return c;
+      }));
+    });
+    
     // Cleanup on unmount
     return () => {
       if (socketRef.current) {
@@ -633,6 +665,37 @@ function OriginationBoard({ user, onBack, onLogout }) {
       }
     } catch (error) {
       console.error('Failed to delete action:', error);
+    }
+  };
+
+  const addLink = async (cardId, title, url) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/link`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ cardId, title, url })
+      });
+      
+      if (response.ok) {
+        // State will be updated via Socket.io event
+      }
+    } catch (error) {
+      console.error('Failed to add link:', error);
+    }
+  };
+
+  const deleteLink = async (linkId) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/link/${linkId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      
+      if (response.ok) {
+        // State will be updated via Socket.io event
+      }
+    } catch (error) {
+      console.error('Failed to delete link:', error);
     }
   };
 
@@ -936,6 +999,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
           initialColumn={newCardColumn}
           toggleAction={toggleAction}
           onAddAction={addAction}
+          onAddLink={addLink}
+          onDeleteLink={deleteLink}
           projectTypeColors={projectTypeColors}
           people={people}
         />
@@ -966,6 +1031,8 @@ function OriginationBoard({ user, onBack, onLogout }) {
           toggleAction={toggleAction}
           onAddAction={addAction}
           onDeleteAction={deleteAction}
+          onAddLink={addLink}
+          onDeleteLink={deleteLink}
           projectTypeColors={projectTypeColors}
           people={people}
         />
@@ -986,7 +1053,7 @@ function OriginationBoard({ user, onBack, onLogout }) {
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction, onDeleteAction, projectTypeColors, people }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -998,6 +1065,8 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   });
   const [newActionText, setNewActionText] = useState('');
   const [pendingActions, setPendingActions] = useState([]);
+  const [newLinkTitle, setNewLinkTitle] = useState('');
+  const [newLinkUrl, setNewLinkUrl] = useState('');
   const [showActivity, setShowActivity] = useState(false);
   
   // Memoize sorted lists to prevent recomputing on every render
@@ -1024,6 +1093,17 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
       // New card - add to pending list
       setPendingActions([...pendingActions, newActionText.trim()]);
       setNewActionText('');
+    }
+  };
+
+  const handleAddLink = async () => {
+    if (!newLinkTitle.trim() || !newLinkUrl.trim()) return;
+    
+    if (card && onAddLink) {
+      // Existing card - add directly
+      await onAddLink(card.id, newLinkTitle.trim(), newLinkUrl.trim());
+      setNewLinkTitle('');
+      setNewLinkUrl('');
     }
   };
 
@@ -1197,6 +1277,72 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                   + Add
                 </button>
               </div>
+          </div>
+
+          <h3 style={{ marginTop: '24px' }}>Links</h3>
+          <div className="action-items-section">
+            {card && card.links && card.links.length > 0 && (
+              <div className="modal-actions-list">
+                {card.links.map((link) => (
+                  <div key={link.id} className="modal-action-item">
+                    <a 
+                      href={link.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="link-item"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      🔗 {link.title}
+                    </a>
+                    {onDeleteLink && (
+                      <button 
+                        type="button"
+                        className="btn-remove-action"
+                        onClick={() => {
+                          if (window.confirm('Delete this link?')) {
+                            onDeleteLink(link.id);
+                          }
+                        }}
+                        title="Delete link"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {card && (
+              <div className="add-action-input" style={{ marginTop: '8px' }}>
+                <input
+                  type="text"
+                  placeholder="Link title (e.g., SmartSheets)"
+                  value={newLinkTitle}
+                  onChange={(e) => setNewLinkTitle(e.target.value)}
+                  style={{ marginBottom: '4px' }}
+                />
+                <input
+                  type="url"
+                  placeholder="URL (https://...)"
+                  value={newLinkUrl}
+                  onChange={(e) => setNewLinkUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddLink();
+                    }
+                  }}
+                />
+                <button 
+                  type="button" 
+                  className="btn-add-action"
+                  onClick={handleAddLink}
+                  disabled={!newLinkTitle.trim() || !newLinkUrl.trim()}
+                >
+                  + Add Link
+                </button>
+              </div>
+            )}
           </div>
             </div>
           </div>

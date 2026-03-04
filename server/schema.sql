@@ -27,6 +27,16 @@ CREATE TABLE IF NOT EXISTS actions (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Links table (external links for cards)
+CREATE TABLE IF NOT EXISTS links (
+  id SERIAL PRIMARY KEY,
+  card_id VARCHAR(255) NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  url TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Activity log table (history of changes)
 CREATE TABLE IF NOT EXISTS activity_log (
   id SERIAL PRIMARY KEY,
@@ -62,6 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_cards_owner ON cards(owner);
 CREATE INDEX IF NOT EXISTS idx_cards_project_type ON cards(project_type);
 CREATE INDEX IF NOT EXISTS idx_cards_date_created ON cards(date_created);
 CREATE INDEX IF NOT EXISTS idx_actions_card_id ON actions(card_id);
+CREATE INDEX IF NOT EXISTS idx_links_card_id ON links(card_id);
 CREATE INDEX IF NOT EXISTS idx_activity_card_id ON activity_log(card_id);
 CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_log(timestamp);
 
@@ -88,4 +99,8 @@ CREATE TRIGGER update_project_types_updated_at BEFORE UPDATE ON project_types
 
 DROP TRIGGER IF EXISTS update_actions_updated_at ON actions;
 CREATE TRIGGER update_actions_updated_at BEFORE UPDATE ON actions
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_links_updated_at ON links;
+CREATE TRIGGER update_links_updated_at BEFORE UPDATE ON links
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
