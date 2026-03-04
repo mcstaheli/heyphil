@@ -36,7 +36,7 @@ const io = new SocketIOServer(httpServer, {
 const PORT = process.env.PORT || 3002;
 
 // Allowed users
-const ALLOWED_EMAILS = ['chad@philo.ventures', 'greg@example.com', 'scott@example.com'];
+const ALLOWED_EMAILS = ['chad@philo.ventures', 'tracy@philo.ventures', 'greg@example.com', 'scott@example.com'];
 
 const JWT_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
 
