@@ -129,7 +129,9 @@ function App() {
     return (
       <div className="loading">
         <div className="loading-content">
-          <div className="loading-icon">⚙️</div>
+          <div className="loading-logo">
+            <img src="/logo-c.svg" alt="Philo Logo" className="logo-c-animated" />
+          </div>
           <h2 className="loading-text">Initializing</h2>
           <p className="loading-subtext">System Authentication</p>
           <div className="loading-spinner">

@@ -65,16 +65,29 @@
   position: relative;
 }
 
-.loading-icon {
-  font-size: 80px;
+.loading-logo {
   margin-bottom: 20px;
-  animation: float 3s ease-in-out infinite;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.logo-c-animated {
+  width: 120px;
+  height: 120px;
+  animation: zoomPulse 2s ease-in-out infinite;
   filter: drop-shadow(0 0 20px rgba(0, 245, 255, 0.6));
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-15px); }
+@keyframes zoomPulse {
+  0%, 100% { 
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% { 
+    transform: scale(1.15);
+    opacity: 1;
+  }
 }
 
 .loading-text {
