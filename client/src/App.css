@@ -318,12 +318,53 @@ body {
 .modal-header {
   padding: 24px 32px 20px 32px;
   border-bottom: 2px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 24px;
   color: #333;
+  flex: 1;
+}
+
+.modal-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.modal-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: transparent;
+  border: 2px solid #999;
+  color: #999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.modal-icon-btn:hover {
+  background: #999;
+  color: white;
+}
+
+.modal-icon-btn.delete {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.modal-icon-btn.delete:hover {
+  background: #ef4444;
+  color: white;
 }
 
 .modal-body {

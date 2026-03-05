@@ -1335,7 +1335,14 @@ function TrashModal({ deletedCards, onClose, onRestore, people, projectTypeColor
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>🗑️ Trash</h2>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <button 
+            type="button"
+            className="modal-icon-btn"
+            onClick={onClose}
+            title="Close"
+          >
+            ×
+          </button>
         </div>
         <div className="modal-body">
           {deletedCards.length === 0 ? (
@@ -1470,7 +1477,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header" style={{ cursor: 'pointer' }}>
+        <div className="modal-header">
           {editingTitle ? (
             <input
               type="text"
@@ -1494,7 +1501,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
                 border: '2px solid #667eea',
                 borderRadius: '4px',
                 padding: '8px 12px',
-                width: '100%',
+                flex: 1,
                 outline: 'none'
               }}
             />
@@ -1502,9 +1509,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
             <h2 
               onClick={() => setEditingTitle(true)}
               style={{ 
-                margin: 0,
-                fontSize: '24px',
-                fontWeight: '600',
+                cursor: 'pointer',
                 color: formData.title ? '#1f2937' : '#999',
                 userSelect: 'none'
               }}
@@ -1513,6 +1518,26 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
               {formData.title || 'New Project'}
             </h2>
           )}
+          <div className="modal-header-actions">
+            {card && onDelete && (
+              <button 
+                type="button"
+                className="modal-icon-btn delete"
+                onClick={() => onDelete(card.id)}
+                title="Delete project"
+              >
+                🗑️
+              </button>
+            )}
+            <button 
+              type="button"
+              className="modal-icon-btn"
+              onClick={onClose}
+              title="Close"
+            >
+              ×
+            </button>
+          </div>
         </div>
         <form onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div className="modal-body">
@@ -1776,19 +1801,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
           </div>
           
           <div className="modal-footer">
-          <div className="modal-actions">
-            <div>
-              {card && onDelete && (
-                <button 
-                  type="button" 
-                  className="btn-danger"
-                  onClick={() => onDelete(card.id)}
-                >
-                  🗑️ Delete
-                </button>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               {card && onMoveToStudio && !studioMode && (
                 <button 
                   type="button" 
@@ -1802,10 +1815,8 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
                   🎬 Move To Studio
                 </button>
               )}
-              <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
               <button type="submit" className="btn-primary">💾 Save</button>
             </div>
-          </div>
           </div>
         </form>
       </div>
