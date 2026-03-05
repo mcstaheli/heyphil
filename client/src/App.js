@@ -1417,6 +1417,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
   const [editingActionId, setEditingActionId] = useState(null);
   const [editingActionText, setEditingActionText] = useState('');
   const [showActivity, setShowActivity] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
   
   // Memoize sorted lists to prevent recomputing on every render
   const sortedPeople = useMemo(() => 
@@ -1458,28 +1459,65 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!formData.title || !formData.title.trim()) {
+      alert('Please enter a title for the project');
+      setEditingTitle(true);
+      return;
+    }
     onSave(formData, pendingActions);
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>{card ? 'Edit Project' : 'New Project'}</h2>
-        </div>
-        <form onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div className="modal-body">
-          <div className="modal-two-column">
-            <div className="modal-left-column">
-          <div className="form-group">
-            <label>Title *</label>
+        <div className="modal-header" style={{ cursor: 'pointer' }}>
+          {editingTitle ? (
             <input
               type="text"
               required
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              onBlur={() => setEditingTitle(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  setEditingTitle(false);
+                }
+                if (e.key === 'Escape') {
+                  setEditingTitle(false);
+                }
+              }}
+              autoFocus
+              style={{
+                fontSize: '24px',
+                fontWeight: '600',
+                border: '2px solid #667eea',
+                borderRadius: '4px',
+                padding: '8px 12px',
+                width: '100%',
+                outline: 'none'
+              }}
             />
-          </div>
+          ) : (
+            <h2 
+              onClick={() => setEditingTitle(true)}
+              style={{ 
+                margin: 0,
+                fontSize: '24px',
+                fontWeight: '600',
+                color: formData.title ? '#1f2937' : '#999',
+                userSelect: 'none'
+              }}
+              title="Click to edit title"
+            >
+              {formData.title || 'New Project'}
+            </h2>
+          )}
+        </div>
+        <form onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div className="modal-body">
+          <div className="modal-two-column">
+            <div className="modal-left-column">
           <div className="form-group">
             <label>Description</label>
             <textarea
