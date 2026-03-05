@@ -28,7 +28,6 @@
   background-size: 50px 50px;
   overflow: hidden;
   cursor: grab;
-  min-height: 500px;
 }
 
 .infinite-canvas:active {
@@ -517,6 +516,8 @@
   padding: 40px;
   max-width: 1000px;
   margin: 0 auto;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .chart-browser-header {
