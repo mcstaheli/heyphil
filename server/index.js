@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import 'dotenv/config';
 import * as boardDb from './board-db.js';
+import * as orgchartDb from './orgchart-db.js';
 import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
 
@@ -35,14 +36,67 @@ const io = new SocketIOServer(httpServer, {
 
 const PORT = process.env.PORT || 3002;
 
-// Auto-migrate: Add deleted_at column if it doesn't exist
+// Auto-migrate: Create tables and add columns as needed
 async function autoMigrate() {
   try {
+    // Add deleted_at column to cards table
     await pool.query(`
       ALTER TABLE cards 
       ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP DEFAULT NULL
     `);
     console.log('✅ Database migration: deleted_at column ready');
+    
+    // Create org charts tables
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orgcharts (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        owner VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    console.log('✅ Database migration: orgcharts table ready');
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orgchart_nodes (
+        id SERIAL PRIMARY KEY,
+        chart_id VARCHAR(255) REFERENCES orgcharts(id) ON DELETE CASCADE,
+        node_id BIGINT NOT NULL,
+        x FLOAT NOT NULL,
+        y FLOAT NOT NULL,
+        width FLOAT NOT NULL,
+        height FLOAT NOT NULL,
+        text TEXT,
+        color VARCHAR(50)
+      )
+    `);
+    console.log('✅ Database migration: orgchart_nodes table ready');
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orgchart_connections (
+        id SERIAL PRIMARY KEY,
+        chart_id VARCHAR(255) REFERENCES orgcharts(id) ON DELETE CASCADE,
+        connection_id BIGINT NOT NULL,
+        from_node BIGINT NOT NULL,
+        to_node BIGINT NOT NULL,
+        from_port VARCHAR(50),
+        to_port VARCHAR(50),
+        label TEXT,
+        color VARCHAR(50),
+        style VARCHAR(50)
+      )
+    `);
+    console.log('✅ Database migration: orgchart_connections table ready');
+    
+    // Create indexes
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_orgchart_nodes_chart_id ON orgchart_nodes(chart_id)
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_orgchart_connections_chart_id ON orgchart_connections(chart_id)
+    `);
+    console.log('✅ Database migration: org chart indexes ready');
   } catch (error) {
     console.error('⚠️  Migration warning (may be safe to ignore):', error.message);
   }
@@ -251,28 +305,18 @@ const logActivity = async (sheets, spreadsheetId, cardTitle, action, user, detai
 // Get all charts for user
 app.get('/api/orgcharts', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets();
-    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
-    
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'OrgCharts!A:G'
+    const charts = await orgchartDb.getAllCharts(req.user.email);
+    res.json({ 
+      charts: charts.map(c => ({
+        id: c.id,
+        name: c.name,
+        owner: c.owner,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+        nodeCount: parseInt(c.node_count) || 0,
+        connectionCount: parseInt(c.connection_count) || 0
+      }))
     });
-    
-    const rows = response.data.values || [];
-    const charts = rows.slice(1)
-      .filter(row => row[2] === req.user.email)
-      .map(row => ({
-        id: row[0],
-        name: row[1],
-        owner: row[2],
-        createdAt: row[3],
-        updatedAt: row[4],
-        nodeCount: parseInt(row[5]) || 0,
-        connectionCount: parseInt(row[6]) || 0
-      }));
-    
-    res.json({ charts });
   } catch (error) {
     console.error('Failed to load charts:', error);
     res.status(500).json({ error: 'Failed to load charts' });
@@ -282,51 +326,24 @@ app.get('/api/orgcharts', requireAuth, async (req, res) => {
 // Get specific chart
 app.get('/api/orgcharts/:id', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets();
-    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     const chartId = req.params.id;
     
     // Get chart metadata
-    const chartResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'OrgCharts!A:G'
-    });
-    
-    const chartRows = chartResponse.data.values || [];
-    const chartRow = chartRows.slice(1).find(row => row[0] === chartId && row[2] === req.user.email);
-    
-    if (!chartRow) {
+    const chart = await orgchartDb.getChartById(chartId, req.user.email);
+    if (!chart) {
       return res.status(404).json({ error: 'Chart not found' });
     }
     
-    // Get chart data
-    const dataResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'OrgChartData!A:C'
-    });
-    
-    const dataRows = dataResponse.data.values || [];
-    const nodes = [];
-    const connections = [];
-    
-    dataRows.slice(1).forEach(row => {
-      if (row[0] === chartId) {
-        try {
-          const data = JSON.parse(row[2]);
-          if (row[1] === 'node') nodes.push(data);
-          if (row[1] === 'connection') connections.push(data);
-        } catch (e) {
-          console.error('Failed to parse data:', e);
-        }
-      }
-    });
+    // Get nodes and connections
+    const nodes = await orgchartDb.getNodesByChartId(chartId);
+    const connections = await orgchartDb.getConnectionsByChartId(chartId);
     
     res.json({
-      id: chartRow[0],
-      name: chartRow[1],
-      owner: chartRow[2],
-      createdAt: chartRow[3],
-      updatedAt: chartRow[4],
+      id: chart.id,
+      name: chart.name,
+      owner: chart.owner,
+      createdAt: chart.created_at,
+      updatedAt: chart.updated_at,
       nodeCount: nodes.length,
       connectionCount: connections.length,
       nodes,
@@ -342,40 +359,19 @@ app.get('/api/orgcharts/:id', requireAuth, async (req, res) => {
 app.post('/api/orgcharts', requireAuth, async (req, res) => {
   try {
     console.log('Creating chart for:', req.user.email);
-    const sheets = getSheets();
-    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     const { name } = req.body;
     
-    console.log('Spreadsheet ID:', spreadsheetId);
-    console.log('Chart name:', name);
-    
-    if (!spreadsheetId) {
-      console.error('No spreadsheet ID configured');
-      return res.status(500).json({ error: 'Server configuration error' });
-    }
-    
     const chartId = Date.now().toString();
-    const now = new Date().toISOString();
-    
-    console.log('Attempting to append to OrgCharts sheet...');
-    
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: 'OrgCharts!A:G',
-      valueInputOption: 'RAW',
-      resource: {
-        values: [[chartId, name, req.user.email, now, now, 0, 0]]
-      }
-    });
+    const chart = await orgchartDb.createChart(chartId, name, req.user.email);
     
     console.log('Chart created successfully:', chartId);
     
     res.json({
-      id: chartId,
-      name,
-      owner: req.user.email,
-      createdAt: now,
-      updatedAt: now,
+      id: chart.id,
+      name: chart.name,
+      owner: chart.owner,
+      createdAt: chart.created_at,
+      updatedAt: chart.updated_at,
       nodeCount: 0,
       connectionCount: 0,
       nodes: [],
@@ -395,61 +391,21 @@ app.post('/api/orgcharts', requireAuth, async (req, res) => {
 // Update chart
 app.put('/api/orgcharts/:id', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets();
-    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     const chartId = req.params.id;
     const { nodes, connections } = req.body;
     
     // Verify ownership
-    const chartResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'OrgCharts!A:G'
-    });
-    
-    const chartRows = chartResponse.data.values || [];
-    const chartRowIndex = chartRows.slice(1).findIndex(row => row[0] === chartId && row[2] === req.user.email);
-    
-    if (chartRowIndex === -1) {
+    const chart = await orgchartDb.getChartById(chartId, req.user.email);
+    if (!chart) {
       return res.status(404).json({ error: 'Chart not found' });
     }
     
-    // Delete existing data for this chart
-    const dataResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'OrgChartData!A:C'
-    });
+    // Save nodes and connections
+    await orgchartDb.saveNodes(chartId, nodes || []);
+    await orgchartDb.saveConnections(chartId, connections || []);
     
-    const existingRows = dataResponse.data.values || [];
-    const rowsToKeep = [existingRows[0]]; // Keep header
-    existingRows.slice(1).forEach(row => {
-      if (row[0] !== chartId) rowsToKeep.push(row);
-    });
-    
-    // Add new data
-    nodes.forEach(node => {
-      rowsToKeep.push([chartId, 'node', JSON.stringify(node)]);
-    });
-    
-    connections.forEach(conn => {
-      rowsToKeep.push([chartId, 'connection', JSON.stringify(conn)]);
-    });
-    
-    // Write data back
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: 'OrgChartData!A:C',
-      valueInputOption: 'RAW',
-      resource: { values: rowsToKeep }
-    });
-    
-    // Update metadata
-    const now = new Date().toISOString();
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `OrgCharts!E${chartRowIndex + 2}:G${chartRowIndex + 2}`,
-      valueInputOption: 'RAW',
-      resource: { values: [[now, nodes.length, connections.length]] }
-    });
+    // Update metadata timestamp
+    await orgchartDb.updateChart(chartId, req.user.email);
     
     res.json({ success: true });
   } catch (error) {
@@ -461,60 +417,12 @@ app.put('/api/orgcharts/:id', requireAuth, async (req, res) => {
 // Delete chart
 app.delete('/api/orgcharts/:id', requireAuth, async (req, res) => {
   try {
-    const sheets = getSheets();
-    const spreadsheetId = process.env.ORIGINATION_SHEET_ID;
     const chartId = req.params.id;
     
     console.log('Delete request:', { chartId, userEmail: req.user.email });
     
-    // Delete chart metadata
-    const chartResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'OrgCharts!A:G'
-    });
-    
-    const chartRows = chartResponse.data.values || [];
-    console.log('Total chart rows before delete:', chartRows.length);
-    
-    const filteredCharts = [chartRows[0]]; // Keep header
-    let deletedCount = 0;
-    chartRows.slice(1).forEach(row => {
-      if (row[0] !== chartId || row[2] !== req.user.email) {
-        filteredCharts.push(row);
-      } else {
-        deletedCount++;
-        console.log('Deleting chart row:', { id: row[0], email: row[2], name: row[1] });
-      }
-    });
-    
-    console.log('Charts deleted:', deletedCount);
-    console.log('Rows after filter:', filteredCharts.length);
-    
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: 'OrgCharts!A:G',
-      valueInputOption: 'RAW',
-      resource: { values: filteredCharts }
-    });
-    
-    // Delete chart data
-    const dataResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'OrgChartData!A:C'
-    });
-    
-    const dataRows = dataResponse.data.values || [];
-    const filteredData = [dataRows[0]]; // Keep header
-    dataRows.slice(1).forEach(row => {
-      if (row[0] !== chartId) filteredData.push(row);
-    });
-    
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: 'OrgChartData!A:C',
-      valueInputOption: 'RAW',
-      resource: { values: filteredData }
-    });
+    // Verify ownership and delete
+    await orgchartDb.deleteChart(chartId, req.user.email);
     
     res.json({ success: true });
   } catch (error) {
