@@ -13,7 +13,7 @@
   overflow: hidden;
 }
 
-/* Spinning and zooming Philo logo */
+/* Zooming Philo logo - continuous while loading */
 .batman-logo {
   position: relative;
   z-index: 3;
@@ -22,7 +22,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: spinAndZoom 1s ease-in-out infinite;
+  animation: spinAndZoom 1.5s ease-in-out infinite;
 }
 
 .batman-logo-inner {

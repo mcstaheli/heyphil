@@ -10,10 +10,10 @@ function BatmanTransition({ onComplete }) {
       audioRef.current.play().catch(err => console.log('Audio play failed:', err));
     }
 
-    // Complete after 3 seconds
+    // Complete after 1.5 seconds (matches animation)
     const timer = setTimeout(() => {
       if (onComplete) onComplete();
-    }, 3000);
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [onComplete]);
