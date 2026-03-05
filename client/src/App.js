@@ -1474,6 +1474,39 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
     onSave(formData, pendingActions);
   };
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger shortcuts when typing in inputs (except title input - Escape should close editing)
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        if (e.key === 'Escape' && editingTitle) {
+          setEditingTitle(false);
+          return;
+        }
+        // Allow other input behaviors
+        return;
+      }
+      
+      // Escape to close modal
+      if (e.key === 'Escape') {
+        onClose();
+      }
+      // Shift+Enter to save
+      if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
+        if (!formData.title || !formData.title.trim()) {
+          alert('Please enter a title for the project');
+          setEditingTitle(true);
+          return;
+        }
+        onSave(formData, pendingActions);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [formData, pendingActions, onSave, onClose, editingTitle]);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
