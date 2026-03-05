@@ -317,10 +317,16 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
     { id: 'ic-close', title: 'IC - Close', color: '#9e9e9e', section: 'origination' },
     { id: 'assets', title: 'Assets', color: '#1976d2', section: 'origination' },
     { id: 'ic-assets', title: 'IC - Assets', color: '#757575', section: 'origination' },
-    { id: 'studio-diligence', title: 'Studio - Diligence', color: '#e1bee7', section: 'studio' },
-    { id: 'studio-validation', title: 'Studio - Validation', color: '#ce93d8', section: 'studio' },
-    { id: 'studio-launch', title: 'Studio - Launch', color: '#ba68c8', section: 'studio' },
-    { id: 'studio-spinout', title: 'Studio - Spinout', color: '#ab47bc', section: 'studio' },
+    { id: 'studio-ideation', title: 'Ideation', color: '#bbdefb', section: 'studio' },
+    { id: 'studio-diligence', title: 'Diligence', color: '#e1bee7', section: 'studio' },
+    { id: 'ic-studio-validation', title: 'IC - Validation', color: '#e0e0e0', section: 'studio' },
+    { id: 'studio-validation', title: 'Validation', color: '#ce93d8', section: 'studio' },
+    { id: 'ic-studio-launch', title: 'IC - Launch', color: '#bdbdbd', section: 'studio' },
+    { id: 'studio-launch', title: 'Launch', color: '#ba68c8', section: 'studio' },
+    { id: 'ic-studio-spinout', title: 'IC - Spinout', color: '#9e9e9e', section: 'studio' },
+    { id: 'studio-spinout', title: 'Spinout', color: '#ab47bc', section: 'studio' },
+    { id: 'studio-abandoned', title: 'Abandoned', color: '#616161', section: 'studio' },
+    { id: 'studio-exited', title: 'Exited', color: '#2196f3', section: 'studio' },
     { id: 'development', title: 'Development', color: '#66bb6a', section: 'development' },
     { id: 'operations', title: 'Operations', color: '#ef6c00', section: 'operations' },
     { id: 'abandoned', title: 'Abandoned', color: '#616161', section: 'other' },
@@ -1036,7 +1042,8 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           });
           
           const isEmpty = filteredCards.length === 0;
-          const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned';
+          const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned' || 
+                            column.id === 'studio-ideation' || column.id === 'studio-exited' || column.id === 'studio-abandoned';
           
           return (
           <div
@@ -1065,7 +1072,8 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
             </div>
             <div className="column-cards">
               {filteredCards.map(card => {
-                const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned';
+                const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned' || 
+                                  column.id === 'studio-ideation' || column.id === 'studio-exited' || column.id === 'studio-abandoned';
                 return (
                   <div
                     key={card.id}

@@ -1367,13 +1367,19 @@ body {
 /* Ideation and Closed - Pre/Post activity areas */
 .column-ideation,
 .column-closed,
-.column-abandoned {
+.column-abandoned,
+.column-studio-ideation,
+.column-studio-exited,
+.column-studio-abandoned {
   max-width: 280px;
 }
 
 .column-ideation .column-header,
 .column-closed .column-header,
-.column-abandoned .column-header {
+.column-abandoned .column-header,
+.column-studio-ideation .column-header,
+.column-studio-exited .column-header,
+.column-studio-abandoned .column-header {
   background: transparent !important;
   color: #999;
   font-style: italic;
@@ -1424,43 +1430,56 @@ body {
 }
 
 /* Extra spacing to separate Ideation and Closed from workflow */
-.column-ideation {
+.column-ideation,
+.column-studio-ideation {
   margin-right: 32px;
 }
 
-.column-closed {
+.column-closed,
+.column-studio-exited {
   margin-left: 32px;
 }
 
 /* Ideation, Closed, Abandoned - blend column container into page background */
 .column-ideation,
 .column-closed,
-.column-abandoned {
+.column-abandoned,
+.column-studio-ideation,
+.column-studio-exited,
+.column-studio-abandoned {
   background: transparent;
   box-shadow: none;
 }
 
 .column-ideation .column-cards,
 .column-closed .column-cards,
-.column-abandoned .column-cards {
+.column-abandoned .column-cards,
+.column-studio-ideation .column-cards,
+.column-studio-exited .column-cards,
+.column-studio-abandoned .column-cards {
   background: transparent;
 }
 
 /* Keep cards white in these columns */
 .column-ideation .kanban-card,
 .column-closed .kanban-card,
-.column-abandoned .kanban-card {
+.column-abandoned .kanban-card,
+.column-studio-ideation .kanban-card,
+.column-studio-exited .kanban-card,
+.column-studio-abandoned .kanban-card {
   background: white !important;
   border: 1px solid #e0e0e0;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
-.column-abandoned {
+.column-abandoned,
+.column-studio-abandoned {
   max-width: 280px;
   margin-left: 32px;
 }
 
-.column-abandoned .column-header {
+.column-abandoned .column-header,
+.column-studio-abandoned .column-header {
   background: transparent !important;
   color: #999;
   font-style: italic;
