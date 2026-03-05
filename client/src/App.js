@@ -79,10 +79,14 @@ function App() {
   };
 
   const checkAuth = async () => {
+    const startTime = Date.now();
     const token = localStorage.getItem('authToken');
     
     if (!token) {
-      setAuthenticated(false);
+      // Ensure loading screen shows for at least 3.5 seconds for sound file
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, 3500 - elapsed);
+      setTimeout(() => setAuthenticated(false), remaining);
       return;
     }
     
@@ -95,16 +99,25 @@ function App() {
       
       if (res.ok) {
         const data = await res.json();
-        setAuthenticated(true);
-        setUser(data.user);
+        // Ensure loading screen shows for at least 3.5 seconds for sound file
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, 3500 - elapsed);
+        setTimeout(() => {
+          setAuthenticated(true);
+          setUser(data.user);
+        }, remaining);
       } else {
         localStorage.removeItem('authToken');
-        setAuthenticated(false);
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, 3500 - elapsed);
+        setTimeout(() => setAuthenticated(false), remaining);
       }
     } catch (error) {
       console.error('Auth check failed:', error);
       localStorage.removeItem('authToken');
-      setAuthenticated(false);
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, 3500 - elapsed);
+      setTimeout(() => setAuthenticated(false), remaining);
     }
   };
 
