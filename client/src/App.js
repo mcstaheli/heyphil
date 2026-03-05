@@ -1249,6 +1249,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           onDeleteLink={deleteLink}
           projectTypeColors={projectTypeColors}
           people={people}
+          studioMode={studioMode}
         />
       )}
 
@@ -1273,6 +1274,11 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
               }
             }
           }}
+          onMoveToStudio={studioMode ? null : async (id) => {
+            // Move card to Studio Ideation
+            await updateCard(id, { column: 'studio-ideation' });
+            setEditingCard(null);
+          }}
           columns={columns}
           toggleAction={toggleAction}
           onAddAction={addAction}
@@ -1282,6 +1288,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           onDeleteLink={deleteLink}
           projectTypeColors={projectTypeColors}
           people={people}
+          studioMode={studioMode}
         />
       )}
 
@@ -1393,7 +1400,7 @@ function TrashModal({ deletedCards, onClose, onRestore, people, projectTypeColor
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people }) {
+function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, initialColumn, toggleAction, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -1743,7 +1750,25 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                 </button>
               )}
             </div>
-            <div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              {card && onMoveToStudio && !studioMode && (
+                <button 
+                  type="button" 
+                  className="btn-secondary"
+                  onClick={() => {
+                    if (window.confirm('Move this project to Studio Ideation?')) {
+                      onMoveToStudio(card.id);
+                    }
+                  }}
+                  style={{ 
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    border: 'none'
+                  }}
+                >
+                  🎬 Move To Studio
+                </button>
+              )}
               <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
               <button type="submit" className="btn-primary">💾 Save</button>
             </div>
