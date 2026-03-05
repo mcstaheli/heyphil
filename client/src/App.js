@@ -6,7 +6,6 @@ import Landing from './Landing';
 import HotelVisual from './HotelVisual';
 import OrgCharts from './OrgCharts';
 import Settings from './Settings';
-import BatmanTransition from './BatmanTransition';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -83,9 +82,9 @@ function App() {
     const token = localStorage.getItem('authToken');
     
     if (!token) {
-      // Ensure loading screen shows for at least 3.5 seconds for sound file
+      // Ensure loading screen shows for at least 1 second
       const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, 3500 - elapsed);
+      const remaining = Math.max(0, 1000 - elapsed);
       setTimeout(() => setAuthenticated(false), remaining);
       return;
     }
@@ -99,9 +98,9 @@ function App() {
       
       if (res.ok) {
         const data = await res.json();
-        // Ensure loading screen shows for at least 3.5 seconds for sound file
+        // Ensure loading screen shows for at least 1 second
         const elapsed = Date.now() - startTime;
-        const remaining = Math.max(0, 3500 - elapsed);
+        const remaining = Math.max(0, 1000 - elapsed);
         setTimeout(() => {
           setAuthenticated(true);
           setUser(data.user);
@@ -109,14 +108,14 @@ function App() {
       } else {
         localStorage.removeItem('authToken');
         const elapsed = Date.now() - startTime;
-        const remaining = Math.max(0, 3500 - elapsed);
+        const remaining = Math.max(0, 1000 - elapsed);
         setTimeout(() => setAuthenticated(false), remaining);
       }
     } catch (error) {
       console.error('Auth check failed:', error);
       localStorage.removeItem('authToken');
       const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, 3500 - elapsed);
+      const remaining = Math.max(0, 1000 - elapsed);
       setTimeout(() => setAuthenticated(false), remaining);
     }
   };
@@ -876,7 +875,22 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
   };
 
   if (loading) {
-    return <BatmanTransition />;
+    return (
+      <div className="loading">
+        <div className="loading-content">
+          <div className="loading-logo">
+            <img src="/logo-c.svg" alt="Philo Logo" className="logo-c-animated" />
+          </div>
+          <h2 className="loading-text">Loading Board</h2>
+          <p className="loading-subtext">Please wait...</p>
+          <div className="loading-spinner">
+            <div className="spinner-dot"></div>
+            <div className="spinner-dot"></div>
+            <div className="spinner-dot"></div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
