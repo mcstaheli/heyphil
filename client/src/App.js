@@ -18,31 +18,14 @@ function App() {
     return localStorage.getItem('currentApp') || null;
   });
   const [showDevTools, setShowDevTools] = useState(false);
-  const [showBatmanTransition, setShowBatmanTransition] = useState(false);
-  const [pendingApp, setPendingApp] = useState(null);
   
   const setCurrentApp = (app) => {
-    // Show Batman transition for Studio Board
-    if (app === 'studio') {
-      setPendingApp(app);
-      setShowBatmanTransition(true);
+    setCurrentAppState(app);
+    if (app) {
+      localStorage.setItem('currentApp', app);
     } else {
-      setCurrentAppState(app);
-      if (app) {
-        localStorage.setItem('currentApp', app);
-      } else {
-        localStorage.removeItem('currentApp');
-      }
+      localStorage.removeItem('currentApp');
     }
-  };
-  
-  const handleTransitionComplete = () => {
-    setShowBatmanTransition(false);
-    setCurrentAppState(pendingApp);
-    if (pendingApp) {
-      localStorage.setItem('currentApp', pendingApp);
-    }
-    setPendingApp(null);
   };
 
   useEffect(() => {
@@ -135,11 +118,6 @@ function App() {
     setUser(null);
     setCurrentApp(null);
   };
-
-  // Batman transition
-  if (showBatmanTransition) {
-    return <BatmanTransition onComplete={handleTransitionComplete} />;
-  }
 
   // Login screen
   if (authenticated === false) {
@@ -883,20 +861,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
   };
 
   if (loading) {
-    return (
-      <div className="loading">
-        <div className="loading-content">
-          <div className="loading-icon">⚙️</div>
-          <h2 className="loading-text">Loading</h2>
-          <p className="loading-subtext">{studioMode ? 'Studio Board' : 'Project Board'}</p>
-          <div className="loading-spinner">
-            <div className="spinner-dot"></div>
-            <div className="spinner-dot"></div>
-            <div className="spinner-dot"></div>
-          </div>
-        </div>
-      </div>
-    );
+    return <BatmanTransition />;
   }
 
   return (
