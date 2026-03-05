@@ -918,9 +918,27 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
       });
       
       if (response.ok) {
+        const data = await response.json();
+        const restoredCard = data.card;
+        
         // Remove from deleted cards list
         setDeletedCards(prev => prev.filter(c => c.id !== cardId));
-        // Card will be added back to board via Socket.io event
+        
+        // Immediately add card back to board (optimistic update)
+        setCards(prevCards => [...prevCards, {
+          id: restoredCard.id,
+          title: restoredCard.title,
+          description: restoredCard.description || '',
+          column: restoredCard.column_name || restoredCard.column,
+          owner: restoredCard.owner || '',
+          notes: restoredCard.notes || '',
+          dealValue: restoredCard.deal_value || 0,
+          dateCreated: restoredCard.date_created,
+          projectType: restoredCard.project_type || '',
+          actions: [],
+          links: [],
+          log: []
+        }]);
       }
     } catch (error) {
       console.error('Failed to restore card:', error);
@@ -1007,16 +1025,6 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           {user?.picture && <img src={user.picture} alt={user.name} />}
           <span>{user?.name}</span>
           <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙️ Settings</button>
-          <button 
-            className="btn-secondary" 
-            onClick={() => {
-              loadDeletedCards();
-              setShowTrash(true);
-            }}
-            title="View deleted cards"
-          >
-            🗑️ Trash
-          </button>
           <button className="btn-secondary" onClick={onLogout}>Logout</button>
         </div>
       </header>
@@ -1296,6 +1304,18 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           projectTypeColors={projectTypeColors}
         />
       )}
+
+      {/* Floating action buttons */}
+      <button 
+        className="trash-toggle" 
+        onClick={() => {
+          loadDeletedCards();
+          setShowTrash(true);
+        }}
+        title="View trash"
+      >
+        🗑️
+      </button>
 
       {/* CHAT FEATURE TEMPORARILY DISABLED */}
     </div>

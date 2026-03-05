@@ -470,6 +470,32 @@ body {
   box-shadow: 0 6px 16px rgba(0,0,0,0.4);
 }
 
+.trash-toggle {
+  position: fixed;
+  bottom: 20px;
+  left: 78px; /* 20px base + 48px button width + 10px gap */
+  background: #666;
+  color: white;
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 20px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 9998;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trash-toggle:hover {
+  background: #777;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+}
+
 .floating-chat-button {
   position: fixed;
   bottom: 20px;
