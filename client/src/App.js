@@ -301,7 +301,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
       ? { studio: true } 
       : {
           origination: true,
-          studio: true,
+          studio: false,
           development: true,
           operations: true,
           other: true
@@ -944,14 +944,6 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
                   onChange={() => toggleSection('origination')}
                 />
                 <span>Origination</span>
-              </label>
-              <label className="section-filter-checkbox">
-                <input
-                  type="checkbox"
-                  checked={visibleSections.studio}
-                  onChange={() => toggleSection('studio')}
-                />
-                <span>Studio</span>
               </label>
               <label className="section-filter-checkbox">
                 <input
