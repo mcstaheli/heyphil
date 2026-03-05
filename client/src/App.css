@@ -350,6 +350,11 @@ body {
   font-size: 18px;
   font-weight: 600;
   transition: all 0.2s;
+  padding: 0;
+}
+
+.modal-icon-btn svg {
+  flex-shrink: 0;
 }
 
 .modal-icon-btn:hover {
@@ -357,14 +362,26 @@ body {
   color: white;
 }
 
+.modal-icon-btn:hover svg {
+  stroke: white;
+}
+
 .modal-icon-btn.delete {
   border-color: #ef4444;
   color: #ef4444;
 }
 
+.modal-icon-btn.delete svg {
+  stroke: #ef4444;
+}
+
 .modal-icon-btn.delete:hover {
   background: #ef4444;
   color: white;
+}
+
+.modal-icon-btn.delete:hover svg {
+  stroke: white;
 }
 
 .modal-body {
