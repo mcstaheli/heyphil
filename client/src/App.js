@@ -1754,16 +1754,11 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
               {card && onMoveToStudio && !studioMode && (
                 <button 
                   type="button" 
-                  className="btn-secondary"
+                  className="btn-studio"
                   onClick={() => {
                     if (window.confirm('Move this project to Studio Ideation?')) {
                       onMoveToStudio(card.id);
                     }
-                  }}
-                  style={{ 
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white',
-                    border: 'none'
                   }}
                 >
                   🎬 Move To Studio
