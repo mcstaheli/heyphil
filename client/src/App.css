@@ -473,7 +473,7 @@ body {
 .trash-toggle {
   position: fixed;
   bottom: 20px;
-  left: 78px; /* 20px base + 48px button width + 10px gap */
+  left: 88px; /* 20px base + 48px button width + 20px gap */
   background: #666;
   color: white;
   border: none;
@@ -481,7 +481,7 @@ body {
   height: 48px;
   border-radius: 50%;
   cursor: pointer;
-  font-size: 20px;
+  font-size: 22px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   z-index: 9998;
   transition: all 0.2s;
