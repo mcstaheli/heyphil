@@ -10,6 +10,7 @@ export async function getAllCards() {
       deal_value, date_created, project_type,
       created_at, updated_at
     FROM cards
+    WHERE deleted_at IS NULL
     ORDER BY date_created DESC
   `);
   return result.rows;
@@ -87,7 +88,25 @@ export async function updateCard(id, updates) {
 }
 
 export async function deleteCard(id) {
-  await pool.query('DELETE FROM cards WHERE id = $1', [id]);
+  // Soft delete - mark as deleted
+  await pool.query('UPDATE cards SET deleted_at = NOW() WHERE id = $1', [id]);
+}
+
+export async function getDeletedCards() {
+  const result = await pool.query(`
+    SELECT 
+      id, title, description, column_name as column, owner, notes,
+      deal_value, date_created, project_type,
+      deleted_at, created_at, updated_at
+    FROM cards
+    WHERE deleted_at IS NOT NULL
+    ORDER BY deleted_at DESC
+  `);
+  return result.rows;
+}
+
+export async function restoreCard(id) {
+  await pool.query('UPDATE cards SET deleted_at = NULL WHERE id = $1', [id]);
 }
 
 // ========== ACTIONS ==========

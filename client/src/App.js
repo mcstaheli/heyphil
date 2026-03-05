@@ -295,6 +295,8 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
   const [showMetrics, setShowMetrics] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
+  const [deletedCards, setDeletedCards] = useState([]);
   const [visibleSections, setVisibleSections] = useState(
     studioMode 
       ? { studio: true } 
@@ -893,6 +895,38 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
     }
   };
 
+  const loadDeletedCards = async () => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/trash`, {
+        headers: getAuthHeaders()
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setDeletedCards(data.cards || []);
+      }
+    } catch (error) {
+      console.error('Failed to load deleted cards:', error);
+    }
+  };
+
+  const restoreCard = async (cardId) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/card/${cardId}/restore`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+      
+      if (response.ok) {
+        // Remove from deleted cards list
+        setDeletedCards(prev => prev.filter(c => c.id !== cardId));
+        // Card will be added back to board via Socket.io event
+      }
+    } catch (error) {
+      console.error('Failed to restore card:', error);
+    }
+  };
+
   const handleSaveSettings = async (settings) => {
     try {
       console.log('Saving settings to backend:', settings);
@@ -973,6 +1007,16 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           {user?.picture && <img src={user.picture} alt={user.name} />}
           <span>{user?.name}</span>
           <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙️ Settings</button>
+          <button 
+            className="btn-secondary" 
+            onClick={() => {
+              loadDeletedCards();
+              setShowTrash(true);
+            }}
+            title="View deleted cards"
+          >
+            🗑️ Trash
+          </button>
           <button className="btn-secondary" onClick={onLogout}>Logout</button>
         </div>
       </header>
@@ -1243,7 +1287,88 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
         />
       )}
 
+      {showTrash && (
+        <TrashModal
+          deletedCards={deletedCards}
+          onClose={() => setShowTrash(false)}
+          onRestore={restoreCard}
+          people={people}
+          projectTypeColors={projectTypeColors}
+        />
+      )}
+
       {/* CHAT FEATURE TEMPORARILY DISABLED */}
+    </div>
+  );
+}
+
+function TrashModal({ deletedCards, onClose, onRestore, people, projectTypeColors }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>🗑️ Trash</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          {deletedCards.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>🗑️</div>
+              <p>No deleted cards</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {deletedCards.map(card => (
+                <div 
+                  key={card.id}
+                  style={{
+                    padding: '16px',
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    backgroundColor: '#f9f9f9',
+                    borderLeft: card.project_type && projectTypeColors[card.project_type]
+                      ? `4px solid ${projectTypeColors[card.project_type]}`
+                      : '4px solid transparent'
+                  }}
+                >
+                  {card.owner && people[card.owner] && (
+                    <img 
+                      src={people[card.owner]} 
+                      alt={card.owner}
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        border: '2px solid #555'
+                      }}
+                    />
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '16px' }}>{card.title}</h4>
+                    <div style={{ fontSize: '13px', color: '#666' }}>
+                      {card.description && <span>{card.description} • </span>}
+                      {card.column && <span>From: {card.column.replace('-', ' ')} • </span>}
+                      Deleted: {new Date(card.deleted_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <button 
+                    className="btn-primary"
+                    onClick={() => {
+                      onRestore(card.id);
+                    }}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    ↩️ Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

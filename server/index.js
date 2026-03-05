@@ -818,7 +818,7 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Card not found' });
     }
     
-    // Delete from database (cascades to actions)
+    // Soft delete from database
     await boardDb.deleteCard(id);
     
     // Log deletion
@@ -827,7 +827,7 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
       card.title,
       'Deleted',
       req.user.name || req.user.email,
-      `Card removed from board`
+      `Card moved to trash`
     );
     
     // Broadcast to all clients
@@ -837,6 +837,59 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to delete card:', error);
     res.status(500).json({ error: 'Failed to delete card' });
+  }
+});
+
+// Get deleted cards (trash)
+app.get('/api/origination/trash', requireAuth, async (req, res) => {
+  try {
+    const deletedCards = await boardDb.getDeletedCards();
+    res.json({ cards: deletedCards });
+  } catch (error) {
+    console.error('Failed to get deleted cards:', error);
+    res.status(500).json({ error: 'Failed to get deleted cards' });
+  }
+});
+
+// Restore a deleted card
+app.post('/api/origination/card/:id/restore', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get card details for logging
+    const card = await boardDb.getCardById(id);
+    if (!card) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+    
+    // Restore the card
+    await boardDb.restoreCard(id);
+    
+    // Log restoration
+    await boardDb.addLog(
+      id,
+      card.title,
+      'Restored',
+      req.user.name || req.user.email,
+      `Card restored from trash`
+    );
+    
+    // Get the restored card with all data
+    const restoredCard = await boardDb.getCardById(id);
+    const actions = await boardDb.getActionsByCardId(id);
+    const links = await boardDb.getLinksByCardId(id);
+    
+    // Broadcast to all clients
+    broadcastChange('card:created', {
+      ...restoredCard,
+      actions,
+      links
+    });
+    
+    res.json({ success: true, card: restoredCard });
+  } catch (error) {
+    console.error('Failed to restore card:', error);
+    res.status(500).json({ error: 'Failed to restore card' });
   }
 });
 
