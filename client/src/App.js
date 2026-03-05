@@ -1850,21 +1850,25 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
           </div>
           
           <div className="modal-footer">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <button type="submit" className="btn-primary">Save</button>
-              {card && onMoveToStudio && !studioMode && (
-                <button 
-                  type="button" 
-                  className="btn-studio"
-                  onClick={() => {
-                    if (window.confirm('Move this project to Studio Ideation?')) {
-                      onMoveToStudio(card.id);
-                    }
-                  }}
-                >
-                  Move To Studio
-                </button>
-              )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <div>
+                <button type="submit" className="btn-primary">Save</button>
+              </div>
+              <div>
+                {card && onMoveToStudio && !studioMode && (
+                  <button 
+                    type="button" 
+                    className="btn-studio"
+                    onClick={() => {
+                      if (window.confirm('Move this project to Studio Ideation?')) {
+                        onMoveToStudio(card.id);
+                      }
+                    }}
+                  >
+                    Move To Studio
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </form>
