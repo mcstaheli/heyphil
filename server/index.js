@@ -35,6 +35,20 @@ const io = new SocketIOServer(httpServer, {
 
 const PORT = process.env.PORT || 3002;
 
+// Auto-migrate: Add deleted_at column if it doesn't exist
+async function autoMigrate() {
+  try {
+    await pool.query(`
+      ALTER TABLE cards 
+      ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP DEFAULT NULL
+    `);
+    console.log('✅ Database migration: deleted_at column ready');
+  } catch (error) {
+    console.error('⚠️  Migration warning (may be safe to ignore):', error.message);
+  }
+}
+autoMigrate();
+
 // Allowed users
 const ALLOWED_EMAILS = ['chad@philo.ventures', 'tracy.stratton@philo.ventures', 'greg@philo.ventures', 'scott@philo.ventures'];
 
