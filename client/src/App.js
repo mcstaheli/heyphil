@@ -710,6 +710,9 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
     }
   };
 
+  const boardRef = useRef(null);
+  const scrollInterval = useRef(null);
+
   const handleDragStart = (e, card) => {
     setDraggedCard(card);
     e.dataTransfer.effectAllowed = 'move';
@@ -718,15 +721,62 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
   const handleDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    
+    // Auto-scroll when dragging near edges
+    if (!boardRef.current) return;
+    
+    const board = boardRef.current;
+    const threshold = 100; // Distance from edge to trigger scroll
+    const scrollSpeed = 15; // Pixels to scroll per frame
+    
+    const rect = board.getBoundingClientRect();
+    const mouseX = e.clientX;
+    
+    // Clear any existing scroll interval
+    if (scrollInterval.current) {
+      clearInterval(scrollInterval.current);
+      scrollInterval.current = null;
+    }
+    
+    // Check if near left edge
+    if (mouseX - rect.left < threshold && board.scrollLeft > 0) {
+      scrollInterval.current = setInterval(() => {
+        board.scrollLeft -= scrollSpeed;
+      }, 16); // ~60fps
+    }
+    // Check if near right edge
+    else if (rect.right - mouseX < threshold && board.scrollLeft < board.scrollWidth - board.clientWidth) {
+      scrollInterval.current = setInterval(() => {
+        board.scrollLeft += scrollSpeed;
+      }, 16);
+    }
+  };
+
+  const handleDragEnd = () => {
+    // Clear scroll interval when drag ends
+    if (scrollInterval.current) {
+      clearInterval(scrollInterval.current);
+      scrollInterval.current = null;
+    }
+    setDraggedCard(null);
   };
 
   const handleDrop = (e, columnId) => {
     e.preventDefault();
     if (draggedCard) {
       moveCard(draggedCard.id, columnId);
-      setDraggedCard(null);
     }
+    handleDragEnd();
   };
+  
+  // Clean up scroll interval on unmount or when drag ends
+  useEffect(() => {
+    return () => {
+      if (scrollInterval.current) {
+        clearInterval(scrollInterval.current);
+      }
+    };
+  }, []);
   
   const toggleAction = async (actionId, completed, cardId, cardTitle) => {
     try {
@@ -1022,7 +1072,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
         </div>
       )}
 
-      <div className="kanban-board">
+      <div className="kanban-board" ref={boardRef}>
         {columns.map(column => {
           let filteredCards = cards.filter(c => {
             if (c.column !== column.id) return false;
@@ -1085,6 +1135,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
                     }}
                     draggable
                     onDragStart={(e) => handleDragStart(e, card)}
+                    onDragEnd={handleDragEnd}
                     onClick={() => setEditingCard(card)}
                   >
                     {!isPrePost && card.daysInStage > 30 && <div className="stale-indicator" title={`${card.daysInStage} days in stage`}>⚠️</div>}
