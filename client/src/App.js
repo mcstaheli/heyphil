@@ -1802,6 +1802,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
           
           <div className="modal-footer">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button type="submit" className="btn-primary">💾 Save</button>
               <div>
                 {card && onMoveToStudio && !studioMode && (
                   <button 
@@ -1817,7 +1818,6 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
                   </button>
                 )}
               </div>
-              <button type="submit" className="btn-primary">💾 Save</button>
             </div>
           </div>
         </form>
