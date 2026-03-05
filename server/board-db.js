@@ -17,10 +17,14 @@ export async function getAllCards() {
 }
 
 export async function getCardById(id) {
-  const result = await pool.query(
-    'SELECT * FROM cards WHERE id = $1',
-    [id]
-  );
+  const result = await pool.query(`
+    SELECT 
+      id, title, description, column_name as column, owner, notes,
+      deal_value, date_created, project_type,
+      created_at, updated_at, deleted_at
+    FROM cards 
+    WHERE id = $1
+  `, [id]);
   return result.rows[0];
 }
 

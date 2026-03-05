@@ -689,7 +689,7 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     
     // Log changes
     const changes = [];
-    if (oldCard.column_name !== column) changes.push(`Status: ${oldCard.column_name} → ${column}`);
+    if (oldCard.column !== column) changes.push(`Status: ${oldCard.column} → ${column}`);
     if (oldCard.owner !== owner) changes.push(`Owner: ${oldCard.owner || 'Unassigned'} → ${owner || 'Unassigned'}`);
     if (oldCard.title !== title) changes.push(`Title changed`);
     if (oldCard.description !== description) changes.push(`Description updated`);
