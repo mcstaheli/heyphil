@@ -104,7 +104,7 @@ async function autoMigrate() {
 autoMigrate();
 
 // Allowed users
-const ALLOWED_EMAILS = ['chad@philo.ventures', 'tracy.stratton@philo.ventures', 'greg@philo.ventures', 'scott@philo.ventures'];
+const ALLOWED_EMAILS = ['chad@philo.ventures', 'tracy.stratton@philo.ventures', 'greg@philo.ventures', 'scott@philo.ventures', 'connor.bell@philo.ventures'];
 
 const JWT_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
 
