@@ -188,6 +188,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         owner: 'Bank',
         parentId: '5',
         dependencies: ['7']
+      },
+      {
+        id: '9',
+        name: 'Closing Meeting',
+        type: 'event',
+        date: '2026-04-12',
+        owner: 'Chad',
+        dependencies: []
       }
     ];
     setTasks(mockTasks);
@@ -195,7 +203,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
   const calculateTimelineRange = () => {
     const dates = tasks.flatMap(task => {
-      if (task.type === 'milestone') {
+      if (task.type === 'milestone' || task.type === 'event') {
         return [new Date(task.date)];
       }
       return [new Date(task.start), new Date(task.end)];
@@ -244,7 +252,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     const totalDays = getDaysBetween(timelineRange.start, timelineRange.end);
     
     let startDate, endDate;
-    if (task.type === 'milestone') {
+    if (task.type === 'milestone' || task.type === 'event') {
       startDate = new Date(task.date);
       endDate = new Date(task.date);
     } else {
@@ -257,7 +265,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     endDate.setHours(0, 0, 0, 0);
 
     const startOffset = getDaysBetween(timelineRange.start, startDate);
-    const duration = task.type === 'milestone' ? 1 : getDaysBetween(startDate, endDate);
+    const duration = (task.type === 'milestone' || task.type === 'event') ? 1 : getDaysBetween(startDate, endDate);
 
     const leftPercent = (startOffset / totalDays) * 100;
     const widthPercent = (duration / totalDays) * 100;
@@ -404,7 +412,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       const depTask = tasks.find(t => t.id === depId);
       if (!depTask) return latest;
       
-      const depEnd = depTask.type === 'milestone' ? new Date(depTask.date) : new Date(depTask.end);
+      const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
       depEnd.setHours(0, 0, 0, 0);
       return depEnd > latest ? depEnd : latest;
     }, new Date(0));
@@ -492,6 +500,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     {task.parentId && <span className="indent-line">└─ </span>}
                     {task.type === 'phase' && '📁 '}
                     {task.type === 'milestone' && '🏁 '}
+                    {task.type === 'event' && '💎 '}
                     {task.name}
                   </div>
                 </div>
@@ -620,6 +629,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             {displayTasks.map((task, index) => {
               const position = getTaskPosition(task);
               const isMilestone = task.type === 'milestone';
+              const isEvent = task.type === 'event';
               const isPhase = task.type === 'phase';
 
               const handleMouseDown = (e) => {
@@ -629,47 +639,70 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 
                 setDraggingTask(task.id);
                 setDragStartX(e.clientX);
-                setDragStartDate(task.type === 'milestone' ? new Date(task.date) : new Date(task.start));
+                setDragStartDate((task.type === 'milestone' || task.type === 'event') ? new Date(task.date) : new Date(task.start));
               };
 
               const hasDependencies = task.dependencies && task.dependencies.length > 0;
 
               return (
                 <div key={task.id} className="timeline-row">
-                  <div 
-                    className={`timeline-bar ${task.type} ${draggingTask === task.id ? 'dragging' : ''} ${hasDependencies ? 'has-dependencies' : ''}`}
-                    style={{
-                      left: `${position.left}%`,
-                      width: isMilestone ? '4px' : `${position.width}%`,
-                      backgroundColor: task.color || (isPhase ? '#48bb78' : '#667eea'),
-                      cursor: compact ? 'default' : 'grab',
-                      borderLeft: hasDependencies ? '3px solid rgba(0, 0, 0, 0.2)' : 'none'
-                    }}
-                    onMouseDown={handleMouseDown}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!draggingTask) {
-                        !compact && setEditingTask(task);
-                      }
-                    }}
-                  >
-                    {!isMilestone && (
-                      <>
-                        <div 
-                          className="timeline-bar-progress"
-                          style={{ 
-                            width: `${task.progress}%`,
-                            backgroundColor: task.color ? 
-                              `color-mix(in srgb, ${task.color} 80%, black)` : 
-                              (isPhase ? '#38a169' : '#5568d3')
-                          }}
-                        />
-                        {!compact && position.width > 5 && (
-                          <div className="timeline-bar-label">{task.progress}%</div>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  {isEvent ? (
+                    // Diamond shape for events
+                    <div
+                      className={`timeline-event ${draggingTask === task.id ? 'dragging' : ''}`}
+                      style={{
+                        left: `calc(${position.left}% + ${position.width / 2}%)`,
+                        cursor: compact ? 'default' : 'grab'
+                      }}
+                      onMouseDown={handleMouseDown}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!draggingTask) {
+                          !compact && setEditingTask(task);
+                        }
+                      }}
+                      title={task.name}
+                    >
+                      <div className="event-diamond" style={{
+                        backgroundColor: task.color || '#f59e0b'
+                      }} />
+                    </div>
+                  ) : (
+                    <div 
+                      className={`timeline-bar ${task.type} ${draggingTask === task.id ? 'dragging' : ''} ${hasDependencies ? 'has-dependencies' : ''}`}
+                      style={{
+                        left: `${position.left}%`,
+                        width: isMilestone ? '4px' : `${position.width}%`,
+                        backgroundColor: task.color || (isPhase ? '#48bb78' : '#667eea'),
+                        cursor: compact ? 'default' : 'grab',
+                        borderLeft: hasDependencies ? '3px solid rgba(0, 0, 0, 0.2)' : 'none'
+                      }}
+                      onMouseDown={handleMouseDown}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!draggingTask) {
+                          !compact && setEditingTask(task);
+                        }
+                      }}
+                    >
+                      {!isMilestone && (
+                        <>
+                          <div 
+                            className="timeline-bar-progress"
+                            style={{ 
+                              width: `${task.progress}%`,
+                              backgroundColor: task.color ? 
+                                `color-mix(in srgb, ${task.color} 80%, black)` : 
+                                (isPhase ? '#38a169' : '#5568d3')
+                            }}
+                          />
+                          {!compact && position.width > 5 && (
+                            <div className="timeline-bar-label">{task.progress}%</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -701,10 +734,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 <option value="task">Task</option>
                 <option value="phase">Phase</option>
                 <option value="milestone">Milestone</option>
+                <option value="event">Event</option>
               </select>
             </label>
 
-            {editingTask.type !== 'milestone' && (
+            {editingTask.type !== 'milestone' && editingTask.type !== 'event' && (
               <>
                 <label>
                   Start Date:
@@ -745,7 +779,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               </>
             )}
 
-            {editingTask.type === 'milestone' && (
+            {(editingTask.type === 'milestone' || editingTask.type === 'event') && (
               <label>
                 Date:
                 <input
@@ -806,11 +840,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     const depTask = tasks.find(t => t.id === depId);
                     if (!depTask) return latest;
                     
-                    const depEnd = depTask.type === 'milestone' ? new Date(depTask.date) : new Date(depTask.end);
+                    const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
                     return depEnd > latest ? depEnd : latest;
                   }, new Date(0));
                   
-                  const taskStart = editingTask.type === 'milestone' ? new Date(editingTask.date) : new Date(editingTask.start);
+                  const taskStart = (editingTask.type === 'milestone' || editingTask.type === 'event') ? new Date(editingTask.date) : new Date(editingTask.start);
                   
                   if (taskStart <= latestEndDate) {
                     if (!window.confirm('This task starts before its dependencies finish. Auto-adjust start date?')) {
@@ -819,7 +853,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     
                     // Auto-adjust
                     latestEndDate.setDate(latestEndDate.getDate() + 1);
-                    if (editingTask.type === 'milestone') {
+                    if (editingTask.type === 'milestone' || editingTask.type === 'event') {
                       editingTask.date = latestEndDate.toISOString().split('T')[0];
                     } else {
                       const duration = Math.ceil((new Date(editingTask.end) - new Date(editingTask.start)) / (1000 * 60 * 60 * 24));
