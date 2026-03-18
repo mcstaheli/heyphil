@@ -9,6 +9,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [draggingTask, setDraggingTask] = useState(null);
   const [dragStartX, setDragStartX] = useState(null);
   const [dragStartDate, setDragStartDate] = useState(null);
+  const [hasDragged, setHasDragged] = useState(false);
 
   useEffect(() => {
     loadTasks();
@@ -37,6 +38,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       
       const deltaX = e.clientX - dragStartX;
       const deltaDays = Math.round((deltaX / gridWidth) * totalDays);
+      
+      // Mark as dragged if mouse moved significantly
+      if (Math.abs(deltaX) > 5) {
+        setHasDragged(true);
+      }
       
       // Only update if we've moved to a different day
       if (deltaDays === lastDeltaDays) return;
@@ -89,6 +95,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       setDraggingTask(null);
       setDragStartX(null);
       setDragStartDate(null);
+      
+      // Reset hasDragged after a brief delay so click handler can check it
+      setTimeout(() => {
+        setHasDragged(false);
+      }, 100);
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -635,6 +646,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 e.preventDefault();
                 e.stopPropagation();
                 
+                setHasDragged(false); // Reset drag flag at start of new drag
                 setDraggingTask(task.id);
                 setDragStartX(e.clientX);
                 setDragStartDate((task.type === 'milestone' || task.type === 'event') ? new Date(task.date) : new Date(task.start));
@@ -655,8 +667,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       onMouseDown={handleMouseDown}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!draggingTask) {
-                          !compact && setEditingTask(task);
+                        if (!hasDragged && !compact) {
+                          setEditingTask(task);
                         }
                       }}
                       title={task.name}
@@ -678,8 +690,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       onMouseDown={handleMouseDown}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!draggingTask) {
-                          !compact && setEditingTask(task);
+                        if (!hasDragged && !compact) {
+                          setEditingTask(task);
                         }
                       }}
                     >
