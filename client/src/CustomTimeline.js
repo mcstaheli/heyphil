@@ -257,7 +257,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       {
         id: '8',
         name: 'Loan Approval',
-        type: 'milestone',
+        type: 'event',
         date: '2026-04-10',
         owner: 'Bank',
         parentId: '5',
@@ -823,12 +823,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               >
                 <option value="task">Task</option>
                 <option value="phase">Phase</option>
-                <option value="milestone">Milestone</option>
                 <option value="event">Event</option>
               </select>
             </label>
 
-            {editingTask.type !== 'milestone' && editingTask.type !== 'event' && (
+            {editingTask.type !== 'event' && (
               <>
                 <label>
                   Start Date:
