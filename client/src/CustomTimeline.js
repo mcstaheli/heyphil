@@ -461,19 +461,56 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
   const dateColumns = getDateColumns();
   
+  // Auto-calculate phase dates and progress from children
+  const calculatePhaseMetrics = () => {
+    const updatedTasks = [...tasks];
+    
+    updatedTasks.forEach(task => {
+      if (task.type === 'phase') {
+        const children = tasks.filter(t => t.parentId === task.id && t.type !== 'milestone' && t.type !== 'event');
+        
+        if (children.length > 0) {
+          // Calculate start date (earliest child start)
+          const earliestStart = children.reduce((earliest, child) => {
+            const childStart = new Date(child.start);
+            return childStart < earliest ? childStart : earliest;
+          }, new Date(children[0].start));
+          
+          // Calculate end date (latest child end)
+          const latestEnd = children.reduce((latest, child) => {
+            const childEnd = new Date(child.end);
+            return childEnd > latest ? childEnd : latest;
+          }, new Date(children[0].end));
+          
+          // Calculate average progress
+          const avgProgress = children.reduce((sum, child) => sum + (child.progress || 0), 0) / children.length;
+          
+          task.start = earliestStart.toISOString().split('T')[0];
+          task.end = latestEnd.toISOString().split('T')[0];
+          task.progress = Math.round(avgProgress);
+        }
+      }
+    });
+    
+    return updatedTasks;
+  };
+  
+  // Apply phase calculations
+  const calculatedTasks = calculatePhaseMetrics();
+  
   // Organize tasks hierarchically
   const organizeHierarchy = () => {
     const hierarchy = [];
-    const phases = tasks.filter(t => t.type === 'phase');
+    const phases = calculatedTasks.filter(t => t.type === 'phase');
     
     phases.forEach(phase => {
       hierarchy.push(phase);
-      const children = tasks.filter(t => t.parentId === phase.id);
+      const children = calculatedTasks.filter(t => t.parentId === phase.id);
       hierarchy.push(...children);
     });
     
     // Add any orphaned tasks
-    const orphans = tasks.filter(t => !t.parentId && t.type !== 'phase');
+    const orphans = calculatedTasks.filter(t => !t.parentId && t.type !== 'phase');
     hierarchy.push(...orphans);
     
     return hierarchy;
@@ -794,6 +831,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
               const handleMouseDown = (e) => {
                 if (compact) return;
+                if (isPhase) return; // Phases are read-only
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -835,7 +873,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         left: `${position.left}%`,
                         width: isMilestone ? '4px' : `${position.width}%`,
                         backgroundColor: getTaskColor(task),
-                        cursor: compact ? 'default' : 'grab',
+                        cursor: compact || isPhase ? 'default' : 'grab',
                         borderLeft: hasDependencies ? '3px solid rgba(0, 0, 0, 0.2)' : 'none'
                       }}
                       onMouseDown={handleMouseDown}
@@ -867,8 +905,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                           {!compact && position.width > 5 && (
                             <div className="timeline-bar-label">{task.progress}%</div>
                           )}
-                          {/* Resize Handle */}
-                          {!compact && (
+                          {/* Resize Handle - disabled for phases */}
+                          {!compact && !isPhase && (
                             <div 
                               className="timeline-resize-handle"
                               onMouseDown={(e) => {
@@ -936,8 +974,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     value={editingTask.start}
                     min={getMinStartDate(editingTask)}
                     onChange={(e) => setEditingTask({ ...editingTask, start: e.target.value })}
+                    disabled={editingTask.type === 'phase'}
                   />
-                  {editingTask.dependencies && editingTask.dependencies.length > 0 && (
+                  {editingTask.type === 'phase' && (
+                    <small style={{ display: 'block', marginTop: '4px', color: '#6b7280', fontSize: '11px' }}>
+                      📊 Auto-calculated from child tasks
+                    </small>
+                  )}
+                  {editingTask.dependencies && editingTask.dependencies.length > 0 && editingTask.type !== 'phase' && (
                     <small style={{ display: 'block', marginTop: '4px', color: '#ef4444', fontSize: '11px' }}>
                       ⚠️ Cannot start before dependencies finish
                     </small>
@@ -957,10 +1001,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       newEnd.setDate(newEnd.getDate() + days);
                       setEditingTask({ ...editingTask, end: newEnd.toISOString().split('T')[0] });
                     }}
+                    disabled={editingTask.type === 'phase'}
                   />
-                  <small style={{ display: 'block', marginTop: '4px', color: '#6b7280', fontSize: '11px' }}>
-                    Or set end date below
-                  </small>
+                  {editingTask.type !== 'phase' && (
+                    <small style={{ display: 'block', marginTop: '4px', color: '#6b7280', fontSize: '11px' }}>
+                      Or set end date below
+                    </small>
+                  )}
                 </label>
 
                 <label>
@@ -970,6 +1017,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     value={editingTask.end}
                     min={editingTask.start}
                     onChange={(e) => setEditingTask({ ...editingTask, end: e.target.value })}
+                    disabled={editingTask.type === 'phase'}
                   />
                 </label>
 
@@ -981,8 +1029,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     max="100"
                     value={editingTask.progress}
                     onChange={(e) => setEditingTask({ ...editingTask, progress: parseInt(e.target.value) })}
+                    disabled={editingTask.type === 'phase'}
                   />
                   <span>{editingTask.progress}%</span>
+                  {editingTask.type === 'phase' && (
+                    <small style={{ display: 'block', marginTop: '4px', color: '#6b7280', fontSize: '11px' }}>
+                      📊 Average of child tasks
+                    </small>
+                  )}
                 </label>
               </>
             )}
