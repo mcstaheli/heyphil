@@ -3,6 +3,8 @@
 ## What This Is
 Personal project management and productivity tool with multiple apps:
 - **Project Board**: Kanban-style project pipeline with 11 stages
+- **Custom Timeline**: Gantt-style timeline with drag-drop, dependencies, phases
+- **Org Charts**: Organization chart builder (separate app)
 - Email Triage: (planned)
 
 ## Stack
@@ -17,8 +19,32 @@ Personal project management and productivity tool with multiple apps:
   - Assets (blue, after IC - Close)
   - IC - Assets (gray, after Assets)
 
+## Custom Timeline (2026-03-18)
+**Features:**
+- Gantt-style timeline view with drag-and-drop
+- Task types: Phase, Task, Milestone, Event
+- Hierarchical organization (phases contain tasks)
+- Dependency arrows between tasks
+- Owner avatars with custom colors
+- Progress bars with percentage display
+- Drag to reposition tasks (respects dependencies)
+- Resize to adjust duration
+- Drag handle to reorder tasks between phases
+
+**Recent UX Improvements:**
+- Removed zoom/scale during drag (was making precision difficult)
+- Compact date headers (single-letter day names: S/M/T/W/T/F/S)
+- Fixed drag-drop between phases (updates parentId correctly)
+- More visible drag handles (30% opacity vs hidden)
+- Better resize sensitivity (40px per day vs 60px)
+- Enhanced drop target indicator (blue border + subtle background)
+- More prominent resize handles (always slightly visible)
+
 ## Key Files
 - `/client/src/App.js` - Main React app with Project Board component
+- `/client/src/CustomTimeline.js` - Timeline/Gantt component
+- `/client/src/CustomTimeline.css` - Timeline styles
+- `/client/src/OrgCharts.js` - Organization chart builder
 - `/server/index.js` - API server with auth and board endpoints
 - `/server/origination-data.js` - Google Sheets integration (backend uses 'origination' naming)
 
