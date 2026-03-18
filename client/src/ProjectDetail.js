@@ -6,6 +6,7 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
   const [project, setProject] = useState(null);
   const [activeModal, setActiveModal] = useState(null);
   const [people, setPeople] = useState({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Load project data
@@ -36,6 +37,7 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
         credentials: 'include'
       });
       const data = await response.json();
+      console.log('People data from API:', data.people);
       setPeople(data.people || {});
     } catch (error) {
       console.error('Failed to load people:', error);

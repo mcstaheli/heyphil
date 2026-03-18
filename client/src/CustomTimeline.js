@@ -395,6 +395,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             
             const ownerPhotoUrl = task.owner && people[task.owner];
             
+            // Debug logging
+            if (task.owner && index === 1) {
+              console.log('Task owner:', task.owner);
+              console.log('People keys:', Object.keys(people));
+              console.log('Photo URL:', ownerPhotoUrl);
+            }
+            
             return (
               <div 
                 key={task.id} 
@@ -409,6 +416,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         alt={task.owner}
                         className="owner-avatar owner-avatar-image"
                         title={task.owner}
+                        onError={(e) => {
+                          console.error('Failed to load image:', ownerPhotoUrl);
+                          e.target.style.display = 'none';
+                        }}
                       />
                     ) : (
                       <div 
