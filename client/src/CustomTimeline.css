@@ -143,6 +143,7 @@
 
 .timeline-task-row.drop-target {
   border-top: 3px solid #667eea;
+  background: rgba(102, 126, 234, 0.1);
 }
 
 .task-row-content {
@@ -236,13 +237,14 @@
   flex: 1 1 0;
   min-width: 0;
   width: 0;
-  padding: 8px 4px;
+  padding: 6px 2px;
   text-align: center;
   font-size: 11px;
   font-weight: 600;
   color: #6c757d;
   border-right: 1px solid #e9ecef;
   white-space: nowrap;
+  overflow: hidden;
 }
 
 .timeline-date-header.weekend {
@@ -294,10 +296,10 @@
   right: -4px;
   top: 0;
   bottom: 0;
-  width: 8px;
+  width: 10px;
   cursor: ew-resize;
-  background: rgba(255, 255, 255, 0.3);
-  opacity: 0;
+  background: rgba(255, 255, 255, 0.4);
+  opacity: 0.3;
   transition: opacity 0.2s;
   z-index: 3;
 }
@@ -307,7 +309,8 @@
 }
 
 .timeline-resize-handle:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.7);
+  width: 12px;
 }
 
 /* Resize Tooltip */
