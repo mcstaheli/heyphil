@@ -45,8 +45,29 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       const task = tasks.find(t => t.id === draggingTask);
       if (!task) return;
 
-      const newStartDate = new Date(dragStartDate);
+      let newStartDate = new Date(dragStartDate);
       newStartDate.setDate(newStartDate.getDate() + deltaDays);
+
+      // Check dependency constraints
+      if (task.dependencies && task.dependencies.length > 0) {
+        const latestDepEndDate = task.dependencies.reduce((latest, depId) => {
+          const depTask = tasks.find(t => t.id === depId);
+          if (!depTask) return latest;
+          
+          const depEnd = depTask.type === 'milestone' ? new Date(depTask.date) : new Date(depTask.end);
+          depEnd.setHours(0, 0, 0, 0);
+          return depEnd > latest ? depEnd : latest;
+        }, new Date(0));
+        
+        // Add one day buffer after dependency
+        const minStartDate = new Date(latestDepEndDate);
+        minStartDate.setDate(minStartDate.getDate() + 1);
+        
+        // Constrain to minimum date
+        if (newStartDate < minStartDate) {
+          newStartDate = minStartDate;
+        }
+      }
 
       if (task.type === 'milestone') {
         updateTask(task.id, {
@@ -374,6 +395,26 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   };
   
   const dependencyArrows = getDependencyArrows();
+  
+  // Get minimum allowed start date for a task based on dependencies
+  const getMinStartDate = (task) => {
+    if (!task.dependencies || task.dependencies.length === 0) return null;
+    
+    const latestDepEndDate = task.dependencies.reduce((latest, depId) => {
+      const depTask = tasks.find(t => t.id === depId);
+      if (!depTask) return latest;
+      
+      const depEnd = depTask.type === 'milestone' ? new Date(depTask.date) : new Date(depTask.end);
+      depEnd.setHours(0, 0, 0, 0);
+      return depEnd > latest ? depEnd : latest;
+    }, new Date(0));
+    
+    // Add one day buffer
+    const minDate = new Date(latestDepEndDate);
+    minDate.setDate(minDate.getDate() + 1);
+    
+    return minDate.toISOString().split('T')[0];
+  };
 
   return (
     <div className={`custom-timeline ${compact ? 'compact' : ''}`}>
@@ -555,15 +596,18 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 setDragStartDate(task.type === 'milestone' ? new Date(task.date) : new Date(task.start));
               };
 
+              const hasDependencies = task.dependencies && task.dependencies.length > 0;
+
               return (
                 <div key={task.id} className="timeline-row">
                   <div 
-                    className={`timeline-bar ${task.type} ${draggingTask === task.id ? 'dragging' : ''}`}
+                    className={`timeline-bar ${task.type} ${draggingTask === task.id ? 'dragging' : ''} ${hasDependencies ? 'has-dependencies' : ''}`}
                     style={{
                       left: `${position.left}%`,
                       width: isMilestone ? '4px' : `${position.width}%`,
                       backgroundColor: task.color || (isPhase ? '#48bb78' : '#667eea'),
-                      cursor: compact ? 'default' : 'grab'
+                      cursor: compact ? 'default' : 'grab',
+                      borderLeft: hasDependencies ? '3px solid rgba(0, 0, 0, 0.2)' : 'none'
                     }}
                     onMouseDown={handleMouseDown}
                     onClick={(e) => {
@@ -631,8 +675,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                   <input
                     type="date"
                     value={editingTask.start}
+                    min={getMinStartDate(editingTask)}
                     onChange={(e) => setEditingTask({ ...editingTask, start: e.target.value })}
                   />
+                  {editingTask.dependencies && editingTask.dependencies.length > 0 && (
+                    <small style={{ display: 'block', marginTop: '4px', color: '#ef4444', fontSize: '11px' }}>
+                      ⚠️ Cannot start before dependencies finish
+                    </small>
+                  )}
                 </label>
 
                 <label>
@@ -640,6 +690,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                   <input
                     type="date"
                     value={editingTask.end}
+                    min={editingTask.start}
                     onChange={(e) => setEditingTask({ ...editingTask, end: e.target.value })}
                   />
                 </label>
@@ -664,8 +715,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 <input
                   type="date"
                   value={editingTask.date}
+                  min={getMinStartDate(editingTask)}
                   onChange={(e) => setEditingTask({ ...editingTask, date: e.target.value })}
                 />
+                {editingTask.dependencies && editingTask.dependencies.length > 0 && (
+                  <small style={{ display: 'block', marginTop: '4px', color: '#ef4444', fontSize: '11px' }}>
+                    ⚠️ Cannot occur before dependencies finish
+                  </small>
+                )}
               </label>
             )}
 
