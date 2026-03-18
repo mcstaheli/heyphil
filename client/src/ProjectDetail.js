@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './ProjectDetail.css';
 import ProjectGantt from './ProjectGantt';
+import ProjectGanttEmbed from './ProjectGanttEmbed';
 
 function ProjectDetail({ projectId, onClose, currentUser }) {
   const [project, setProject] = useState(null);
@@ -87,28 +88,39 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
             </div>
           </div>
 
-          {/* Module Cards */}
-          <div className="modules-grid">
-            {modules.map(module => (
-              <div 
-                key={module.id}
-                className="module-card"
-                onClick={() => setActiveModal(module.id)}
-              >
-                <div className="module-icon">{module.icon}</div>
-                <div className="module-name">{module.name}</div>
-                <div className="module-description">{module.description}</div>
+          {/* Main Content: Timeline + Sidebar */}
+          <div className="project-main-content">
+            {/* Timeline (Gantt Chart) - Main Area */}
+            <div className="timeline-main-section">
+              <div className="timeline-header">
+                <h2>📅 Project Timeline</h2>
+                <div className="timeline-controls">
+                  <button className="timeline-btn" onClick={() => setActiveModal('timeline')}>
+                    ⚙️ Advanced View
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
+              <div className="timeline-preview">
+                <ProjectGanttEmbed projectId={projectId} />
+              </div>
+            </div>
 
-          {/* Next Actions (Placeholder) */}
-          <div className="next-actions-section">
-            <h3>Next Actions</h3>
-            <div className="next-actions-list">
-              <div className="next-action-placeholder">
-                Click Timeline to add tasks and milestones
-              </div>
+            {/* Quick Access Modules - Sidebar */}
+            <div className="modules-sidebar">
+              <h3>Quick Access</h3>
+              {modules.filter(m => m.id !== 'timeline').map(module => (
+                <div 
+                  key={module.id}
+                  className="module-card-compact"
+                  onClick={() => setActiveModal(module.id)}
+                >
+                  <div className="module-icon-small">{module.icon}</div>
+                  <div className="module-info">
+                    <div className="module-name-small">{module.name}</div>
+                    <div className="module-description-small">{module.description}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
