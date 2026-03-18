@@ -441,7 +441,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         {/* Task List Column */}
         <div className="timeline-tasks-column">
           <div className="timeline-header-cell">Tasks</div>
-          {displayTasks.map(task => {
+          {displayTasks.map((task, taskIndex) => {
             const getOwnerInitials = (name) => {
               if (!name) return '';
               return name.split(' ').map(n => n[0]).join('').toUpperCase();
@@ -461,7 +461,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             const ownerPhotoUrl = task.owner && people[task.owner];
             
             // Debug logging
-            if (task.owner && index === 1) {
+            if (task.owner && taskIndex === 1) {
               console.log('Task owner:', task.owner);
               console.log('People keys:', Object.keys(people));
               console.log('Photo URL:', ownerPhotoUrl);
