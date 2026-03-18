@@ -350,15 +350,15 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   };
 
   const formatDate = (date, format = 'short') => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
     const dayOfWeek = days[date.getDay()];
     const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
     
     if (format === 'short') {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <div style={{ fontSize: '10px', color: '#94a3b8' }}>{dayOfWeek}</div>
-          <div>{monthDay}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
+          <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '600' }}>{dayOfWeek}</div>
+          <div style={{ fontSize: '11px' }}>{monthDay}</div>
         </div>
       );
     }
@@ -555,15 +555,38 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 onDrop={(e) => {
                   e.preventDefault();
                   if (reorderingTask && reorderTargetIndex !== null) {
-                    const fromIndex = displayTasks.findIndex(t => t.id === reorderingTask);
-                    const toIndex = reorderTargetIndex;
+                    const draggedTask = tasks.find(t => t.id === reorderingTask);
+                    const targetTask = displayTasks[reorderTargetIndex];
                     
-                    if (fromIndex !== toIndex) {
-                      const newTasks = [...tasks];
-                      const [movedTask] = newTasks.splice(fromIndex, 1);
-                      newTasks.splice(toIndex, 0, movedTask);
-                      setTasks(newTasks);
+                    if (!draggedTask || !targetTask || draggedTask.id === targetTask.id) {
+                      setReorderingTask(null);
+                      setReorderTargetIndex(null);
+                      return;
                     }
+                    
+                    // Can't drag a phase into its own children
+                    if (draggedTask.type === 'phase' && targetTask.parentId === draggedTask.id) {
+                      setReorderingTask(null);
+                      setReorderTargetIndex(null);
+                      return;
+                    }
+                    
+                    // Determine new parent
+                    let newParentId = null;
+                    if (targetTask.type === 'phase') {
+                      // Dropping onto a phase - make it a child
+                      newParentId = targetTask.id;
+                    } else if (targetTask.parentId) {
+                      // Dropping onto a child - use same parent
+                      newParentId = targetTask.parentId;
+                    }
+                    
+                    // Update the task
+                    const newTasks = tasks.map(t => 
+                      t.id === draggedTask.id ? { ...t, parentId: newParentId } : t
+                    );
+                    setTasks(newTasks);
+                    // TODO: Save to API
                   }
                   setReorderingTask(null);
                   setReorderTargetIndex(null);
