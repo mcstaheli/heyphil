@@ -196,16 +196,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     const current = new Date(timelineRange.start);
     const end = new Date(timelineRange.end);
 
+    // Always show daily columns
     while (current <= end) {
       columns.push(new Date(current));
-      
-      if (viewMode === 'day') {
-        current.setDate(current.getDate() + 1);
-      } else if (viewMode === 'week') {
-        current.setDate(current.getDate() + 7);
-      } else if (viewMode === 'month') {
-        current.setMonth(current.getMonth() + 1);
-      }
+      current.setDate(current.getDate() + 1);
     }
 
     return columns;
@@ -235,8 +229,17 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   };
 
   const formatDate = (date, format = 'short') => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayOfWeek = days[date.getDay()];
+    const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
+    
     if (format === 'short') {
-      return `${date.getMonth() + 1}/${date.getDate()}`;
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div style={{ fontSize: '10px', color: '#94a3b8' }}>{dayOfWeek}</div>
+          <div>{monthDay}</div>
+        </div>
+      );
     }
     return date.toLocaleDateString();
   };
@@ -441,6 +444,25 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               ))}
             </div>
 
+            {/* Today Marker - Full Height */}
+            {(() => {
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              const totalDays = getDaysBetween(timelineRange.start, timelineRange.end);
+              const todayOffset = getDaysBetween(timelineRange.start, today);
+              const todayPercent = (todayOffset / totalDays) * 100;
+              
+              return todayPercent >= 0 && todayPercent <= 100 ? (
+                <div 
+                  className="timeline-today-marker-full" 
+                  style={{ 
+                    left: `${todayPercent}%`,
+                    height: displayTasks.length * 50 + 40
+                  }} 
+                />
+              ) : null;
+            })()}
+
             {/* Dependency Arrows SVG Layer */}
             <svg className="dependency-arrows-layer" style={{ 
               position: 'absolute', 
@@ -541,18 +563,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       </>
                     )}
                   </div>
-                  
-                  {/* Today Marker (render once on first row) */}
-                  {index === 0 && (() => {
-                    const today = new Date();
-                    const totalDays = getDaysBetween(timelineRange.start, timelineRange.end);
-                    const todayOffset = getDaysBetween(timelineRange.start, today);
-                    const todayPercent = (todayOffset / totalDays) * 100;
-                    
-                    return todayPercent >= 0 && todayPercent <= 100 ? (
-                      <div className="timeline-today-marker" style={{ left: `${todayPercent}%` }} />
-                    ) : null;
-                  })()}
                 </div>
               );
             })}

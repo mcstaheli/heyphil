@@ -173,29 +173,40 @@
   z-index: 10;
 }
 
+.timeline-grid::before {
+  content: '';
+  position: absolute;
+  top: 40px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    #f1f5f9 0px,
+    #f1f5f9 1px,
+    transparent 1px,
+    transparent 40px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
 .timeline-date-header {
   flex: 1;
-  min-width: 80px;
-  padding: 12px 8px;
+  min-width: 40px;
+  padding: 8px 4px;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: #6c757d;
-  border-right: 1px solid #f1f5f9;
+  border-right: 1px solid #e9ecef;
+  white-space: nowrap;
 }
 
 .timeline-row {
   position: relative;
   height: 50px;
   border-bottom: 1px solid #e9ecef;
-  background: 
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent calc(12.5% - 1px),
-      #f8f9fa calc(12.5% - 1px),
-      #f8f9fa 12.5%
-    );
 }
 
 /* Timeline Bars */
@@ -257,30 +268,30 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-/* Today Marker */
-.timeline-today-marker {
+/* Today Marker - Full Height */
+.timeline-today-marker-full {
   position: absolute;
   top: 0;
-  bottom: 0;
   width: 2px;
   background: #ef4444;
   z-index: 8;
   pointer-events: none;
 }
 
-.timeline-today-marker::before {
+.timeline-today-marker-full::before {
   content: 'TODAY';
   position: absolute;
-  top: -20px;
+  top: 8px;
   left: 50%;
   transform: translateX(-50%);
   background: #ef4444;
   color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
+  padding: 3px 8px;
+  border-radius: 4px;
   font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* Edit Panel */
