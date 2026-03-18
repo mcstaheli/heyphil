@@ -349,16 +349,19 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     return { left: leftPercent, width: widthPercent };
   };
 
-  const formatDate = (date, format = 'short') => {
-    const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-    const dayOfWeek = days[date.getDay()];
-    const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
+  const formatDate = (date, prevDate = null, format = 'short') => {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const isMonthStart = !prevDate || date.getMonth() !== prevDate.getMonth();
     
     if (format === 'short') {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
-          <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '600' }}>{dayOfWeek}</div>
-          <div style={{ fontSize: '11px' }}>{monthDay}</div>
+          {isMonthStart && (
+            <div style={{ fontSize: '10px', color: '#667eea', fontWeight: '700', marginBottom: '2px' }}>
+              {monthNames[date.getMonth()]}
+            </div>
+          )}
+          <div style={{ fontSize: '13px', fontWeight: '600' }}>{date.getDate()}</div>
         </div>
       );
     }
@@ -746,9 +749,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             <div className="timeline-header-row">
               {dateColumns.map((date, i) => {
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6; // Sunday = 0, Saturday = 6
+                const prevDate = i > 0 ? dateColumns[i - 1] : null;
                 return (
                   <div key={i} className={`timeline-date-header ${isWeekend ? 'weekend' : ''}`}>
-                    {formatDate(date)}
+                    {formatDate(date, prevDate)}
                   </div>
                 );
               })}
