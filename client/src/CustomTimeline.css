@@ -100,6 +100,14 @@
   background: #fef3c7;
 }
 
+.timeline-task-row.child-task {
+  background: #fafafa;
+}
+
+.timeline-task-row.child-task:hover {
+  background: #f0f0f0;
+}
+
 .task-name {
   font-size: 14px;
   font-weight: 500;
@@ -112,6 +120,15 @@
   color: #6c757d;
 }
 
+.task-dependencies {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* Timeline Grid (Right Side) */
 .timeline-grid-wrapper {
   flex: 1;
@@ -121,6 +138,13 @@
 .timeline-grid {
   position: relative;
   min-width: 100%;
+}
+
+.dependency-arrows-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
 }
 
 .timeline-header-row {
@@ -168,6 +192,7 @@
   transition: all 0.2s;
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 2;
 }
 
 .timeline-bar:hover {

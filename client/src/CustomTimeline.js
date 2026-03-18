@@ -28,7 +28,8 @@ function CustomTimeline({ projectId, compact = false }) {
         end: '2026-03-15',
         progress: 80,
         owner: '',
-        color: '#48bb78'
+        color: '#48bb78',
+        dependencies: []
       },
       {
         id: '2',
@@ -38,7 +39,8 @@ function CustomTimeline({ projectId, compact = false }) {
         end: '2026-03-03',
         progress: 100,
         owner: 'Chad',
-        parentId: '1'
+        parentId: '1',
+        dependencies: []
       },
       {
         id: '3',
@@ -48,7 +50,8 @@ function CustomTimeline({ projectId, compact = false }) {
         end: '2026-03-08',
         progress: 100,
         owner: 'Tracy',
-        parentId: '1'
+        parentId: '1',
+        dependencies: ['2']
       },
       {
         id: '4',
@@ -58,7 +61,8 @@ function CustomTimeline({ projectId, compact = false }) {
         end: '2026-03-15',
         progress: 75,
         owner: 'Greg',
-        parentId: '1'
+        parentId: '1',
+        dependencies: ['3']
       },
       {
         id: '5',
@@ -68,7 +72,8 @@ function CustomTimeline({ projectId, compact = false }) {
         end: '2026-04-10',
         progress: 30,
         owner: '',
-        color: '#667eea'
+        color: '#667eea',
+        dependencies: ['1']
       },
       {
         id: '6',
@@ -78,7 +83,8 @@ function CustomTimeline({ projectId, compact = false }) {
         end: '2026-03-20',
         progress: 100,
         owner: 'Tracy',
-        parentId: '5'
+        parentId: '5',
+        dependencies: []
       },
       {
         id: '7',
@@ -88,7 +94,8 @@ function CustomTimeline({ projectId, compact = false }) {
         end: '2026-04-05',
         progress: 40,
         owner: 'Bank',
-        parentId: '5'
+        parentId: '5',
+        dependencies: ['6']
       },
       {
         id: '8',
@@ -96,7 +103,8 @@ function CustomTimeline({ projectId, compact = false }) {
         type: 'milestone',
         date: '2026-04-10',
         owner: 'Bank',
-        parentId: '5'
+        parentId: '5',
+        dependencies: ['7']
       }
     ];
     setTasks(mockTasks);
@@ -185,7 +193,8 @@ function CustomTimeline({ projectId, compact = false }) {
       start: new Date().toISOString().split('T')[0],
       end: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       progress: 0,
-      owner: ''
+      owner: '',
+      dependencies: []
     };
     setTasks([...tasks, newTask]);
     setEditingTask(newTask);
@@ -203,7 +212,63 @@ function CustomTimeline({ projectId, compact = false }) {
   };
 
   const dateColumns = getDateColumns();
-  const displayTasks = tasks.filter(t => !t.parentId || tasks.find(p => p.id === t.parentId)?.type === 'phase');
+  
+  // Organize tasks hierarchically
+  const organizeHierarchy = () => {
+    const hierarchy = [];
+    const phases = tasks.filter(t => t.type === 'phase');
+    
+    phases.forEach(phase => {
+      hierarchy.push(phase);
+      const children = tasks.filter(t => t.parentId === phase.id);
+      hierarchy.push(...children);
+    });
+    
+    // Add any orphaned tasks
+    const orphans = tasks.filter(t => !t.parentId && t.type !== 'phase');
+    hierarchy.push(...orphans);
+    
+    return hierarchy;
+  };
+  
+  const displayTasks = organizeHierarchy();
+  
+  // Calculate dependency arrow positions
+  const getDependencyArrows = () => {
+    const arrows = [];
+    
+    displayTasks.forEach((task, taskIndex) => {
+      if (!task.dependencies || task.dependencies.length === 0) return;
+      
+      task.dependencies.forEach(depId => {
+        const depTask = tasks.find(t => t.id === depId);
+        if (!depTask) return;
+        
+        const depIndex = displayTasks.findIndex(t => t.id === depId);
+        if (depIndex === -1) return;
+        
+        const fromPos = getTaskPosition(depTask);
+        const toPos = getTaskPosition(task);
+        
+        // Calculate row positions (50px per row)
+        const fromY = depIndex * 50 + 25;
+        const toY = taskIndex * 50 + 25;
+        
+        arrows.push({
+          fromX: fromPos.left + fromPos.width,
+          fromY: fromY,
+          toX: toPos.left,
+          toY: toY,
+          fromTask: depTask.name,
+          toTask: task.name
+        });
+      });
+    });
+    
+    return arrows;
+  };
+  
+  const dependencyArrows = getDependencyArrows();
 
   return (
     <div className={`custom-timeline ${compact ? 'compact' : ''}`}>
@@ -225,15 +290,24 @@ function CustomTimeline({ projectId, compact = false }) {
           {displayTasks.map(task => (
             <div 
               key={task.id} 
-              className={`timeline-task-row ${task.type}`}
+              className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''}`}
               onClick={() => !compact && setEditingTask(task)}
+              style={{
+                paddingLeft: task.parentId ? '32px' : '16px'
+              }}
             >
               <div className="task-name">
                 {task.type === 'phase' && '📁 '}
                 {task.type === 'milestone' && '🏁 '}
+                {task.parentId && '└─ '}
                 {task.name}
               </div>
               {task.owner && <div className="task-owner">{task.owner}</div>}
+              {task.dependencies && task.dependencies.length > 0 && (
+                <div className="task-dependencies" title={`Depends on: ${task.dependencies.join(', ')}`}>
+                  ⬅️ {task.dependencies.length}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -249,6 +323,55 @@ function CustomTimeline({ projectId, compact = false }) {
                 </div>
               ))}
             </div>
+
+            {/* Dependency Arrows SVG Layer */}
+            <svg className="dependency-arrows-layer" style={{ 
+              position: 'absolute', 
+              top: 0, 
+              left: 0, 
+              width: '100%', 
+              height: displayTasks.length * 50 + 40,
+              pointerEvents: 'none',
+              zIndex: 1
+            }}>
+              <defs>
+                <marker
+                  id="arrowhead"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="8"
+                  refY="3"
+                  orient="auto"
+                  markerUnits="strokeWidth"
+                >
+                  <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8" />
+                </marker>
+              </defs>
+              {dependencyArrows.map((arrow, i) => {
+                const containerWidth = document.querySelector('.timeline-grid')?.offsetWidth || 1000;
+                
+                const x1 = (arrow.fromX / 100) * containerWidth;
+                const x2 = (arrow.toX / 100) * containerWidth;
+                const y1 = arrow.fromY + 40; // offset for header
+                const y2 = arrow.toY + 40;
+                
+                // Calculate control points for curved arrow
+                const midX = (x1 + x2) / 2;
+                
+                return (
+                  <g key={i}>
+                    <path
+                      d={`M ${x1} ${y1} Q ${midX} ${y1}, ${midX} ${(y1 + y2) / 2} Q ${midX} ${y2}, ${x2} ${y2}`}
+                      stroke="#94a3b8"
+                      strokeWidth="2"
+                      fill="none"
+                      markerEnd="url(#arrowhead)"
+                      opacity="0.6"
+                    />
+                  </g>
+                );
+              })}
+            </svg>
 
             {/* Task Bars */}
             {displayTasks.map((task, index) => {
@@ -390,6 +513,28 @@ function CustomTimeline({ projectId, compact = false }) {
                 <option value="Greg">Greg</option>
                 <option value="Scott">Scott</option>
               </select>
+            </label>
+
+            <label>
+              Dependencies (tasks that must finish first):
+              <select
+                multiple
+                value={editingTask.dependencies || []}
+                onChange={(e) => {
+                  const selected = Array.from(e.target.selectedOptions, option => option.value);
+                  setEditingTask({ ...editingTask, dependencies: selected });
+                }}
+                style={{ height: '80px' }}
+              >
+                {tasks.filter(t => t.id !== editingTask.id).map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <small style={{ display: 'block', marginTop: '4px', color: '#6b7280' }}>
+                Hold Cmd/Ctrl to select multiple
+              </small>
             </label>
 
             <div className="timeline-edit-actions">
