@@ -150,45 +150,12 @@
   min-height: 600px;
 }
 
-.timeline-header {
-  padding: 20px 24px;
-  border-bottom: 1px solid #e9ecef;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #f8f9fa;
+.timeline-modal {
+  height: 85vh;
 }
 
-.timeline-header h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #212529;
-}
-
-.timeline-controls {
-  display: flex;
-  gap: 8px;
-}
-
-.timeline-btn {
-  background: white;
-  border: 1px solid #d1d5db;
-  padding: 8px 16px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.timeline-btn:hover {
-  background: #f8f9fa;
-  border-color: #667eea;
-}
-
-.timeline-preview {
-  flex: 1;
+.timeline-modal-body {
+  padding: 0 !important;
   overflow: hidden;
 }
 

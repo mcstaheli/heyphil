@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './ProjectDetail.css';
-import ProjectGantt from './ProjectGantt';
-import ProjectGanttEmbed from './ProjectGanttEmbed';
+import CustomTimeline from './CustomTimeline';
 
 function ProjectDetail({ projectId, onClose, currentUser }) {
   const [project, setProject] = useState(null);
@@ -90,19 +89,9 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
           {/* Main Content: Timeline + Sidebar */}
           <div className="project-main-content">
-            {/* Timeline (Gantt Chart) - Main Area */}
+            {/* Timeline (Custom) - Main Area */}
             <div className="timeline-main-section">
-              <div className="timeline-header">
-                <h2>📅 Project Timeline</h2>
-                <div className="timeline-controls">
-                  <button className="timeline-btn" onClick={() => setActiveModal('timeline')}>
-                    ⚙️ Advanced View
-                  </button>
-                </div>
-              </div>
-              <div className="timeline-preview">
-                <ProjectGanttEmbed projectId={projectId} />
-              </div>
+              <CustomTimeline projectId={projectId} compact={false} />
             </div>
 
             {/* Quick Access Modules - Sidebar */}
@@ -127,10 +116,17 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
         {/* Modals */}
         {activeModal === 'timeline' && (
-          <ProjectGantt 
-            projectId={projectId} 
-            onClose={() => setActiveModal(null)}
-          />
+          <div className="project-modal-overlay" onClick={() => setActiveModal(null)}>
+            <div className="project-modal timeline-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>📅 Timeline - Advanced View</h2>
+                <button onClick={() => setActiveModal(null)}>×</button>
+              </div>
+              <div className="modal-body timeline-modal-body">
+                <CustomTimeline projectId={projectId} compact={false} />
+              </div>
+            </div>
+          </div>
         )}
 
         {activeModal === 'budget' && (
