@@ -128,6 +128,10 @@
   flex-shrink: 0;
 }
 
+.owner-avatar-image {
+  object-fit: cover;
+}
+
 .task-name-simple {
   font-size: 14px;
   font-weight: 500;
@@ -212,6 +216,14 @@
   transform: translateY(-50%) scale(1.02);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   z-index: 5;
+}
+
+.timeline-bar:active,
+.timeline-bar.dragging {
+  cursor: grabbing !important;
+  transform: translateY(-50%) scale(1.05);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+  z-index: 10;
 }
 
 .timeline-bar.phase {

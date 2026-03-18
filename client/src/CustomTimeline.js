@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import './CustomTimeline.css';
 
-function CustomTimeline({ projectId, compact = false }) {
+function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [tasks, setTasks] = useState([]);
   const [viewMode, setViewMode] = useState('week');
   const [editingTask, setEditingTask] = useState(null);
   const [timelineRange, setTimelineRange] = useState({ start: null, end: null });
+  const [draggingTask, setDraggingTask] = useState(null);
+  const [dragStartX, setDragStartX] = useState(null);
+  const [dragStartDate, setDragStartDate] = useState(null);
 
   useEffect(() => {
     loadTasks();
@@ -16,6 +19,59 @@ function CustomTimeline({ projectId, compact = false }) {
       calculateTimelineRange();
     }
   }, [tasks]);
+
+  // Handle drag events
+  useEffect(() => {
+    if (!draggingTask) return;
+
+    const handleMouseMove = (e) => {
+      if (!dragStartX || !dragStartDate || !timelineRange.start || !timelineRange.end) return;
+
+      const gridElement = document.querySelector('.timeline-grid');
+      if (!gridElement) return;
+
+      const gridWidth = gridElement.offsetWidth;
+      const totalDays = getDaysBetween(timelineRange.start, timelineRange.end);
+      
+      const deltaX = e.clientX - dragStartX;
+      const deltaDays = Math.round((deltaX / gridWidth) * totalDays);
+      
+      const task = tasks.find(t => t.id === draggingTask);
+      if (!task) return;
+
+      const newStartDate = new Date(dragStartDate);
+      newStartDate.setDate(newStartDate.getDate() + deltaDays);
+
+      if (task.type === 'milestone') {
+        updateTask(task.id, {
+          date: newStartDate.toISOString().split('T')[0]
+        });
+      } else {
+        const duration = getDaysBetween(new Date(task.start), new Date(task.end));
+        const newEndDate = new Date(newStartDate);
+        newEndDate.setDate(newEndDate.getDate() + duration);
+
+        updateTask(task.id, {
+          start: newStartDate.toISOString().split('T')[0],
+          end: newEndDate.toISOString().split('T')[0]
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setDraggingTask(null);
+      setDragStartX(null);
+      setDragStartDate(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingTask, dragStartX, dragStartDate, tasks, timelineRange]);
 
   const loadTasks = () => {
     // TODO: Load from API
@@ -334,6 +390,8 @@ function CustomTimeline({ projectId, compact = false }) {
               return colors[name] || '#94a3b8';
             };
             
+            const ownerPhotoUrl = task.owner && people[task.owner];
+            
             return (
               <div 
                 key={task.id} 
@@ -342,13 +400,22 @@ function CustomTimeline({ projectId, compact = false }) {
               >
                 <div className="task-row-content">
                   {task.owner && (
-                    <div 
-                      className="owner-avatar"
-                      style={{ backgroundColor: getOwnerColor(task.owner) }}
-                      title={task.owner}
-                    >
-                      {getOwnerInitials(task.owner)}
-                    </div>
+                    ownerPhotoUrl ? (
+                      <img
+                        src={ownerPhotoUrl}
+                        alt={task.owner}
+                        className="owner-avatar owner-avatar-image"
+                        title={task.owner}
+                      />
+                    ) : (
+                      <div 
+                        className="owner-avatar"
+                        style={{ backgroundColor: getOwnerColor(task.owner) }}
+                        title={task.owner}
+                      >
+                        {getOwnerInitials(task.owner)}
+                      </div>
+                    )
                   )}
                   <div className="task-name-simple">
                     {task.parentId && <span className="indent-line">└─ </span>}
@@ -429,18 +496,32 @@ function CustomTimeline({ projectId, compact = false }) {
               const isMilestone = task.type === 'milestone';
               const isPhase = task.type === 'phase';
 
+              const handleMouseDown = (e) => {
+                if (compact) return;
+                e.preventDefault();
+                e.stopPropagation();
+                
+                setDraggingTask(task.id);
+                setDragStartX(e.clientX);
+                setDragStartDate(task.type === 'milestone' ? new Date(task.date) : new Date(task.start));
+              };
+
               return (
                 <div key={task.id} className="timeline-row">
                   <div 
-                    className={`timeline-bar ${task.type}`}
+                    className={`timeline-bar ${task.type} ${draggingTask === task.id ? 'dragging' : ''}`}
                     style={{
                       left: `${position.left}%`,
                       width: isMilestone ? '4px' : `${position.width}%`,
-                      backgroundColor: task.color || (isPhase ? '#48bb78' : '#667eea')
+                      backgroundColor: task.color || (isPhase ? '#48bb78' : '#667eea'),
+                      cursor: compact ? 'default' : 'grab'
                     }}
+                    onMouseDown={handleMouseDown}
                     onClick={(e) => {
                       e.stopPropagation();
-                      !compact && setEditingTask(task);
+                      if (!draggingTask) {
+                        !compact && setEditingTask(task);
+                      }
                     }}
                   >
                     {!isMilestone && (

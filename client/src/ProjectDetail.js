@@ -5,10 +5,12 @@ import CustomTimeline from './CustomTimeline';
 function ProjectDetail({ projectId, onClose, currentUser }) {
   const [project, setProject] = useState(null);
   const [activeModal, setActiveModal] = useState(null);
+  const [people, setPeople] = useState({});
 
   useEffect(() => {
     // Load project data
     fetchProject();
+    fetchPeople();
   }, [projectId]);
 
   const fetchProject = async () => {
@@ -25,6 +27,19 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
       actualSpend: 45200,
       health: 'at_risk'
     });
+  };
+
+  const fetchPeople = async () => {
+    try {
+      const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+      const response = await fetch(`${API_BASE_URL}/api/origination/board`, {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      setPeople(data.people || {});
+    } catch (error) {
+      console.error('Failed to load people:', error);
+    }
   };
 
   if (!project) return <div className="loading">Loading project...</div>;
@@ -91,7 +106,7 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
           <div className="project-main-content">
             {/* Timeline (Custom) - Main Area */}
             <div className="timeline-main-section">
-              <CustomTimeline projectId={projectId} compact={false} />
+              <CustomTimeline projectId={projectId} compact={false} people={people} />
             </div>
 
             {/* Quick Access Modules - Sidebar */}
@@ -123,7 +138,7 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
                 <button onClick={() => setActiveModal(null)}>×</button>
               </div>
               <div className="modal-body timeline-modal-body">
-                <CustomTimeline projectId={projectId} compact={false} />
+                <CustomTimeline projectId={projectId} compact={false} people={people} />
               </div>
             </div>
           </div>
