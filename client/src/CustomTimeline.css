@@ -177,23 +177,7 @@
   z-index: 10;
 }
 
-.timeline-grid::before {
-  content: '';
-  position: absolute;
-  top: 40px;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-image: repeating-linear-gradient(
-    90deg,
-    #e9ecef 0px,
-    #e9ecef 1px,
-    transparent 1px,
-    transparent 40px
-  );
-  pointer-events: none;
-  z-index: 0;
-}
+/* Grid lines are now rendered per-column in the overlay */
 
 .timeline-date-header {
   flex: 1;
