@@ -251,7 +251,7 @@ function CustomTimeline({ projectId, compact = false }) {
             </div>
 
             {/* Task Bars */}
-            {displayTasks.map(task => {
+            {displayTasks.map((task, index) => {
               const position = getTaskPosition(task);
               const isMilestone = task.type === 'milestone';
               const isPhase = task.type === 'phase';
@@ -288,8 +288,8 @@ function CustomTimeline({ projectId, compact = false }) {
                     )}
                   </div>
                   
-                  {/* Today Marker */}
-                  {i === 0 && (() => {
+                  {/* Today Marker (render once on first row) */}
+                  {index === 0 && (() => {
                     const today = new Date();
                     const totalDays = getDaysBetween(timelineRange.start, timelineRange.end);
                     const todayOffset = getDaysBetween(timelineRange.start, today);
