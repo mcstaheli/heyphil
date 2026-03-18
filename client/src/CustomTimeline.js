@@ -365,6 +365,44 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     return date.toLocaleDateString();
   };
 
+  // Get task color, inheriting from parent phase if child task
+  const getTaskColor = (task) => {
+    if (task.color) return task.color;
+    
+    if (task.type === 'phase') {
+      return '#48bb78'; // default green for phases
+    }
+    
+    if (task.type === 'milestone') {
+      return '#f59e0b'; // default orange for milestones
+    }
+    
+    if (task.type === 'event') {
+      if (task.parentId) {
+        const parentPhase = tasks.find(t => t.id === task.parentId);
+        if (parentPhase && parentPhase.color) {
+          return parentPhase.color;
+        }
+      }
+      return '#f59e0b'; // default orange for events
+    }
+    
+    if (task.parentId) {
+      const parentPhase = tasks.find(t => t.id === task.parentId);
+      if (parentPhase && parentPhase.color) {
+        // Return a lighter shade (40% opacity) of parent color for child tasks
+        // Convert hex to rgba for transparency
+        const hex = parentPhase.color.replace('#', '');
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        return `rgba(${r}, ${g}, ${b}, 0.7)`;
+      }
+    }
+    
+    return '#667eea'; // default blue for orphan tasks
+  };
+
   const addTask = () => {
     const newTask = {
       id: String(Date.now()),
@@ -787,7 +825,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       title={task.name}
                     >
                       <div className="event-diamond" style={{
-                        backgroundColor: task.color || '#f59e0b'
+                        backgroundColor: getTaskColor(task)
                       }} />
                     </div>
                   ) : (
@@ -796,7 +834,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       style={{
                         left: `${position.left}%`,
                         width: isMilestone ? '4px' : `${position.width}%`,
-                        backgroundColor: task.color || (isPhase ? '#48bb78' : '#667eea'),
+                        backgroundColor: getTaskColor(task),
                         cursor: compact ? 'default' : 'grab',
                         borderLeft: hasDependencies ? '3px solid rgba(0, 0, 0, 0.2)' : 'none'
                       }}
@@ -823,9 +861,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                             className="timeline-bar-progress"
                             style={{ 
                               width: `${task.progress}%`,
-                              backgroundColor: task.color ? 
-                                `color-mix(in srgb, ${task.color} 80%, black)` : 
-                                (isPhase ? '#38a169' : '#5568d3')
+                              backgroundColor: `color-mix(in srgb, ${getTaskColor(task)} 80%, black)`
                             }}
                           />
                           {!compact && position.width > 5 && (
