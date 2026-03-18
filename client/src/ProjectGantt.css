@@ -1,0 +1,244 @@
+/* Gantt Modal Specific Styles */
+.gantt-modal {
+  width: 95%;
+  max-width: 1600px;
+}
+
+.gantt-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.view-mode-select {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.add-task-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.add-task-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #6c757d;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: #e9ecef;
+  color: #212529;
+}
+
+/* Gantt Body */
+.gantt-body {
+  display: flex;
+  gap: 20px;
+  padding: 0 !important;
+}
+
+.gantt-container {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  background: white;
+}
+
+.gantt-container svg {
+  width: 100%;
+  min-width: 1000px;
+}
+
+/* Frappe Gantt Customizations */
+.gantt .bar-wrapper .bar {
+  fill: #667eea !important;
+}
+
+.gantt .bar-wrapper .bar-progress {
+  fill: #764ba2 !important;
+}
+
+.gantt .bar-wrapper.phase .bar {
+  fill: #48bb78 !important;
+}
+
+.gantt .bar-wrapper.phase .bar-progress {
+  fill: #38a169 !important;
+}
+
+.gantt .bar-wrapper:hover .bar {
+  fill: #5568d3 !important;
+}
+
+.gantt-popup {
+  padding: 16px;
+  max-width: 300px;
+}
+
+.gantt-popup h3 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.gantt-popup p {
+  margin: 6px 0;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.gantt-popup button {
+  margin-top: 12px;
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.gantt-popup button:hover {
+  background: #5568d3;
+}
+
+/* Task Edit Panel */
+.task-edit-panel {
+  width: 350px;
+  background: #f8f9fa;
+  padding: 24px;
+  overflow-y: auto;
+  border-left: 1px solid #e9ecef;
+}
+
+.task-edit-panel h3 {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #212529;
+}
+
+.task-form label {
+  display: block;
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.task-form input[type="text"],
+.task-form input[type="date"],
+.task-form select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+.task-form input[type="text"]:focus,
+.task-form input[type="date"]:focus,
+.task-form select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.task-form input[type="range"] {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.task-form span {
+  display: inline-block;
+  margin-left: 8px;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.task-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.save-btn,
+.delete-btn,
+.cancel-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.save-btn {
+  background: #10b981;
+  color: white;
+}
+
+.save-btn:hover {
+  background: #059669;
+}
+
+.delete-btn {
+  background: #ef4444;
+  color: white;
+}
+
+.delete-btn:hover {
+  background: #dc2626;
+}
+
+.cancel-btn {
+  background: #6b7280;
+  color: white;
+}
+
+.cancel-btn:hover {
+  background: #4b5563;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .gantt-body {
+    flex-direction: column;
+  }
+
+  .task-edit-panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #e9ecef;
+  }
+}

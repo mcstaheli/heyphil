@@ -10,6 +10,8 @@ function OrgCharts({ user, onBack }) {
   const [charts, setCharts] = useState([]);
   const [currentChart, setCurrentChart] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sortField, setSortField] = useState('updatedAt'); // 'name', 'nodeCount', 'connectionCount', 'updatedAt'
+  const [sortDirection, setSortDirection] = useState('desc'); // 'asc' or 'desc'
   
   // Canvas state
   const [nodes, setNodes] = useState([]);
@@ -75,6 +77,50 @@ function OrgCharts({ user, onBack }) {
       console.error('Failed to load charts:', error);
     }
     setLoading(false);
+  };
+
+  const handleSortToggle = (field) => {
+    if (sortField === field) {
+      // Toggle direction if clicking the same field
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New field - default to desc for dates/numbers, asc for name
+      setSortField(field);
+      setSortDirection(field === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const getSortedCharts = () => {
+    const sorted = [...charts].sort((a, b) => {
+      let aVal, bVal;
+      
+      switch(sortField) {
+        case 'name':
+          aVal = (a.name || '').toLowerCase();
+          bVal = (b.name || '').toLowerCase();
+          break;
+        case 'nodeCount':
+          aVal = a.nodeCount || 0;
+          bVal = b.nodeCount || 0;
+          break;
+        case 'connectionCount':
+          aVal = a.connectionCount || 0;
+          bVal = b.connectionCount || 0;
+          break;
+        case 'updatedAt':
+          aVal = new Date(a.updatedAt).getTime();
+          bVal = new Date(b.updatedAt).getTime();
+          break;
+        default:
+          return 0;
+      }
+      
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    return sorted;
   };
 
   const createChart = async () => {
@@ -916,20 +962,38 @@ function OrgCharts({ user, onBack }) {
               </div>
             </div>
           ) : (
-            <div className="chart-list">
-              {charts.map(chart => (
-                <div key={chart.id} className="chart-item">
-                  <div className="chart-item-main" onClick={() => openChart(chart.id)}>
+            <>
+              <div className="chart-list-header">
+                <div className="chart-header-item chart-header-name" onClick={() => handleSortToggle('name')}>
+                  Name {sortField === 'name' && (sortDirection === 'asc' ? '▲' : '▼')}
+                </div>
+                <div className="chart-header-item chart-header-stats" onClick={() => handleSortToggle('nodeCount')}>
+                  Nodes {sortField === 'nodeCount' && (sortDirection === 'asc' ? '▲' : '▼')}
+                </div>
+                <div className="chart-header-item chart-header-stats" onClick={() => handleSortToggle('connectionCount')}>
+                  Connections {sortField === 'connectionCount' && (sortDirection === 'asc' ? '▲' : '▼')}
+                </div>
+                <div className="chart-header-item chart-header-date" onClick={() => handleSortToggle('updatedAt')}>
+                  Last Edited {sortField === 'updatedAt' && (sortDirection === 'asc' ? '▲' : '▼')}
+                </div>
+              </div>
+              <div className="chart-list">
+                {getSortedCharts().map(chart => (
+                <div key={chart.id} className="chart-item" onClick={() => openChart(chart.id)}>
+                  <div className="chart-item-main">
                     <div className="chart-item-icon">📊</div>
                     <div className="chart-item-info">
                       <h3>{chart.name}</h3>
-                      <div className="chart-item-meta">
-                        {chart.nodeCount || 0} nodes • {chart.connectionCount || 0} connections
-                      </div>
-                      <div className="chart-item-date">
-                        Last edited {new Date(chart.updatedAt).toLocaleDateString()}
-                      </div>
                     </div>
+                  </div>
+                  <div className="chart-item-meta">
+                    {chart.nodeCount || 0}
+                  </div>
+                  <div className="chart-item-meta">
+                    {chart.connectionCount || 0}
+                  </div>
+                  <div className="chart-item-date">
+                    {new Date(chart.updatedAt).toLocaleDateString()}
                   </div>
                   <button 
                     className="chart-item-delete"
@@ -943,7 +1007,8 @@ function OrgCharts({ user, onBack }) {
                   </button>
                 </div>
               ))}
-            </div>
+              </div>
+            </>
           )}
         </div>
       </div>

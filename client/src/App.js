@@ -6,6 +6,7 @@ import Landing from './Landing';
 import HotelVisual from './HotelVisual';
 import OrgCharts from './OrgCharts';
 import Settings from './Settings';
+import ProjectDetail from './ProjectDetail';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -286,6 +287,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
   const [loading, setLoading] = useState(true);
   const [showNewCard, setShowNewCard] = useState(false);
   const [newCardColumn, setNewCardColumn] = useState(null);
+  const [projectDetailId, setProjectDetailId] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
   const [draggedCard, setDraggedCard] = useState(null);
   const [filterOwner, setFilterOwner] = useState('');
@@ -1250,6 +1252,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           projectTypeColors={projectTypeColors}
           people={people}
           studioMode={studioMode}
+          currentUser={user}
         />
       )}
 
@@ -1289,6 +1292,16 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           projectTypeColors={projectTypeColors}
           people={people}
           studioMode={studioMode}
+          onViewProject={setProjectDetailId}
+          currentUser={user}
+        />
+      )}
+
+      {projectDetailId && (
+        <ProjectDetail
+          projectId={projectDetailId}
+          onClose={() => setProjectDetailId(null)}
+          currentUser={user}
         />
       )}
 
@@ -1415,7 +1428,7 @@ function TrashModal({ deletedCards, onClose, onRestore, people, projectTypeColor
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, initialColumn, toggleAction, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode }) {
+function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, initialColumn, toggleAction, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode, onViewProject, currentUser }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -1560,6 +1573,20 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
             </h2>
           )}
           <div className="modal-header-actions">
+            {card && currentUser?.email === 'chad@philo.ventures' && onViewProject && (
+              <button 
+                type="button"
+                className="modal-icon-btn project-detail"
+                onClick={() => onViewProject(card.id)}
+                title="View Project Details"
+                style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="9" y1="3" x2="9" y2="21"></line>
+                </svg>
+              </button>
+            )}
             {card && onDelete && (
               <button 
                 type="button"
