@@ -168,6 +168,25 @@
   pointer-events: none;
 }
 
+/* Grid Overlay */
+.grid-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.grid-column {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  border-right: 1px solid #e9ecef;
+}
+
 .timeline-header-row {
   display: flex;
   background: white;
@@ -180,8 +199,9 @@
 /* Grid lines are now rendered per-column in the overlay */
 
 .timeline-date-header {
-  flex: 1;
-  min-width: 40px;
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
   padding: 8px 4px;
   text-align: center;
   font-size: 11px;

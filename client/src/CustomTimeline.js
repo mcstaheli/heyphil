@@ -58,13 +58,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       let newStartDate = new Date(dragStartDate);
       newStartDate.setDate(newStartDate.getDate() + deltaDays);
 
-      // Check dependency constraints
+      // Check dependency constraints - clamp to minimum without auto-adjusting
       if (task.dependencies && task.dependencies.length > 0) {
         const latestDepEndDate = task.dependencies.reduce((latest, depId) => {
           const depTask = tasks.find(t => t.id === depId);
           if (!depTask) return latest;
           
-          const depEnd = depTask.type === 'milestone' ? new Date(depTask.date) : new Date(depTask.end);
+          const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
           depEnd.setHours(0, 0, 0, 0);
           return depEnd > latest ? depEnd : latest;
         }, new Date(0));
@@ -73,9 +73,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         const minStartDate = new Date(latestDepEndDate);
         minStartDate.setDate(minStartDate.getDate() + 1);
         
-        // Constrain to minimum date
+        // Clamp to minimum date - don't allow earlier
         if (newStartDate < minStartDate) {
           newStartDate = minStartDate;
+          // Don't update lastDeltaDays so it won't jump when moving back to valid range
+          return;
         }
       }
 
@@ -119,6 +121,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   useEffect(() => {
     if (!resizingTask) return;
 
+    let lastDuration = resizeStartDuration;
+
     const handleMouseMove = (e) => {
       if (!resizeStartX || resizeStartDuration === null || !timelineRange.start || !timelineRange.end) return;
 
@@ -133,6 +137,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       
       const newDuration = Math.max(1, resizeStartDuration + deltaDays);
       
+      // Only update if duration changed (prevents choppy updates)
+      if (newDuration === lastDuration) return;
+      lastDuration = newDuration;
+      
       const task = tasks.find(t => t.id === resizingTask);
       if (!task) return;
 
@@ -142,9 +150,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       updateTask(task.id, {
         end: newEndDate.toISOString().split('T')[0]
       });
-      
-      // Update the duration display
-      setResizeStartDuration(newDuration);
     };
 
     const handleMouseUp = () => {
@@ -579,30 +584,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         <div className="timeline-grid-wrapper">
           <div className="timeline-grid">
             {/* Column Grid Lines & Weekend Stripes */}
-            <div className="grid-overlay" style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: displayTasks.length * 50 + 40,
-              pointerEvents: 'none',
-              zIndex: 0
-            }}>
+            <div className="grid-overlay">
               {dateColumns.map((date, i) => {
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                const columnWidth = 100 / dateColumns.length;
-                const leftPercent = (i / dateColumns.length) * 100;
                 
                 return (
                   <div
                     key={i}
+                    className="grid-column"
                     style={{
-                      position: 'absolute',
-                      left: `${leftPercent}%`,
-                      width: `${columnWidth}%`,
-                      height: '100%',
-                      background: isWeekend ? 'rgba(0, 0, 0, 0.02)' : 'transparent',
-                      borderRight: '1px solid #e9ecef'
+                      background: isWeekend ? 'rgba(0, 0, 0, 0.02)' : 'transparent'
                     }}
                   />
                 );
@@ -792,9 +783,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         </>
                       )}
                       {/* Show duration tooltip while resizing */}
-                      {resizingTask === task.id && resizeStartDuration !== null && (
+                      {resizingTask === task.id && (
                         <div className="resize-tooltip">
-                          {resizeStartDuration} days
+                          {getDaysBetween(new Date(task.start), new Date(task.end))} days
                         </div>
                       )}
                     </div>
