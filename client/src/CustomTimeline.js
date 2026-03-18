@@ -133,7 +133,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       const totalDays = getDaysBetween(timelineRange.start, timelineRange.end);
       
       const deltaX = e.clientX - resizeStartX;
-      const deltaDays = Math.round((deltaX / gridWidth) * totalDays);
+      
+      // Make it less sensitive: require ~60px per day change
+      const pixelsPerDay = 60;
+      const deltaDays = Math.round(deltaX / pixelsPerDay);
       
       const newDuration = Math.max(1, resizeStartDuration + deltaDays);
       
