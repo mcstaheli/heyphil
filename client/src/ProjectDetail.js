@@ -39,20 +39,19 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
   ];
 
   return (
-    <div className="project-detail-overlay" onClick={onClose}>
-      <div className="project-detail-container" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="project-detail-header">
-          <button className="back-button" onClick={onClose}>
-            ← Back to Board
-          </button>
-          <div className="project-header-info">
-            <h1>{project.name}</h1>
-            <span className={`stage-badge stage-${project.stage.toLowerCase()}`}>
-              {project.stage}
-            </span>
-          </div>
+    <div className="project-detail-page">
+      {/* Header */}
+      <div className="project-detail-header">
+        <button className="back-button" onClick={onClose}>
+          ← Back to Board
+        </button>
+        <div className="project-header-info">
+          <h1>{project.name}</h1>
+          <span className={`stage-badge stage-${project.stage.toLowerCase()}`}>
+            {project.stage}
+          </span>
         </div>
+      </div>
 
         {/* Dashboard Overview */}
         <div className="project-dashboard">
@@ -191,7 +190,6 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }
