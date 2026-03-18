@@ -77,14 +77,13 @@
 }
 
 .timeline-task-row {
-  padding: 12px 16px;
   border-bottom: 1px solid #e9ecef;
   cursor: pointer;
   transition: background 0.15s;
-  min-height: 50px;
+  height: 50px;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  align-items: center;
+  padding: 0 12px;
 }
 
 .timeline-task-row:hover {
@@ -102,31 +101,45 @@
 
 .timeline-task-row.child-task {
   background: #fafafa;
+  padding-left: 24px;
 }
 
 .timeline-task-row.child-task:hover {
   background: #f0f0f0;
 }
 
-.task-name {
+.task-row-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.owner-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.task-name-simple {
   font-size: 14px;
   font-weight: 500;
   color: #212529;
-  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.task-owner {
-  font-size: 12px;
-  color: #6c757d;
-}
-
-.task-dependencies {
-  font-size: 11px;
+.indent-line {
   color: #94a3b8;
-  margin-top: 2px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  margin-right: 4px;
 }
 
 /* Timeline Grid (Right Side) */
@@ -169,7 +182,7 @@
 
 .timeline-row {
   position: relative;
-  min-height: 50px;
+  height: 50px;
   border-bottom: 1px solid #e9ecef;
   background: 
     repeating-linear-gradient(

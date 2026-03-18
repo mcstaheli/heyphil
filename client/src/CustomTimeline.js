@@ -201,7 +201,37 @@ function CustomTimeline({ projectId, compact = false }) {
   };
 
   const updateTask = (taskId, updates) => {
-    setTasks(tasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
+    const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, ...updates } : t);
+    
+    // If dependencies changed, enforce start date constraints
+    if (updates.dependencies !== undefined) {
+      const task = updatedTasks.find(t => t.id === taskId);
+      if (task && task.dependencies && task.dependencies.length > 0) {
+        const latestEndDate = task.dependencies.reduce((latest, depId) => {
+          const depTask = updatedTasks.find(t => t.id === depId);
+          if (!depTask) return latest;
+          
+          const depEnd = depTask.type === 'milestone' ? new Date(depTask.date) : new Date(depTask.end);
+          return depEnd > latest ? depEnd : latest;
+        }, new Date(0));
+        
+        // Add one day buffer
+        latestEndDate.setDate(latestEndDate.getDate() + 1);
+        
+        const currentStart = new Date(task.start);
+        if (currentStart < latestEndDate) {
+          const daysDiff = Math.ceil((new Date(task.end) - currentStart) / (1000 * 60 * 60 * 24));
+          task.start = latestEndDate.toISOString().split('T')[0];
+          
+          // Adjust end date to maintain duration
+          const newEnd = new Date(latestEndDate);
+          newEnd.setDate(newEnd.getDate() + daysDiff);
+          task.end = newEnd.toISOString().split('T')[0];
+        }
+      }
+    }
+    
+    setTasks(updatedTasks);
   };
 
   const deleteTask = (taskId) => {
@@ -287,29 +317,49 @@ function CustomTimeline({ projectId, compact = false }) {
         {/* Task List Column */}
         <div className="timeline-tasks-column">
           <div className="timeline-header-cell">Tasks</div>
-          {displayTasks.map(task => (
-            <div 
-              key={task.id} 
-              className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''}`}
-              onClick={() => !compact && setEditingTask(task)}
-              style={{
-                paddingLeft: task.parentId ? '32px' : '16px'
-              }}
-            >
-              <div className="task-name">
-                {task.type === 'phase' && '📁 '}
-                {task.type === 'milestone' && '🏁 '}
-                {task.parentId && '└─ '}
-                {task.name}
-              </div>
-              {task.owner && <div className="task-owner">{task.owner}</div>}
-              {task.dependencies && task.dependencies.length > 0 && (
-                <div className="task-dependencies" title={`Depends on: ${task.dependencies.join(', ')}`}>
-                  ⬅️ {task.dependencies.length}
+          {displayTasks.map(task => {
+            const getOwnerInitials = (name) => {
+              if (!name) return '';
+              return name.split(' ').map(n => n[0]).join('').toUpperCase();
+            };
+            
+            const getOwnerColor = (name) => {
+              const colors = {
+                'Chad': '#3b82f6',
+                'Tracy': '#8b5cf6',
+                'Greg': '#10b981',
+                'Scott': '#f59e0b',
+                'Bank': '#6b7280'
+              };
+              return colors[name] || '#94a3b8';
+            };
+            
+            return (
+              <div 
+                key={task.id} 
+                className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''}`}
+                onClick={() => !compact && setEditingTask(task)}
+              >
+                <div className="task-row-content">
+                  {task.owner && (
+                    <div 
+                      className="owner-avatar"
+                      style={{ backgroundColor: getOwnerColor(task.owner) }}
+                      title={task.owner}
+                    >
+                      {getOwnerInitials(task.owner)}
+                    </div>
+                  )}
+                  <div className="task-name-simple">
+                    {task.parentId && <span className="indent-line">└─ </span>}
+                    {task.type === 'phase' && '📁 '}
+                    {task.type === 'milestone' && '🏁 '}
+                    {task.name}
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
 
         {/* Timeline Grid */}
@@ -539,6 +589,38 @@ function CustomTimeline({ projectId, compact = false }) {
 
             <div className="timeline-edit-actions">
               <button onClick={() => {
+                // Validate dependency dates before saving
+                if (editingTask.dependencies && editingTask.dependencies.length > 0) {
+                  const latestEndDate = editingTask.dependencies.reduce((latest, depId) => {
+                    const depTask = tasks.find(t => t.id === depId);
+                    if (!depTask) return latest;
+                    
+                    const depEnd = depTask.type === 'milestone' ? new Date(depTask.date) : new Date(depTask.end);
+                    return depEnd > latest ? depEnd : latest;
+                  }, new Date(0));
+                  
+                  const taskStart = editingTask.type === 'milestone' ? new Date(editingTask.date) : new Date(editingTask.start);
+                  
+                  if (taskStart <= latestEndDate) {
+                    if (!window.confirm('This task starts before its dependencies finish. Auto-adjust start date?')) {
+                      return;
+                    }
+                    
+                    // Auto-adjust
+                    latestEndDate.setDate(latestEndDate.getDate() + 1);
+                    if (editingTask.type === 'milestone') {
+                      editingTask.date = latestEndDate.toISOString().split('T')[0];
+                    } else {
+                      const duration = Math.ceil((new Date(editingTask.end) - new Date(editingTask.start)) / (1000 * 60 * 60 * 24));
+                      editingTask.start = latestEndDate.toISOString().split('T')[0];
+                      
+                      const newEnd = new Date(latestEndDate);
+                      newEnd.setDate(newEnd.getDate() + duration);
+                      editingTask.end = newEnd.toISOString().split('T')[0];
+                    }
+                  }
+                }
+                
                 updateTask(editingTask.id, editingTask);
                 setEditingTask(null);
               }}>Save</button>
