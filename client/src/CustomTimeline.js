@@ -10,6 +10,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [dragStartX, setDragStartX] = useState(null);
   const [dragStartDate, setDragStartDate] = useState(null);
   const [hasDragged, setHasDragged] = useState(false);
+  const [resizingTask, setResizingTask] = useState(null);
+  const [resizeStartX, setResizeStartX] = useState(null);
+  const [resizeStartDuration, setResizeStartDuration] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
 
   useEffect(() => {
     loadTasks();
@@ -110,6 +114,57 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [draggingTask, dragStartX, dragStartDate, tasks, timelineRange]);
+
+  // Handle resize events
+  useEffect(() => {
+    if (!resizingTask) return;
+
+    const handleMouseMove = (e) => {
+      if (!resizeStartX || resizeStartDuration === null || !timelineRange.start || !timelineRange.end) return;
+
+      const gridElement = document.querySelector('.timeline-grid');
+      if (!gridElement) return;
+
+      const gridWidth = gridElement.offsetWidth;
+      const totalDays = getDaysBetween(timelineRange.start, timelineRange.end);
+      
+      const deltaX = e.clientX - resizeStartX;
+      const deltaDays = Math.round((deltaX / gridWidth) * totalDays);
+      
+      const newDuration = Math.max(1, resizeStartDuration + deltaDays);
+      
+      const task = tasks.find(t => t.id === resizingTask);
+      if (!task) return;
+
+      const newEndDate = new Date(task.start);
+      newEndDate.setDate(newEndDate.getDate() + newDuration);
+
+      updateTask(task.id, {
+        end: newEndDate.toISOString().split('T')[0]
+      });
+      
+      // Update the duration display
+      setResizeStartDuration(newDuration);
+    };
+
+    const handleMouseUp = () => {
+      setResizingTask(null);
+      setResizeStartX(null);
+      setResizeStartDuration(null);
+      
+      setTimeout(() => {
+        setHasDragged(false);
+      }, 100);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingTask, resizeStartX, resizeStartDuration, tasks, timelineRange]);
 
   const loadTasks = () => {
     // TODO: Load from API
@@ -694,8 +749,17 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                           setEditingTask(task);
                         }
                       }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          taskId: task.id
+                        });
+                      }}
                     >
-                      {!isMilestone && (
+                      {!isMilestone && !isEvent && (
                         <>
                           <div 
                             className="timeline-bar-progress"
@@ -709,7 +773,29 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                           {!compact && position.width > 5 && (
                             <div className="timeline-bar-label">{task.progress}%</div>
                           )}
+                          {/* Resize Handle */}
+                          {!compact && (
+                            <div 
+                              className="timeline-resize-handle"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setResizingTask(task.id);
+                                setResizeStartX(e.clientX);
+                                const duration = getDaysBetween(new Date(task.start), new Date(task.end));
+                                setResizeStartDuration(duration);
+                                setHasDragged(true); // Prevent click from opening modal
+                              }}
+                              title="Drag to resize"
+                            />
+                          )}
                         </>
+                      )}
+                      {/* Show duration tooltip while resizing */}
+                      {resizingTask === task.id && resizeStartDuration !== null && (
+                        <div className="resize-tooltip">
+                          {resizeStartDuration} days
+                        </div>
                       )}
                     </div>
                   )}
@@ -763,6 +849,25 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       ⚠️ Cannot start before dependencies finish
                     </small>
                   )}
+                </label>
+
+                <label>
+                  Duration (days):
+                  <input
+                    type="number"
+                    min="1"
+                    value={editingTask.start && editingTask.end ? 
+                      getDaysBetween(new Date(editingTask.start), new Date(editingTask.end)) : 1}
+                    onChange={(e) => {
+                      const days = parseInt(e.target.value) || 1;
+                      const newEnd = new Date(editingTask.start);
+                      newEnd.setDate(newEnd.getDate() + days);
+                      setEditingTask({ ...editingTask, end: newEnd.toISOString().split('T')[0] });
+                    }}
+                  />
+                  <small style={{ display: 'block', marginTop: '4px', color: '#6b7280', fontSize: '11px' }}>
+                    Or set end date below
+                  </small>
                 </label>
 
                 <label>
@@ -884,6 +989,60 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Right-Click Context Menu for Dependencies */}
+      {contextMenu && (
+        <div 
+          className="timeline-context-menu"
+          style={{
+            position: 'fixed',
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="context-menu-header">Add Dependency</div>
+          <div className="context-menu-list">
+            {tasks.filter(t => t.id !== contextMenu.taskId).map(t => {
+              const currentTask = tasks.find(task => task.id === contextMenu.taskId);
+              const isAlreadyDep = currentTask?.dependencies?.includes(t.id);
+              
+              return (
+                <div
+                  key={t.id}
+                  className={`context-menu-item ${isAlreadyDep ? 'selected' : ''}`}
+                  onClick={() => {
+                    const task = tasks.find(task => task.id === contextMenu.taskId);
+                    if (!task) return;
+                    
+                    const deps = task.dependencies || [];
+                    const newDeps = isAlreadyDep
+                      ? deps.filter(d => d !== t.id)
+                      : [...deps, t.id];
+                    
+                    updateTask(task.id, { dependencies: newDeps });
+                    setContextMenu(null);
+                  }}
+                >
+                  {isAlreadyDep && '✓ '}
+                  {t.name}
+                </div>
+              );
+            })}
+          </div>
+          <div className="context-menu-footer">
+            <button onClick={() => setContextMenu(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* Click anywhere to close context menu */}
+      {contextMenu && (
+        <div 
+          className="context-menu-backdrop"
+          onClick={() => setContextMenu(null)}
+        />
       )}
     </div>
   );
