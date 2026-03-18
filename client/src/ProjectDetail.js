@@ -104,30 +104,29 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
             </div>
           </div>
 
-          {/* Main Content: Timeline + Sidebar */}
-          <div className="project-main-content">
-            {/* Timeline (Custom) - Main Area */}
-            <div className="timeline-main-section">
-              <CustomTimeline projectId={projectId} compact={false} people={people} />
-            </div>
-
-            {/* Quick Access Modules - Sidebar */}
-            <div className="modules-sidebar">
-              <h3>Quick Access</h3>
+          {/* Quick Access Cards - Above Timeline */}
+          <div className="quick-access-section">
+            <h3>Quick Access</h3>
+            <div className="quick-access-grid">
               {modules.filter(m => m.id !== 'timeline').map(module => (
                 <div 
                   key={module.id}
-                  className="module-card-compact"
+                  className="quick-access-card"
                   onClick={() => setActiveModal(module.id)}
                 >
-                  <div className="module-icon-small">{module.icon}</div>
-                  <div className="module-info">
-                    <div className="module-name-small">{module.name}</div>
-                    <div className="module-description-small">{module.description}</div>
+                  <div className="quick-access-icon">{module.icon}</div>
+                  <div className="quick-access-info">
+                    <div className="quick-access-name">{module.name}</div>
+                    <div className="quick-access-description">{module.description}</div>
                   </div>
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Timeline - Full Width */}
+          <div className="timeline-full-section">
+            <CustomTimeline projectId={projectId} compact={false} people={people} />
           </div>
         </div>
 
