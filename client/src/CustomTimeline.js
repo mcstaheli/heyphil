@@ -24,6 +24,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   useEffect(() => {
     if (!draggingTask) return;
 
+    let lastDeltaDays = 0;
+
     const handleMouseMove = (e) => {
       if (!dragStartX || !dragStartDate || !timelineRange.start || !timelineRange.end) return;
 
@@ -35,6 +37,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       
       const deltaX = e.clientX - dragStartX;
       const deltaDays = Math.round((deltaX / gridWidth) * totalDays);
+      
+      // Only update if we've moved to a different day
+      if (deltaDays === lastDeltaDays) return;
+      lastDeltaDays = deltaDays;
       
       const task = tasks.find(t => t.id === draggingTask);
       if (!task) return;
@@ -185,8 +191,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   };
 
   const getDaysBetween = (start, end) => {
-    const diff = Math.abs(end - start);
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+    // Normalize both dates to start of day for accurate day calculation
+    const startDay = new Date(start);
+    startDay.setHours(0, 0, 0, 0);
+    const endDay = new Date(end);
+    endDay.setHours(0, 0, 0, 0);
+    
+    const diff = Math.abs(endDay - startDay);
+    return Math.round(diff / (1000 * 60 * 60 * 24));
   };
 
   const getDateColumns = () => {
@@ -218,6 +230,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       startDate = new Date(task.start);
       endDate = new Date(task.end);
     }
+    
+    // Normalize to start of day
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(0, 0, 0, 0);
 
     const startOffset = getDaysBetween(timelineRange.start, startDate);
     const duration = task.type === 'milestone' ? 1 : getDaysBetween(startDate, endDate);
