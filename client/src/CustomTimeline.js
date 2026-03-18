@@ -14,6 +14,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [resizeStartX, setResizeStartX] = useState(null);
   const [resizeStartDuration, setResizeStartDuration] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
+  const [reorderingTask, setReorderingTask] = useState(null);
+  const [reorderTargetIndex, setReorderTargetIndex] = useState(null);
 
   useEffect(() => {
     loadTasks();
@@ -544,9 +546,48 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             return (
               <div 
                 key={task.id} 
-                className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''}`}
+                className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''} ${reorderingTask === task.id ? 'reordering' : ''} ${reorderTargetIndex === taskIndex ? 'drop-target' : ''}`}
                 onClick={() => !compact && setEditingTask(task)}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setReorderTargetIndex(taskIndex);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (reorderingTask && reorderTargetIndex !== null) {
+                    const fromIndex = displayTasks.findIndex(t => t.id === reorderingTask);
+                    const toIndex = reorderTargetIndex;
+                    
+                    if (fromIndex !== toIndex) {
+                      const newTasks = [...tasks];
+                      const [movedTask] = newTasks.splice(fromIndex, 1);
+                      newTasks.splice(toIndex, 0, movedTask);
+                      setTasks(newTasks);
+                    }
+                  }
+                  setReorderingTask(null);
+                  setReorderTargetIndex(null);
+                }}
               >
+                {/* Drag Handle */}
+                {!compact && (
+                  <div 
+                    className="task-drag-handle"
+                    draggable
+                    onDragStart={(e) => {
+                      setReorderingTask(task.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragEnd={() => {
+                      setReorderingTask(null);
+                      setReorderTargetIndex(null);
+                    }}
+                    title="Drag to reorder"
+                  >
+                    ⋮⋮
+                  </div>
+                )}
+                
                 <div className="task-row-content">
                   {task.owner && (
                     ownerPhotoUrl ? (
