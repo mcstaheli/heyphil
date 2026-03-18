@@ -182,8 +182,8 @@
   bottom: 0;
   background-image: repeating-linear-gradient(
     90deg,
-    #f1f5f9 0px,
-    #f1f5f9 1px,
+    #e9ecef 0px,
+    #e9ecef 1px,
     transparent 1px,
     transparent 40px
   );
@@ -201,6 +201,10 @@
   color: #6c757d;
   border-right: 1px solid #e9ecef;
   white-space: nowrap;
+}
+
+.timeline-date-header.weekend {
+  background: #f8f9fa;
 }
 
 .timeline-row {

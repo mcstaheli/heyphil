@@ -503,13 +503,49 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         {/* Timeline Grid */}
         <div className="timeline-grid-wrapper">
           <div className="timeline-grid">
+            {/* Weekend Background Stripes */}
+            <div className="weekend-stripes" style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: displayTasks.length * 50 + 40,
+              pointerEvents: 'none',
+              zIndex: 0
+            }}>
+              {dateColumns.map((date, i) => {
+                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                if (!isWeekend) return null;
+                
+                const columnWidth = 100 / dateColumns.length;
+                const leftPercent = (i / dateColumns.length) * 100;
+                
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      position: 'absolute',
+                      left: `${leftPercent}%`,
+                      width: `${columnWidth}%`,
+                      height: '100%',
+                      background: 'rgba(0, 0, 0, 0.02)',
+                      borderRight: '1px solid rgba(0, 0, 0, 0.03)'
+                    }}
+                  />
+                );
+              })}
+            </div>
+
             {/* Date Headers */}
             <div className="timeline-header-row">
-              {dateColumns.map((date, i) => (
-                <div key={i} className="timeline-date-header">
-                  {formatDate(date)}
-                </div>
-              ))}
+              {dateColumns.map((date, i) => {
+                const isWeekend = date.getDay() === 0 || date.getDay() === 6; // Sunday = 0, Saturday = 6
+                return (
+                  <div key={i} className={`timeline-date-header ${isWeekend ? 'weekend' : ''}`}>
+                    {formatDate(date)}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Today Marker - Full Height */}
