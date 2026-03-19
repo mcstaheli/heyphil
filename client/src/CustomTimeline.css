@@ -74,6 +74,21 @@
   position: sticky;
   top: 0;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.timeline-days-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 30px;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
 }
 
 .timeline-task-row {

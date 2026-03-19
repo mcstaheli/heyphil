@@ -617,7 +617,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       <div className="timeline-container">
         {/* Task List Column */}
         <div className="timeline-tasks-column">
-          <div className="timeline-header-cell">Tasks</div>
+          <div className="timeline-header-cell">
+            {timelineRange.start && timelineRange.end && (
+              <span className="timeline-days-badge">
+                {getDaysBetween(timelineRange.start, timelineRange.end)}
+              </span>
+            )}
+            Tasks
+          </div>
           {displayTasks.map((task, taskIndex) => {
             const getOwnerInitials = (name) => {
               if (!name) return '';
