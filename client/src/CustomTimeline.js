@@ -965,8 +965,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       )}
                       {/* Show duration tooltip while resizing */}
                       {resizingTask === task.id && (
-                        <div className="resize-tooltip">
-                          {getDaysBetween(new Date(task.start), new Date(task.end))} days
+                        <div className="resize-tooltip-enhanced">
+                          <div className="resize-days-badge">
+                            {getDaysBetween(new Date(task.start), new Date(task.end))}
+                          </div>
+                          <div className="resize-days-label">days</div>
+                          <div className="resize-dates">
+                            {new Date(task.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            {' → '}
+                            {new Date(task.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </div>
                         </div>
                       )}
                     </div>
