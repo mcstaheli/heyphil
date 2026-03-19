@@ -874,11 +874,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     <div 
                       className={`timeline-bar ${task.type} ${draggingTask === task.id ? 'dragging' : ''} ${hasDependencies ? 'has-dependencies' : ''}`}
                       style={{
-                        left: `${position.left}%`,
-                        width: isMilestone ? '4px' : `${position.width}%`,
-                        backgroundColor: getTaskColor(task),
+                        left: isMilestone ? `calc(${position.left}% - 10px)` : `${position.left}%`,
+                        width: isMilestone ? '24px' : `${position.width}%`,
+                        backgroundColor: isMilestone ? 'transparent' : getTaskColor(task),
                         cursor: compact || isPhase ? 'default' : 'grab',
-                        borderLeft: hasDependencies ? '3px solid rgba(0, 0, 0, 0.2)' : 'none'
+                        borderLeft: hasDependencies ? '3px solid rgba(0, 0, 0, 0.2)' : 'none',
+                        display: isMilestone ? 'flex' : 'block',
+                        alignItems: isMilestone ? 'center' : 'initial',
+                        justifyContent: isMilestone ? 'center' : 'initial'
                       }}
                       onMouseDown={handleMouseDown}
                       onClick={(e) => {
@@ -897,6 +900,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         });
                       }}
                     >
+                      {isMilestone && (
+                        <div 
+                          style={{
+                            width: '4px',
+                            height: '40px',
+                            backgroundColor: getTaskColor(task),
+                            borderRadius: '2px'
+                          }}
+                        />
+                      )}
                       {!isMilestone && !isEvent && (
                         <>
                           <div 
