@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import './ProjectDetail.css';
 import CustomTimeline from './CustomTimeline';
+import TaskList from './TaskList';
 
 function ProjectDetail({ projectId, onClose, currentUser }) {
   const [project, setProject] = useState(null);
   const [activeModal, setActiveModal] = useState(null);
   const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState('tasks'); // 'tasks' or 'timeline'
 
   useEffect(() => {
     // Load project data
@@ -124,9 +126,32 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
             </div>
           </div>
 
-          {/* Timeline - Full Width */}
-          <div className="timeline-full-section">
-            <CustomTimeline projectId={projectId} compact={false} people={people} />
+          {/* View Switcher */}
+          <div className="view-switcher-section">
+            <div className="view-switcher-header">
+              <div className="view-tabs">
+                <button 
+                  className={`view-tab ${viewMode === 'tasks' ? 'active' : ''}`}
+                  onClick={() => setViewMode('tasks')}
+                >
+                  📋 Tasks
+                </button>
+                <button 
+                  className={`view-tab ${viewMode === 'timeline' ? 'active' : ''}`}
+                  onClick={() => setViewMode('timeline')}
+                >
+                  📅 Timeline
+                </button>
+              </div>
+            </div>
+
+            <div className="view-content">
+              {viewMode === 'tasks' ? (
+                <TaskList projectId={projectId} people={people} />
+              ) : (
+                <CustomTimeline projectId={projectId} compact={false} people={people} />
+              )}
+            </div>
           </div>
         </div>
 
