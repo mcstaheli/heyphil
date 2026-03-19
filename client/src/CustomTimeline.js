@@ -126,18 +126,12 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     let lastDuration = resizeStartDuration;
 
     const handleMouseMove = (e) => {
-      if (!resizeStartX || resizeStartDuration === null || !timelineRange.start || !timelineRange.end) return;
+      if (!resizeStartX || resizeStartDuration === null) return;
 
-      const gridElement = document.querySelector('.timeline-grid');
-      if (!gridElement) return;
-
-      const gridWidth = gridElement.offsetWidth;
-      const totalDays = getDaysBetween(timelineRange.start, timelineRange.end);
-      
       const deltaX = e.clientX - resizeStartX;
       
-      // Moderate sensitivity: ~40px per day change
-      const pixelsPerDay = 40;
+      // Fixed sensitivity: ~30px per day change (more responsive)
+      const pixelsPerDay = 30;
       const deltaDays = Math.round(deltaX / pixelsPerDay);
       
       const newDuration = Math.max(1, resizeStartDuration + deltaDays);
@@ -155,6 +149,18 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       updateTask(task.id, {
         end: newEndDate.toISOString().split('T')[0]
       });
+      
+      // Auto-expand timeline range if resizing beyond current view
+      const currentEnd = new Date(timelineRange.end);
+      if (newEndDate > currentEnd) {
+        // Extend timeline to accommodate the new end date + buffer
+        const extendedEnd = new Date(newEndDate);
+        extendedEnd.setDate(extendedEnd.getDate() + 14); // 2 week buffer
+        setTimelineRange({
+          ...timelineRange,
+          end: extendedEnd
+        });
+      }
     };
 
     const handleMouseUp = () => {
