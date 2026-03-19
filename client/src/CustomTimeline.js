@@ -720,6 +720,15 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 )}
                 
                 <div className="task-row-content">
+                  {/* Days Badge */}
+                  {task.type !== 'phase' && (task.start || task.date) && (
+                    <div className="task-days-badge">
+                      {task.type === 'milestone' || task.type === 'event' 
+                        ? '1'
+                        : getDaysBetween(new Date(task.start), new Date(task.end))}
+                    </div>
+                  )}
+                  
                   {task.owner && (
                     ownerPhotoUrl ? (
                       <img
