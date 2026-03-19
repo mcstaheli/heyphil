@@ -176,6 +176,23 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     };
   }, [resizingTask, resizeStartX, resizeStartDuration, tasks, timelineRange]);
 
+  // Handle Escape key to close modal and context menu
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        if (editingTask) {
+          setEditingTask(null);
+        }
+        if (contextMenu) {
+          setContextMenu(null);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [editingTask, contextMenu]);
+
   const loadTasks = () => {
     // TODO: Load from API
     const mockTasks = [
