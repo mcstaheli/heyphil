@@ -191,60 +191,7 @@
   color: #6c757d;
 }
 
-/* View Switcher Section */
-.view-switcher-section {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  min-height: 600px;
-}
-
-.view-switcher-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f9fafb;
-}
-
-.view-tabs {
-  display: flex;
-  gap: 8px;
-}
-
-.view-tab {
-  background: transparent;
-  border: 1px solid transparent;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #6b7280;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.view-tab:hover {
-  background: #f3f4f6;
-  color: #1f2937;
-}
-
-.view-tab.active {
-  background: white;
-  border-color: #d1d5db;
-  color: #1f2937;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.view-content {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Timeline Full Width Section (deprecated, keeping for backwards compat) */
+/* Timeline Full Width Section */
 .timeline-full-section {
   background: white;
   border-radius: 12px;
