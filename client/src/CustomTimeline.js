@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import './CustomTimeline.css';
 
 function CustomTimeline({ projectId, compact = false, people = {} }) {
+  // Debug people data
+  useEffect(() => {
+    console.log('CustomTimeline received people prop:', people);
+  }, [people]);
+  
   const [tasks, setTasks] = useState([]);
   const [viewMode, setViewMode] = useState('week');
   const [editingTask, setEditingTask] = useState(null);
