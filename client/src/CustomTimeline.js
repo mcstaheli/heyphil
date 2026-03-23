@@ -751,6 +751,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
                     {task.name}
+                    {task.type === 'phase' && task.start && task.end && (
+                      <span style={{ 
+                        marginLeft: '8px', 
+                        color: '#6c757d', 
+                        fontSize: '11px',
+                        fontWeight: '500'
+                      }}>
+                        ({getDaysBetween(new Date(task.start), new Date(task.end))} days)
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
