@@ -23,6 +23,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [reorderTargetIndex, setReorderTargetIndex] = useState(null);
   const [phasePopover, setPhasePopover] = useState(null);
   const [ownerFilter, setOwnerFilter] = useState(null);
+  const [showDependencies, setShowDependencies] = useState(true);
 
   useEffect(() => {
     loadTasks();
@@ -633,16 +634,18 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       )}
 
       {/* Filter Bar */}
-      {!compact && uniqueOwners.length > 0 && (
+      {!compact && (
         <div style={{
           padding: '12px 16px',
           borderBottom: '1px solid #e2e8f0',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
+          gap: '12px',
           flexWrap: 'wrap'
         }}>
-          <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>Filter by:</span>
+          {uniqueOwners.length > 0 && (
+            <>
+              <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>Filter by:</span>
           <button
             onClick={() => setOwnerFilter(null)}
             style={{
@@ -722,6 +725,29 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               </button>
             );
           })}
+            </>
+          )}
+          
+          {/* Dependencies toggle */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              fontSize: '13px',
+              color: '#64748b',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}>
+              <input
+                type="checkbox"
+                checked={showDependencies}
+                onChange={(e) => setShowDependencies(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <span>Show Dependencies</span>
+            </label>
+          </div>
         </div>
       )}
 
@@ -962,16 +988,17 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             })()}
 
             {/* Dependency Arrows SVG Layer */}
-            <svg className="dependency-arrows-layer" style={{ 
-              position: 'absolute', 
-              top: 0, 
-              left: 0, 
-              width: '100%', 
-              height: displayTasks.length * 50 + 40,
-              pointerEvents: 'none',
-              zIndex: 1
-            }}>
-              {dependencyArrows.map((arrow, i) => {
+            {showDependencies && (
+              <svg className="dependency-arrows-layer" style={{ 
+                position: 'absolute', 
+                top: 0, 
+                left: 0, 
+                width: '100%', 
+                height: displayTasks.length * 50 + 40,
+                pointerEvents: 'none',
+                zIndex: 1
+              }}>
+                {dependencyArrows.map((arrow, i) => {
                 const containerWidth = document.querySelector('.timeline-grid')?.offsetWidth || 1000;
                 
                 const x1 = (arrow.fromX / 100) * containerWidth;
@@ -1004,7 +1031,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                   </g>
                 );
               })}
-            </svg>
+              </svg>
+            )}
 
             {/* Task Bars */}
             {displayTasks.map((task, index) => {
