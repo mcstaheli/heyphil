@@ -1019,7 +1019,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
               const handleMouseDown = (e) => {
                 if (compact) return;
-                if (isPhase) return; // Phases are read-only
+                if (isPhase) return; // Phases are read-only, no dragging
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -1027,6 +1027,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 setDraggingTask(task.id);
                 setDragStartX(e.clientX);
                 setDragStartDate((task.type === 'milestone' || task.type === 'event') ? new Date(task.date) : new Date(task.start));
+              };
+              
+              const handleBarClick = (e) => {
+                e.stopPropagation();
+                // Don't open anything for phases
+                if (isPhase) return;
+                // Don't open modal if we just dragged
+                if (!hasDragged && !compact) {
+                  setEditingTask(task);
+                }
               };
 
               const hasDependencies = task.dependencies && task.dependencies.length > 0;
@@ -1042,12 +1052,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         cursor: compact ? 'default' : 'grab'
                       }}
                       onMouseDown={handleMouseDown}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!hasDragged && !compact) {
-                          setEditingTask(task);
-                        }
-                      }}
+                      onClick={handleBarClick}
                       title={task.name}
                     >
                       <div className="event-diamond" style={{
@@ -1068,12 +1073,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         justifyContent: isMilestone ? 'center' : 'initial'
                       }}
                       onMouseDown={handleMouseDown}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!hasDragged && !compact) {
-                          setEditingTask(task);
-                        }
-                      }}
+                      onClick={handleBarClick}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
