@@ -23,6 +23,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [phasePopover, setPhasePopover] = useState(null);
   const [ownerFilter, setOwnerFilter] = useState(null);
   const [showDependencies, setShowDependencies] = useState(true);
+  const [showTightenModal, setShowTightenModal] = useState(false);
+  const [tightenChanges, setTightenChanges] = useState([]);
+  const [tightenExclusions, setTightenExclusions] = useState(new Set());
 
   useEffect(() => {
     loadTasks();
@@ -584,6 +587,82 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     setTasks(updatedTasks);
   };
   
+  // Calculate what would change if we tighten all dependencies (0 day gaps)
+  const calculateTightenChanges = () => {
+    const changes = [];
+    
+    tasks.forEach(task => {
+      if (!task.dependencies || task.dependencies.length === 0) return;
+      if (task.type === 'phase') return; // Skip phases
+      
+      // Calculate minimum start date (latest dependency end + 1 day)
+      const latestEndDate = task.dependencies.reduce((latest, depId) => {
+        const depTask = tasks.find(t => t.id === depId);
+        if (!depTask) return latest;
+        
+        const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') 
+          ? new Date(depTask.date) 
+          : new Date(depTask.end);
+        return depEnd > latest ? depEnd : latest;
+      }, new Date(0));
+      
+      latestEndDate.setDate(latestEndDate.getDate() + 1); // Add 1 day buffer
+      
+      const currentStart = (task.type === 'milestone' || task.type === 'event')
+        ? new Date(task.date)
+        : new Date(task.start);
+      
+      // If there's a gap, this task can be tightened
+      if (currentStart > latestEndDate) {
+        const gapDays = getDaysBetween(latestEndDate, currentStart);
+        
+        const newDates = {};
+        if (task.type === 'milestone' || task.type === 'event') {
+          newDates.date = latestEndDate.toISOString().split('T')[0];
+        } else {
+          const duration = getDaysBetween(new Date(task.start), new Date(task.end));
+          const newEnd = new Date(latestEndDate);
+          newEnd.setDate(newEnd.getDate() + duration);
+          
+          newDates.start = latestEndDate.toISOString().split('T')[0];
+          newDates.end = newEnd.toISOString().split('T')[0];
+        }
+        
+        changes.push({
+          taskId: task.id,
+          taskName: task.name,
+          taskType: task.type,
+          currentDates: task.type === 'milestone' || task.type === 'event'
+            ? { date: task.date }
+            : { start: task.start, end: task.end },
+          newDates,
+          gapDays
+        });
+      }
+    });
+    
+    return changes;
+  };
+  
+  // Apply tightened dependencies
+  const applyTightenChanges = () => {
+    let updatedTasks = [...tasks];
+    
+    tightenChanges.forEach(change => {
+      if (tightenExclusions.has(change.taskId)) return; // Skip excluded tasks
+      
+      updatedTasks = updatedTasks.map(t => {
+        if (t.id === change.taskId) {
+          return { ...t, ...change.newDates };
+        }
+        return t;
+      });
+    });
+    
+    setTasks(updatedTasks);
+    setShowTightenModal(false);
+  };
+  
   // Recursively update all tasks that depend on the given task
   const cascadeDependencyChanges = (tasksToUpdate, changedTaskId) => {
     const changedTask = tasksToUpdate.find(t => t.id === changedTaskId);
@@ -877,8 +956,28 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             </>
           )}
           
-          {/* Dependencies toggle */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Dependencies toggle and tools */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              onClick={() => {
+                const changes = calculateTightenChanges();
+                setTightenChanges(changes);
+                setTightenExclusions(new Set());
+                setShowTightenModal(true);
+              }}
+              style={{
+                padding: '6px 12px',
+                border: '1px solid #667eea',
+                borderRadius: '6px',
+                background: 'white',
+                color: '#667eea',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '500'
+              }}
+            >
+              ⚡ Tighten Dependencies
+            </button>
             <label style={{ 
               display: 'flex', 
               alignItems: 'center', 
@@ -1701,6 +1800,135 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             })()}
           </div>
         </>
+      )}
+
+      {/* Tighten Dependencies Modal */}
+      {showTightenModal && (
+        <div className="modal-overlay" onClick={() => setShowTightenModal(false)}>
+          <div 
+            className="modal-content wide" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '700px' }}
+          >
+            <div className="modal-header">
+              <h2>⚡ Tighten Dependencies</h2>
+              <button 
+                type="button"
+                className="modal-icon-btn"
+                onClick={() => setShowTightenModal(false)}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              {tightenChanges.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>✓</div>
+                  <p>All dependencies are already tight!</p>
+                  <p style={{ fontSize: '13px', marginTop: '8px' }}>No gaps found between dependent tasks.</p>
+                </div>
+              ) : (
+                <>
+                  <p style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px' }}>
+                    The following tasks have gaps after their dependencies. Select which ones to tighten:
+                  </p>
+                  <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                    {tightenChanges.map(change => {
+                      const isExcluded = tightenExclusions.has(change.taskId);
+                      return (
+                        <div
+                          key={change.taskId}
+                          style={{
+                            padding: '12px',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '6px',
+                            marginBottom: '8px',
+                            backgroundColor: isExcluded ? '#f9fafb' : 'white',
+                            opacity: isExcluded ? 0.6 : 1
+                          }}
+                        >
+                          <label style={{ display: 'flex', gap: '12px', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={!isExcluded}
+                              onChange={(e) => {
+                                const newExclusions = new Set(tightenExclusions);
+                                if (e.target.checked) {
+                                  newExclusions.delete(change.taskId);
+                                } else {
+                                  newExclusions.add(change.taskId);
+                                }
+                                setTightenExclusions(newExclusions);
+                              }}
+                              style={{ marginTop: '2px' }}
+                            />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                                {change.taskName}
+                              </div>
+                              <div style={{ fontSize: '13px', color: '#64748b' }}>
+                                <span style={{ color: '#ef4444', fontWeight: '500' }}>
+                                  {change.gapDays} day gap
+                                </span>
+                                {' • '}
+                                {change.taskType === 'milestone' || change.taskType === 'event' ? (
+                                  <>
+                                    {new Date(change.currentDates.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    {' → '}
+                                    {new Date(change.newDates.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  </>
+                                ) : (
+                                  <>
+                                    {new Date(change.currentDates.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    {' → '}
+                                    {new Date(change.newDates.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                      onClick={() => setShowTightenModal(false)}
+                      style={{
+                        padding: '8px 16px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '6px',
+                        background: 'white',
+                        color: '#64748b',
+                        cursor: 'pointer',
+                        fontSize: '14px'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={applyTightenChanges}
+                      disabled={tightenExclusions.size === tightenChanges.length}
+                      style={{
+                        padding: '8px 16px',
+                        border: 'none',
+                        borderRadius: '6px',
+                        background: tightenExclusions.size === tightenChanges.length ? '#cbd5e1' : '#667eea',
+                        color: 'white',
+                        cursor: tightenExclusions.size === tightenChanges.length ? 'not-allowed' : 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '500'
+                      }}
+                    >
+                      Apply Changes ({tightenChanges.length - tightenExclusions.size})
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
