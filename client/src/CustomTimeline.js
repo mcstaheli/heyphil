@@ -654,6 +654,15 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               <div 
                 key={task.id} 
                 className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''} ${reorderingTask === task.id ? 'reordering' : ''} ${reorderTargetIndex === taskIndex ? 'drop-target' : ''}`}
+                style={task.type === 'phase' && task.color ? {
+                  backgroundColor: (() => {
+                    const hex = task.color.replace('#', '');
+                    const r = parseInt(hex.substring(0, 2), 16);
+                    const g = parseInt(hex.substring(2, 4), 16);
+                    const b = parseInt(hex.substring(4, 6), 16);
+                    return `rgba(${r}, ${g}, ${b}, 0.1)`;
+                  })()
+                } : {}}
                 onClick={(e) => {
                   if (compact) return;
                   if (task.type === 'phase') {
