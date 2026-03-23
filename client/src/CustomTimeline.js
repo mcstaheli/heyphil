@@ -8,7 +8,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   }, [people]);
   
   const [tasks, setTasks] = useState([]);
-  const [viewMode, setViewMode] = useState('week');
   const [editingTask, setEditingTask] = useState(null);
   const [timelineRange, setTimelineRange] = useState({ start: null, end: null });
   const [draggingTask, setDraggingTask] = useState(null);
@@ -624,11 +623,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     <div className={`custom-timeline ${compact ? 'compact' : ''}`}>
       {!compact && (
         <div className="timeline-toolbar">
-          <select value={viewMode} onChange={(e) => setViewMode(e.target.value)} className="timeline-view-select">
-            <option value="day">Day</option>
-            <option value="week">Week</option>
-            <option value="month">Month</option>
-          </select>
           <button onClick={addTask} className="timeline-add-btn">+ Add Task</button>
         </div>
       )}
