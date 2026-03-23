@@ -1162,9 +1162,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       style={{
                         left: isMilestone ? `calc(${position.left}% - 10px)` : `${position.left}%`,
                         width: isMilestone ? '24px' : `${position.width}%`,
-                        backgroundColor: isMilestone ? 'transparent' : getTaskColor(task),
+                        backgroundColor: isMilestone ? 'transparent' : (isPhase ? 'white' : getTaskColor(task)),
+                        border: isPhase ? `2px solid ${getTaskColor(task)}` : 'none',
                         cursor: compact || isPhase ? 'default' : 'grab',
-                        borderLeft: hasDependencies ? '3px solid rgba(0, 0, 0, 0.2)' : 'none',
+                        borderLeft: hasDependencies && !isPhase ? '3px solid rgba(0, 0, 0, 0.2)' : (isPhase ? `2px solid ${getTaskColor(task)}` : 'none'),
                         display: isMilestone ? 'flex' : 'block',
                         alignItems: isMilestone ? 'center' : 'initial',
                         justifyContent: isMilestone ? 'center' : 'initial'
@@ -1195,15 +1196,55 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       )}
                       {!isMilestone && !isEvent && (
                         <>
-                          <div 
-                            className="timeline-bar-progress"
-                            style={{ 
-                              width: `${task.progress}%`,
-                              backgroundColor: `color-mix(in srgb, ${getTaskColor(task)} 80%, black)`
-                            }}
-                          />
-                          {!compact && position.width > 5 && (
-                            <div className="timeline-bar-label">{task.progress}%</div>
+                          {isPhase ? (
+                            // Phase progress bar - light tint fill
+                            <>
+                              <div 
+                                style={{ 
+                                  position: 'absolute',
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  width: `${task.progress}%`,
+                                  backgroundColor: (() => {
+                                    const hex = getTaskColor(task).replace('#', '');
+                                    const r = parseInt(hex.substring(0, 2), 16);
+                                    const g = parseInt(hex.substring(2, 4), 16);
+                                    const b = parseInt(hex.substring(4, 6), 16);
+                                    return `rgba(${r}, ${g}, ${b}, 0.15)`;
+                                  })(),
+                                  borderRadius: '4px 0 0 4px',
+                                  zIndex: 0
+                                }}
+                              />
+                              {!compact && position.width > 5 && (
+                                <div 
+                                  className="timeline-bar-label"
+                                  style={{ 
+                                    color: '#334155',
+                                    fontWeight: '600',
+                                    zIndex: 1,
+                                    position: 'relative'
+                                  }}
+                                >
+                                  {task.progress}%
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            // Regular task progress bar
+                            <>
+                              <div 
+                                className="timeline-bar-progress"
+                                style={{ 
+                                  width: `${task.progress}%`,
+                                  backgroundColor: `color-mix(in srgb, ${getTaskColor(task)} 80%, black)`
+                                }}
+                              />
+                              {!compact && position.width > 5 && (
+                                <div className="timeline-bar-label">{task.progress}%</div>
+                              )}
+                            </>
                           )}
                           {/* Resize Handle - disabled for phases */}
                           {!compact && !isPhase && (
