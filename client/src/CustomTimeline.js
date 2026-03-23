@@ -213,9 +213,30 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const validateTaskDependencies = (tasksToValidate) => {
     let fixed = false;
     const validatedTasks = tasksToValidate.map(task => {
+      // Phases can't have dependencies
+      if (task.type === 'phase' && task.dependencies && task.dependencies.length > 0) {
+        fixed = true;
+        console.warn(`Removing dependencies from phase "${task.name}"`);
+        return { ...task, dependencies: [] };
+      }
+      
       if (!task.dependencies || task.dependencies.length === 0) return task;
       
-      const latestEndDate = task.dependencies.reduce((latest, depId) => {
+      // Filter out any phase dependencies
+      const nonPhaseDeps = task.dependencies.filter(depId => {
+        const depTask = tasksToValidate.find(t => t.id === depId);
+        return depTask && depTask.type !== 'phase';
+      });
+      
+      if (nonPhaseDeps.length !== task.dependencies.length) {
+        fixed = true;
+        console.warn(`Removing phase dependencies from task "${task.name}"`);
+        task = { ...task, dependencies: nonPhaseDeps };
+      }
+      
+      if (nonPhaseDeps.length === 0) return task;
+      
+      const latestEndDate = nonPhaseDeps.reduce((latest, depId) => {
         const depTask = tasksToValidate.find(t => t.id === depId);
         if (!depTask) return latest;
         
@@ -511,6 +532,20 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     
     // Enforce dependency constraints for any update
     const task = updatedTasks.find(t => t.id === taskId);
+    
+    // Remove dependencies from phases and filter out phase dependencies
+    if (task) {
+      if (task.type === 'phase' && task.dependencies && task.dependencies.length > 0) {
+        task.dependencies = [];
+      } else if (task.dependencies && task.dependencies.length > 0) {
+        // Filter out any phase dependencies
+        task.dependencies = task.dependencies.filter(depId => {
+          const depTask = updatedTasks.find(t => t.id === depId);
+          return depTask && depTask.type !== 'phase';
+        });
+      }
+    }
+    
     if (task && task.dependencies && task.dependencies.length > 0) {
       const latestEndDate = task.dependencies.reduce((latest, depId) => {
         const depTask = updatedTasks.find(t => t.id === depId);
@@ -1139,6 +1174,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
+                        // Don't allow phases to have dependencies
+                        if (task.type === 'phase') return;
                         setContextMenu({
                           x: e.clientX,
                           y: e.clientY,
@@ -1343,27 +1380,29 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               </select>
             </label>
 
-            <label>
-              Dependencies (tasks that must finish first):
-              <select
-                multiple
-                value={editingTask.dependencies || []}
-                onChange={(e) => {
-                  const selected = Array.from(e.target.selectedOptions, option => option.value);
-                  setEditingTask({ ...editingTask, dependencies: selected });
-                }}
-                style={{ height: '80px' }}
-              >
-                {tasks.filter(t => t.id !== editingTask.id).map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-              <small style={{ display: 'block', marginTop: '4px', color: '#6b7280' }}>
-                Hold Cmd/Ctrl to select multiple
-              </small>
-            </label>
+            {editingTask.type !== 'phase' && (
+              <label>
+                Dependencies (tasks that must finish first):
+                <select
+                  multiple
+                  value={editingTask.dependencies || []}
+                  onChange={(e) => {
+                    const selected = Array.from(e.target.selectedOptions, option => option.value);
+                    setEditingTask({ ...editingTask, dependencies: selected });
+                  }}
+                  style={{ height: '80px' }}
+                >
+                  {tasks.filter(t => t.id !== editingTask.id && t.type !== 'phase').map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <small style={{ display: 'block', marginTop: '4px', color: '#6b7280' }}>
+                  Hold Cmd/Ctrl to select multiple
+                </small>
+              </label>
+            )}
 
             <div className="timeline-edit-actions">
               <button onClick={() => {
@@ -1422,7 +1461,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         >
           <div className="context-menu-header">Add Dependency</div>
           <div className="context-menu-list">
-            {tasks.filter(t => t.id !== contextMenu.taskId).map(t => {
+            {tasks.filter(t => t.id !== contextMenu.taskId && t.type !== 'phase').map(t => {
               const currentTask = tasks.find(task => task.id === contextMenu.taskId);
               const isAlreadyDep = currentTask?.dependencies?.includes(t.id);
               
