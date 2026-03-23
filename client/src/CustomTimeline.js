@@ -761,15 +761,23 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               <div 
                 key={task.id} 
                 className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''} ${reorderingTask === task.id ? 'reordering' : ''} ${reorderTargetIndex === taskIndex ? 'drop-target' : ''}`}
-                style={task.type === 'phase' && task.color ? {
-                  backgroundColor: (() => {
+                style={(() => {
+                  // If owner filter is active and this task doesn't match, make it light gray
+                  if (ownerFilter && task.owner !== ownerFilter) {
+                    return { backgroundColor: '#f9fafb' };
+                  }
+                  
+                  // Otherwise, phase rows get their tinted background
+                  if (task.type === 'phase' && task.color) {
                     const hex = task.color.replace('#', '');
                     const r = parseInt(hex.substring(0, 2), 16);
                     const g = parseInt(hex.substring(2, 4), 16);
                     const b = parseInt(hex.substring(4, 6), 16);
-                    return `rgba(${r}, ${g}, ${b}, 0.1)`;
-                  })()
-                } : {}}
+                    return { backgroundColor: `rgba(${r}, ${g}, ${b}, 0.1)` };
+                  }
+                  
+                  return {};
+                })()}
                 onClick={(e) => {
                   if (compact) return;
                   if (task.type === 'phase') {
@@ -845,7 +853,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                   </div>
                 )}
                 
-                <div className="task-row-content">
+                <div className="task-row-content" style={{
+                  opacity: ownerFilter && task.owner !== ownerFilter ? 0.4 : 1
+                }}>
                   {/* Days Badge */}
                   {task.type !== 'phase' && (task.start || task.date) && (
                     <div className="task-days-badge">
