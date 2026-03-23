@@ -17,6 +17,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [reorderingTask, setReorderingTask] = useState(null);
   const [reorderTargetIndex, setReorderTargetIndex] = useState(null);
   const [phasePopover, setPhasePopover] = useState(null);
+  const [ownerFilter, setOwnerFilter] = useState(null);
 
   useEffect(() => {
     loadTasks();
@@ -397,6 +398,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
   // Get task color, inheriting from parent phase if child task
   const getTaskColor = (task) => {
+    // If owner filter is active and task owner doesn't match, return light gray
+    if (ownerFilter && task.owner !== ownerFilter) {
+      return '#e5e7eb';
+    }
+    
     if (task.color) return task.color;
     
     if (task.type === 'phase') {
@@ -605,6 +611,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     return minDate.toISOString().split('T')[0];
   };
 
+  // Get unique owners for filter
+  const uniqueOwners = [...new Set(tasks.filter(t => t.owner).map(t => t.owner))].sort();
+
   return (
     <div className={`custom-timeline ${compact ? 'compact' : ''}`}>
       {!compact && (
@@ -615,6 +624,99 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             <option value="month">Month</option>
           </select>
           <button onClick={addTask} className="timeline-add-btn">+ Add Task</button>
+        </div>
+      )}
+
+      {/* Filter Bar */}
+      {!compact && uniqueOwners.length > 0 && (
+        <div style={{
+          padding: '12px 16px',
+          borderBottom: '1px solid #e2e8f0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          flexWrap: 'wrap'
+        }}>
+          <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>Filter by:</span>
+          <button
+            onClick={() => setOwnerFilter(null)}
+            style={{
+              padding: '4px 12px',
+              border: ownerFilter === null ? '2px solid #667eea' : '1px solid #e2e8f0',
+              borderRadius: '16px',
+              background: ownerFilter === null ? '#667eea' : 'white',
+              color: ownerFilter === null ? 'white' : '#334155',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '500'
+            }}
+          >
+            All
+          </button>
+          {uniqueOwners.map(owner => {
+            const ownerPhotoUrl = people[owner];
+            const getOwnerColor = (name) => {
+              const colors = {
+                'Chad': '#3b82f6',
+                'Tracy': '#8b5cf6',
+                'Greg': '#10b981',
+                'Scott': '#f59e0b',
+                'Bank': '#6b7280'
+              };
+              return colors[name] || '#94a3b8';
+            };
+            
+            return (
+              <button
+                key={owner}
+                onClick={() => setOwnerFilter(ownerFilter === owner ? null : owner)}
+                style={{
+                  padding: '4px 12px',
+                  border: ownerFilter === owner ? '2px solid #667eea' : '1px solid #e2e8f0',
+                  borderRadius: '16px',
+                  background: ownerFilter === owner ? '#667eea' : 'white',
+                  color: ownerFilter === owner ? 'white' : '#334155',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {ownerPhotoUrl ? (
+                  <img
+                    src={ownerPhotoUrl}
+                    alt={owner}
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '50%',
+                      objectFit: 'cover'
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '50%',
+                      backgroundColor: getOwnerColor(owner),
+                      fontSize: '8px',
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: '600'
+                    }}
+                  >
+                    {owner.split(' ').map(n => n[0]).join('').toUpperCase()}
+                  </div>
+                )}
+                {owner}
+              </button>
+            );
+          })}
         </div>
       )}
 
