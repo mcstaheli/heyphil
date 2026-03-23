@@ -16,8 +16,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [reorderingTask, setReorderingTask] = useState(null);
   const [reorderTargetIndex, setReorderTargetIndex] = useState(null);
-  const [editingPhaseName, setEditingPhaseName] = useState(null);
-  const [phaseNameInput, setPhaseNameInput] = useState('');
   const [phasePopover, setPhasePopover] = useState(null);
 
   useEffect(() => {
@@ -198,15 +196,12 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         if (phasePopover) {
           setPhasePopover(null);
         }
-        if (editingPhaseName) {
-          setEditingPhaseName(null);
-        }
       }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [editingTask, contextMenu, phasePopover, editingPhaseName]);
+  }, [editingTask, contextMenu, phasePopover]);
 
   const loadTasks = () => {
     // TODO: Load from API
@@ -659,7 +654,18 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               <div 
                 key={task.id} 
                 className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''} ${reorderingTask === task.id ? 'reordering' : ''} ${reorderTargetIndex === taskIndex ? 'drop-target' : ''}`}
-                onClick={() => !compact && task.type !== 'phase' && setEditingTask(task)}
+                onClick={(e) => {
+                  if (compact) return;
+                  if (task.type === 'phase') {
+                    setPhasePopover({
+                      taskId: task.id,
+                      x: e.clientX,
+                      y: e.clientY
+                    });
+                  } else {
+                    setEditingTask(task);
+                  }
+                }}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setReorderTargetIndex(taskIndex);
@@ -759,55 +765,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     {task.type === 'phase' && '📁 '}
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
-                    
-                    {/* Inline editing for phase names */}
-                    {task.type === 'phase' && editingPhaseName === task.id ? (
-                      <input
-                        type="text"
-                        value={phaseNameInput}
-                        onChange={(e) => setPhaseNameInput(e.target.value)}
-                        onBlur={() => {
-                          if (phaseNameInput.trim()) {
-                            updateTask(task.id, { name: phaseNameInput });
-                          }
-                          setEditingPhaseName(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            if (phaseNameInput.trim()) {
-                              updateTask(task.id, { name: phaseNameInput });
-                            }
-                            setEditingPhaseName(null);
-                          } else if (e.key === 'Escape') {
-                            setEditingPhaseName(null);
-                          }
-                        }}
-                        autoFocus
-                        style={{
-                          border: '1px solid #667eea',
-                          borderRadius: '4px',
-                          padding: '2px 6px',
-                          fontSize: 'inherit',
-                          fontWeight: 'inherit',
-                          outline: 'none'
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span
-                        onClick={(e) => {
-                          if (task.type === 'phase') {
-                            e.stopPropagation();
-                            setEditingPhaseName(task.id);
-                            setPhaseNameInput(task.name);
-                          }
-                        }}
-                        style={{ cursor: task.type === 'phase' ? 'text' : 'default' }}
-                      >
-                        {task.name}
-                      </span>
-                    )}
-                    
+                    {task.name}
                     {task.type === 'phase' && task.start && task.end && (
                       <span style={{ 
                         marginLeft: '8px', 
@@ -817,33 +775,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       }}>
                         ({getDaysBetween(new Date(task.start), new Date(task.end))} days)
                       </span>
-                    )}
-                    
-                    {/* Phase settings button */}
-                    {task.type === 'phase' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPhasePopover({
-                            taskId: task.id,
-                            x: e.clientX,
-                            y: e.clientY
-                          });
-                        }}
-                        style={{
-                          marginLeft: '8px',
-                          padding: '2px 6px',
-                          background: 'transparent',
-                          border: '1px solid #e2e8f0',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          color: '#64748b'
-                        }}
-                        title="Phase settings"
-                      >
-                        ⚙️
-                      </button>
                     )}
                   </div>
                 </div>
@@ -1374,10 +1305,29 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               return (
                 <>
                   <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '13px' }}>
-                    Phase Settings
+                    Edit Phase
                   </div>
                   
-                  <label style={{ display: 'block', marginBottom: '8px' }}>
+                  <label style={{ display: 'block', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Title</div>
+                    <input
+                      type="text"
+                      value={phase.name}
+                      onChange={(e) => {
+                        updateTask(phase.id, { name: e.target.value });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '6px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '4px',
+                        fontSize: '13px',
+                        fontWeight: '500'
+                      }}
+                    />
+                  </label>
+                  
+                  <label style={{ display: 'block', marginBottom: '12px' }}>
                     <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Color</div>
                     <input
                       type="color"
@@ -1391,27 +1341,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         border: '1px solid #e2e8f0',
                         borderRadius: '4px',
                         cursor: 'pointer'
-                      }}
-                    />
-                  </label>
-                  
-                  <label style={{ display: 'block', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Description (optional)</div>
-                    <textarea
-                      value={phase.description || ''}
-                      onChange={(e) => {
-                        updateTask(phase.id, { description: e.target.value });
-                      }}
-                      placeholder="Add notes..."
-                      style={{
-                        width: '100%',
-                        minHeight: '60px',
-                        padding: '6px',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        fontFamily: 'inherit',
-                        resize: 'vertical'
                       }}
                     />
                   </label>
