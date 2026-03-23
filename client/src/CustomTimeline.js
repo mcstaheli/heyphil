@@ -992,13 +992,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 const y1 = arrow.fromY + 40; // offset for header
                 const y2 = arrow.toY + 40;
                 
-                // Calculate control points for curved arrow
-                const midX = (x1 + x2) / 2;
+                // 90-degree angle path (right angle)
+                const midX = x1 + (x2 - x1) * 0.5;
                 
                 return (
                   <g key={i}>
                     <path
-                      d={`M ${x1} ${y1} Q ${midX} ${y1}, ${midX} ${(y1 + y2) / 2} Q ${midX} ${y2}, ${x2} ${y2}`}
+                      d={`M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`}
                       stroke="#94a3b8"
                       strokeWidth="2"
                       fill="none"
