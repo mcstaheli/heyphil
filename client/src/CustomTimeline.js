@@ -130,8 +130,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
       const deltaX = e.clientX - resizeStartX;
       
-      // Fixed sensitivity: ~30px per day change (more responsive)
-      const pixelsPerDay = 30;
+      // Much more sensitive: 15px per day (easier to control)
+      const pixelsPerDay = 15;
       const deltaDays = Math.round(deltaX / pixelsPerDay);
       
       const newDuration = Math.max(1, resizeStartDuration + deltaDays);

@@ -324,24 +324,27 @@
 /* Resize Handle */
 .timeline-resize-handle {
   position: absolute;
-  right: -4px;
+  right: -6px;
   top: 0;
   bottom: 0;
-  width: 10px;
+  width: 16px;
   cursor: ew-resize;
-  background: rgba(255, 255, 255, 0.4);
-  opacity: 0.3;
-  transition: opacity 0.2s;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0.6;
+  transition: all 0.2s;
   z-index: 3;
+  border-left: 2px solid rgba(255, 255, 255, 0.8);
 }
 
 .timeline-bar:hover .timeline-resize-handle {
   opacity: 1;
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .timeline-resize-handle:hover {
-  background: rgba(255, 255, 255, 0.7);
-  width: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  width: 20px;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
 }
 
 /* Resize Tooltip */
