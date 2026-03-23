@@ -209,6 +209,53 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [editingTask, contextMenu, phasePopover]);
 
+  // Validate and fix task dependencies
+  const validateTaskDependencies = (tasksToValidate) => {
+    let fixed = false;
+    const validatedTasks = tasksToValidate.map(task => {
+      if (!task.dependencies || task.dependencies.length === 0) return task;
+      
+      const latestEndDate = task.dependencies.reduce((latest, depId) => {
+        const depTask = tasksToValidate.find(t => t.id === depId);
+        if (!depTask) return latest;
+        
+        const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
+        return depEnd > latest ? depEnd : latest;
+      }, new Date(0));
+      
+      latestEndDate.setDate(latestEndDate.getDate() + 1);
+      
+      const taskStart = (task.type === 'milestone' || task.type === 'event') ? new Date(task.date) : new Date(task.start);
+      
+      if (taskStart < latestEndDate) {
+        fixed = true;
+        console.warn(`Fixing dependency violation for task "${task.name}"`);
+        
+        if (task.type === 'milestone' || task.type === 'event') {
+          return { ...task, date: latestEndDate.toISOString().split('T')[0] };
+        } else {
+          const duration = getDaysBetween(new Date(task.start), new Date(task.end));
+          const newEnd = new Date(latestEndDate);
+          newEnd.setDate(newEnd.getDate() + duration);
+          
+          return {
+            ...task,
+            start: latestEndDate.toISOString().split('T')[0],
+            end: newEnd.toISOString().split('T')[0]
+          };
+        }
+      }
+      
+      return task;
+    });
+    
+    if (fixed) {
+      console.log('Fixed dependency violations on load');
+    }
+    
+    return validatedTasks;
+  };
+
   const loadTasks = () => {
     // TODO: Load from API
     const mockTasks = [
@@ -307,7 +354,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         dependencies: []
       }
     ];
-    setTasks(mockTasks);
+    setTasks(validateTaskDependencies(mockTasks));
   };
 
   const calculateTimelineRange = () => {
@@ -462,29 +509,35 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const updateTask = (taskId, updates) => {
     const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, ...updates } : t);
     
-    // If dependencies changed, enforce start date constraints
-    if (updates.dependencies !== undefined) {
-      const task = updatedTasks.find(t => t.id === taskId);
-      if (task && task.dependencies && task.dependencies.length > 0) {
-        const latestEndDate = task.dependencies.reduce((latest, depId) => {
-          const depTask = updatedTasks.find(t => t.id === depId);
-          if (!depTask) return latest;
-          
-          const depEnd = depTask.type === 'milestone' ? new Date(depTask.date) : new Date(depTask.end);
-          return depEnd > latest ? depEnd : latest;
-        }, new Date(0));
+    // Enforce dependency constraints for any update
+    const task = updatedTasks.find(t => t.id === taskId);
+    if (task && task.dependencies && task.dependencies.length > 0) {
+      const latestEndDate = task.dependencies.reduce((latest, depId) => {
+        const depTask = updatedTasks.find(t => t.id === depId);
+        if (!depTask) return latest;
         
-        // Add one day buffer
-        latestEndDate.setDate(latestEndDate.getDate() + 1);
+        const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
+        return depEnd > latest ? depEnd : latest;
+      }, new Date(0));
+      
+      // Add one day buffer
+      latestEndDate.setDate(latestEndDate.getDate() + 1);
+      
+      const taskStart = (task.type === 'milestone' || task.type === 'event') ? new Date(task.date) : new Date(task.start);
+      
+      if (taskStart < latestEndDate) {
+        // Prevent the update - task would violate dependency constraint
+        console.warn('Task would start before dependency ends - auto-adjusting dates');
         
-        const currentStart = new Date(task.start);
-        if (currentStart < latestEndDate) {
-          const daysDiff = Math.ceil((new Date(task.end) - currentStart) / (1000 * 60 * 60 * 24));
+        if (task.type === 'milestone' || task.type === 'event') {
+          task.date = latestEndDate.toISOString().split('T')[0];
+        } else {
+          const duration = getDaysBetween(new Date(task.start), new Date(task.end));
           task.start = latestEndDate.toISOString().split('T')[0];
           
           // Adjust end date to maintain duration
           const newEnd = new Date(latestEndDate);
-          newEnd.setDate(newEnd.getDate() + daysDiff);
+          newEnd.setDate(newEnd.getDate() + duration);
           task.end = newEnd.toISOString().split('T')[0];
         }
       }
