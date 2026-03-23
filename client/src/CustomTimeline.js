@@ -620,7 +620,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           <div className="timeline-header-cell">
             {timelineRange.start && timelineRange.end && (
               <span className="timeline-days-badge">
-                {getDaysBetween(timelineRange.start, timelineRange.end)}
+                {getDaysBetween(timelineRange.start, timelineRange.end)} days
               </span>
             )}
             Tasks
