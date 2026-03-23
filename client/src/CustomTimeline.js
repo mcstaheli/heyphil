@@ -16,6 +16,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [reorderingTask, setReorderingTask] = useState(null);
   const [reorderTargetIndex, setReorderTargetIndex] = useState(null);
+  const [editingPhaseName, setEditingPhaseName] = useState(null);
+  const [phaseNameInput, setPhaseNameInput] = useState('');
+  const [phasePopover, setPhasePopover] = useState(null);
 
   useEffect(() => {
     loadTasks();
@@ -182,7 +185,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     };
   }, [resizingTask, resizeStartX, resizeStartDuration, tasks, timelineRange]);
 
-  // Handle Escape key to close modal and context menu
+  // Handle Escape key to close modal, context menu, and popover
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
@@ -192,12 +195,18 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         if (contextMenu) {
           setContextMenu(null);
         }
+        if (phasePopover) {
+          setPhasePopover(null);
+        }
+        if (editingPhaseName) {
+          setEditingPhaseName(null);
+        }
       }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [editingTask, contextMenu]);
+  }, [editingTask, contextMenu, phasePopover, editingPhaseName]);
 
   const loadTasks = () => {
     // TODO: Load from API
@@ -650,7 +659,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               <div 
                 key={task.id} 
                 className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''} ${reorderingTask === task.id ? 'reordering' : ''} ${reorderTargetIndex === taskIndex ? 'drop-target' : ''}`}
-                onClick={() => !compact && setEditingTask(task)}
+                onClick={() => !compact && task.type !== 'phase' && setEditingTask(task)}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setReorderTargetIndex(taskIndex);
@@ -750,7 +759,55 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     {task.type === 'phase' && '📁 '}
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
-                    {task.name}
+                    
+                    {/* Inline editing for phase names */}
+                    {task.type === 'phase' && editingPhaseName === task.id ? (
+                      <input
+                        type="text"
+                        value={phaseNameInput}
+                        onChange={(e) => setPhaseNameInput(e.target.value)}
+                        onBlur={() => {
+                          if (phaseNameInput.trim()) {
+                            updateTask(task.id, { name: phaseNameInput });
+                          }
+                          setEditingPhaseName(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            if (phaseNameInput.trim()) {
+                              updateTask(task.id, { name: phaseNameInput });
+                            }
+                            setEditingPhaseName(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingPhaseName(null);
+                          }
+                        }}
+                        autoFocus
+                        style={{
+                          border: '1px solid #667eea',
+                          borderRadius: '4px',
+                          padding: '2px 6px',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit',
+                          outline: 'none'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span
+                        onClick={(e) => {
+                          if (task.type === 'phase') {
+                            e.stopPropagation();
+                            setEditingPhaseName(task.id);
+                            setPhaseNameInput(task.name);
+                          }
+                        }}
+                        style={{ cursor: task.type === 'phase' ? 'text' : 'default' }}
+                      >
+                        {task.name}
+                      </span>
+                    )}
+                    
                     {task.type === 'phase' && task.start && task.end && (
                       <span style={{ 
                         marginLeft: '8px', 
@@ -760,6 +817,33 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       }}>
                         ({getDaysBetween(new Date(task.start), new Date(task.end))} days)
                       </span>
+                    )}
+                    
+                    {/* Phase settings button */}
+                    {task.type === 'phase' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPhasePopover({
+                            taskId: task.id,
+                            x: e.clientX,
+                            y: e.clientY
+                          });
+                        }}
+                        style={{
+                          marginLeft: '8px',
+                          padding: '2px 6px',
+                          background: 'transparent',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          color: '#64748b'
+                        }}
+                        title="Phase settings"
+                      >
+                        ⚙️
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1258,6 +1342,101 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           className="context-menu-backdrop"
           onClick={() => setContextMenu(null)}
         />
+      )}
+
+      {/* Phase Settings Popover */}
+      {phasePopover && (
+        <>
+          <div 
+            className="context-menu-backdrop"
+            onClick={() => setPhasePopover(null)}
+          />
+          <div
+            className="timeline-phase-popover"
+            style={{
+              position: 'fixed',
+              left: `${phasePopover.x}px`,
+              top: `${phasePopover.y}px`,
+              background: 'white',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '12px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              zIndex: 1001,
+              minWidth: '200px'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {(() => {
+              const phase = tasks.find(t => t.id === phasePopover.taskId);
+              if (!phase) return null;
+              
+              return (
+                <>
+                  <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '13px' }}>
+                    Phase Settings
+                  </div>
+                  
+                  <label style={{ display: 'block', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Color</div>
+                    <input
+                      type="color"
+                      value={phase.color || '#48bb78'}
+                      onChange={(e) => {
+                        updateTask(phase.id, { color: e.target.value });
+                      }}
+                      style={{
+                        width: '100%',
+                        height: '32px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    />
+                  </label>
+                  
+                  <label style={{ display: 'block', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Description (optional)</div>
+                    <textarea
+                      value={phase.description || ''}
+                      onChange={(e) => {
+                        updateTask(phase.id, { description: e.target.value });
+                      }}
+                      placeholder="Add notes..."
+                      style={{
+                        width: '100%',
+                        minHeight: '60px',
+                        padding: '6px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontFamily: 'inherit',
+                        resize: 'vertical'
+                      }}
+                    />
+                  </label>
+                  
+                  <button
+                    onClick={() => setPhasePopover(null)}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      background: '#667eea',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    Done
+                  </button>
+                </>
+              );
+            })()}
+          </div>
+        </>
       )}
     </div>
   );
