@@ -528,7 +528,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   };
 
   const updateTask = (taskId, updates) => {
-    const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, ...updates } : t);
+    let updatedTasks = tasks.map(t => t.id === taskId ? { ...t, ...updates } : t);
     
     // Enforce dependency constraints for any update
     const task = updatedTasks.find(t => t.id === taskId);
@@ -578,7 +578,74 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       }
     }
     
+    // Cascade changes to dependent tasks
+    updatedTasks = cascadeDependencyChanges(updatedTasks, taskId);
+    
     setTasks(updatedTasks);
+  };
+  
+  // Recursively update all tasks that depend on the given task
+  const cascadeDependencyChanges = (tasksToUpdate, changedTaskId) => {
+    const changedTask = tasksToUpdate.find(t => t.id === changedTaskId);
+    if (!changedTask) return tasksToUpdate;
+    
+    // Find all tasks that depend on this task
+    const dependentTasks = tasksToUpdate.filter(t => 
+      t.dependencies && t.dependencies.includes(changedTaskId)
+    );
+    
+    if (dependentTasks.length === 0) return tasksToUpdate;
+    
+    let updatedTasks = [...tasksToUpdate];
+    
+    dependentTasks.forEach(depTask => {
+      // Calculate new minimum start date based on all dependencies
+      const latestEndDate = depTask.dependencies.reduce((latest, depId) => {
+        const dep = updatedTasks.find(t => t.id === depId);
+        if (!dep) return latest;
+        
+        const depEnd = (dep.type === 'milestone' || dep.type === 'event') 
+          ? new Date(dep.date) 
+          : new Date(dep.end);
+        return depEnd > latest ? depEnd : latest;
+      }, new Date(0));
+      
+      // Add one day buffer
+      latestEndDate.setDate(latestEndDate.getDate() + 1);
+      
+      const currentStart = (depTask.type === 'milestone' || depTask.type === 'event')
+        ? new Date(depTask.date)
+        : new Date(depTask.start);
+      
+      // If the dependent task needs to be shifted
+      if (currentStart < latestEndDate) {
+        console.log(`Cascading dependency change: shifting "${depTask.name}" forward`);
+        
+        updatedTasks = updatedTasks.map(t => {
+          if (t.id === depTask.id) {
+            if (t.type === 'milestone' || t.type === 'event') {
+              return { ...t, date: latestEndDate.toISOString().split('T')[0] };
+            } else {
+              const duration = getDaysBetween(new Date(t.start), new Date(t.end));
+              const newEnd = new Date(latestEndDate);
+              newEnd.setDate(newEnd.getDate() + duration);
+              
+              return {
+                ...t,
+                start: latestEndDate.toISOString().split('T')[0],
+                end: newEnd.toISOString().split('T')[0]
+              };
+            }
+          }
+          return t;
+        });
+        
+        // Recursively cascade to tasks that depend on this one
+        updatedTasks = cascadeDependencyChanges(updatedTasks, depTask.id);
+      }
+    });
+    
+    return updatedTasks;
   };
 
   const deleteTask = (taskId) => {
