@@ -752,7 +752,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     )
                   )}
                   <div className="task-name-simple">
-                    {task.parentId && <span className="indent-line">└─ </span>}
                     {task.type === 'phase' && '📁 '}
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
