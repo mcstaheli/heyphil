@@ -1000,18 +1000,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 const y1 = arrow.fromY + 40; // offset for header
                 const y2 = arrow.toY + 40;
                 
-                // Check if items are immediately adjacent (within 50px = one row height)
-                const isAdjacent = Math.abs(y2 - y1) <= 50;
-                
-                let pathData;
-                if (isAdjacent) {
-                  // Straight line down for adjacent items
-                  pathData = `M ${x1} ${y1} L ${x2} ${y2}`;
-                } else {
-                  // 90-degree angle path for non-adjacent items
-                  const midX = x1 + (x2 - x1) * 0.5;
-                  pathData = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
-                }
+                // Always use 90-degree angle path
+                const midX = x1 + (x2 - x1) * 0.5;
+                const pathData = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
                 
                 return (
                   <g key={i}>
