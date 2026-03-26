@@ -771,7 +771,15 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
     // Generate unique card ID
     const cardId = `card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // Create card in database
+    // Create a project for this card
+    const project = await boardDb.createProject({
+      title,
+      description,
+      status: column,
+      dealValue: dealValue || 0
+    });
+    
+    // Create card in database with project_id
     const card = await boardDb.createCard({
       id: cardId,
       title,
@@ -781,7 +789,8 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
       notes,
       dealValue: dealValue || 0,
       dateCreated: new Date(),
-      projectType
+      projectType,
+      projectId: project.id
     });
     
     // Log creation

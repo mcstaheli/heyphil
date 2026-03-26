@@ -133,8 +133,8 @@ export async function getCardById(id) {
 
 export async function createCard(card) {
   const result = await pool.query(`
-    INSERT INTO cards (id, title, description, column_name, owner, notes, deal_value, date_created, project_type)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    INSERT INTO cards (id, title, description, column_name, owner, notes, deal_value, date_created, project_type, project_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING *
   `, [
     card.id,
@@ -145,7 +145,8 @@ export async function createCard(card) {
     card.notes || null,
     card.dealValue || null,
     card.dateCreated || new Date(),
-    card.projectType || null
+    card.projectType || null,
+    card.projectId || null
   ]);
   return result.rows[0];
 }
