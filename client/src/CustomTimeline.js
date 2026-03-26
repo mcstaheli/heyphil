@@ -1522,10 +1522,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       {editingTask && !compact && (
         <div className="timeline-edit-overlay" onClick={() => setEditingTask(null)}>
           <div className="timeline-edit-panel" onClick={(e) => e.stopPropagation()}>
-            <h3 
-              contentEditable
-              suppressContentEditableWarning
-              onBlur={(e) => setEditingTask({ ...editingTask, name: e.target.textContent })}
+            <input
+              type="text"
+              value={editingTask.name}
+              onChange={(e) => setEditingTask({ ...editingTask, name: e.target.value })}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -1533,25 +1533,23 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 }
               }}
               style={{ 
-                cursor: 'text',
+                width: '100%',
+                fontSize: '24px',
+                fontWeight: '600',
                 padding: '8px',
                 borderRadius: '4px',
+                border: '1px solid #cbd5e1',
                 outline: 'none',
-                backgroundColor: editingTask.isNew ? '#fef3c7' : 'transparent'
+                marginBottom: '16px'
               }}
-              ref={(el) => {
-                if (el && editingTask.isNew) {
-                  el.focus();
-                  const range = document.createRange();
-                  range.selectNodeContents(el);
-                  const selection = window.getSelection();
-                  selection?.removeAllRanges();
-                  selection?.addRange(range);
+              autoFocus={editingTask.isNew}
+              onFocus={(e) => {
+                if (editingTask.isNew) {
+                  e.target.select();
                 }
               }}
-            >
-              {editingTask.name}
-            </h3>
+              placeholder="Task name"
+            />
 
             <label>
               Type:
@@ -1621,6 +1619,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     }}
                     disabled={editingTask.type === 'phase'}
                     style={{
+                      width: '120px',
                       fontSize: '16px',
                       padding: '8px 12px',
                       textAlign: 'center'
