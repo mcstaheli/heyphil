@@ -1565,7 +1565,25 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               </select>
             </label>
 
-            {editingTask.type !== 'event' && (
+            {editingTask.type === 'phase' && (
+              <label>
+                Color:
+                <input
+                  type="color"
+                  value={editingTask.color || '#667eea'}
+                  onChange={(e) => setEditingTask({ ...editingTask, color: e.target.value })}
+                  style={{
+                    width: '100%',
+                    height: '40px',
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                    border: '1px solid #cbd5e1'
+                  }}
+                />
+              </label>
+            )}
+
+            {editingTask.type !== 'event' && editingTask.type !== 'phase' && (
               <>
                 <label>
                   Start Date:
@@ -1663,19 +1681,21 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               </label>
             )}
 
-            <label>
-              Owner:
-              <select
-                value={editingTask.owner}
-                onChange={(e) => setEditingTask({ ...editingTask, owner: e.target.value })}
-              >
-                <option value="">Unassigned</option>
-                <option value="Chad">Chad</option>
-                <option value="Tracy">Tracy</option>
-                <option value="Greg">Greg</option>
-                <option value="Scott">Scott</option>
-              </select>
-            </label>
+            {editingTask.type !== 'phase' && (
+              <label>
+                Owner:
+                <select
+                  value={editingTask.owner}
+                  onChange={(e) => setEditingTask({ ...editingTask, owner: e.target.value })}
+                >
+                  <option value="">Unassigned</option>
+                  <option value="Chad">Chad</option>
+                  <option value="Tracy">Tracy</option>
+                  <option value="Greg">Greg</option>
+                  <option value="Scott">Scott</option>
+                </select>
+              </label>
+            )}
 
             {editingTask.type !== 'phase' && (
               <label>
