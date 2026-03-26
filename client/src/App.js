@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import './App.css';
 import './Loading.css';
@@ -34,7 +33,6 @@ function getInitialsColor(name) {
 }
 
 function App() {
-  const navigate = useNavigate();
   const [authenticated, setAuthenticated] = useState(null);
   const [user, setUser] = useState(null);
   const [currentApp, setCurrentAppState] = useState(() => {
@@ -310,6 +308,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
   const [loading, setLoading] = useState(true);
   const [showNewCard, setShowNewCard] = useState(false);
   const [newCardColumn, setNewCardColumn] = useState(null);
+  const [projectDetailId, setProjectDetailId] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
   const [draggedCard, setDraggedCard] = useState(null);
   const [filterOwner, setFilterOwner] = useState('');
@@ -1025,20 +1024,18 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
     );
   }
 
-  // Wrapper component for project detail route
-  const ProjectDetailWrapper = () => {
-    const { projectId } = useParams();
+  // Show project detail page if one is selected
+  if (projectDetailId) {
     return (
       <ProjectDetail
-        projectId={projectId}
-        onClose={() => navigate('/')}
+        projectId={projectDetailId}
+        onClose={() => setProjectDetailId(null)}
         currentUser={user}
       />
     );
-  };
+  }
 
-  // Main board component
-  const MainBoard = () => (
+  return (
     <div className="app-container">
       <header className="app-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -1348,7 +1345,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           projectTypeColors={projectTypeColors}
           people={people}
           studioMode={studioMode}
-          onViewProject={(projectId) => navigate(`/projects/${projectId}`)}
+          onViewProject={setProjectDetailId}
           currentUser={user}
         />
       )}
@@ -2091,14 +2088,6 @@ function DevTools({ user, onClose }) {
         </div>
       </div>
     </div>
-  );
-
-  // Main routing structure
-  return (
-    <Routes>
-      <Route path="/" element={<MainBoard />} />
-      <Route path="/projects/:projectId" element={<ProjectDetailWrapper />} />
-    </Routes>
   );
 }
 
