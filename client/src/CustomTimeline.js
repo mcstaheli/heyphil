@@ -90,10 +90,18 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       const task = tasks.find(t => t.id === draggingTask);
       if (!task) return;
 
+      const originalDuration = (task.type === 'milestone' || task.type === 'event') 
+        ? 1 
+        : getDaysBetween(new Date(task.start), new Date(task.end));
+
       let newStartDate = new Date(dragStartDate);
       newStartDate.setDate(newStartDate.getDate() + deltaDays);
 
-      // Check predecessor constraints (tasks this depends on)
+      // Find constraints
+      let minStartDate = null;
+      let maxStartDate = null;
+
+      // Check predecessor constraints (earliest we can start)
       if (task.dependencies && task.dependencies.length > 0) {
         const latestDepEndDate = task.dependencies.reduce((latest, depId) => {
           const depTask = tasks.find(t => t.id === depId);
@@ -104,25 +112,12 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           return depEnd > latest ? depEnd : latest;
         }, new Date(0));
         
-        // Allow tasks to start on the same day dependency ends
-        const minStartDate = new Date(latestDepEndDate);
-        
-        // Clamp to minimum date - don't allow earlier
-        if (newStartDate < minStartDate) {
-          newStartDate = minStartDate;
-          // Don't update lastDeltaDays so it won't jump when moving back to valid range
-          return;
-        }
+        minStartDate = new Date(latestDepEndDate);
       }
 
-      // Check successor constraints (tasks that depend on this)
+      // Check successor constraints (latest we can end)
       const successors = tasks.filter(t => t.dependencies && t.dependencies.includes(task.id));
       if (successors.length > 0) {
-        const duration = getDaysBetween(new Date(task.start), new Date(task.end));
-        const proposedEndDate = new Date(newStartDate);
-        proposedEndDate.setDate(proposedEndDate.getDate() + duration);
-        
-        // Find earliest successor start date
         const earliestSuccessorStart = successors.reduce((earliest, successor) => {
           const succStart = (successor.type === 'milestone' || successor.type === 'event')
             ? new Date(successor.date)
@@ -131,23 +126,33 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           return succStart < earliest ? succStart : earliest;
         }, new Date('2100-01-01'));
         
-        // If proposed end would be after earliest successor start, clamp it
-        if (proposedEndDate > earliestSuccessorStart) {
-          // Calculate max start date that keeps end before successor
-          const maxStartDate = new Date(earliestSuccessorStart);
-          maxStartDate.setDate(maxStartDate.getDate() - duration);
-          newStartDate = maxStartDate;
-        }
+        // Latest we can start = successor start - duration
+        maxStartDate = new Date(earliestSuccessorStart);
+        maxStartDate.setDate(maxStartDate.getDate() - originalDuration);
       }
 
-      if (task.type === 'milestone') {
+      // Apply constraints
+      if (minStartDate && newStartDate < minStartDate) {
+        newStartDate = new Date(minStartDate);
+      }
+      
+      if (maxStartDate && newStartDate > maxStartDate) {
+        newStartDate = new Date(maxStartDate);
+      }
+
+      // Check if task fits between constraints
+      if (minStartDate && maxStartDate && minStartDate > maxStartDate) {
+        // Task doesn't fit - don't update
+        return;
+      }
+
+      if (task.type === 'milestone' || task.type === 'event') {
         updateTask(task.id, {
           date: newStartDate.toISOString().split('T')[0]
         });
       } else {
-        const duration = getDaysBetween(new Date(task.start), new Date(task.end));
         const newEndDate = new Date(newStartDate);
-        newEndDate.setDate(newEndDate.getDate() + duration);
+        newEndDate.setDate(newEndDate.getDate() + originalDuration);
 
         updateTask(task.id, {
           start: newStartDate.toISOString().split('T')[0],
