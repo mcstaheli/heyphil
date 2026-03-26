@@ -20,19 +20,56 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
   };
 
   const fetchProject = async () => {
-    // TODO: Fetch from API
-    // For now, mock data
-    setProject({
-      id: projectId,
-      name: 'Sample Project',
-      stage: 'Diligence',
-      owner: 'Chad Staheli',
-      startDate: '2026-01-15',
-      targetClose: '2026-04-30',
-      budget: 50000,
-      actualSpend: 45200,
-      health: 'at_risk'
-    });
+    try {
+      const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+      const token = localStorage.getItem('authToken');
+      
+      // Fetch project data
+      const projectRes = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!projectRes.ok) {
+        console.error('Failed to fetch project:', projectRes.status);
+        return;
+      }
+      
+      const projectData = await projectRes.json();
+      const proj = projectData.project;
+      
+      // Fetch linked card to get owner
+      const boardRes = await fetch(`${API_BASE_URL}/api/origination/board`, {
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      let owner = '-';
+      if (boardRes.ok) {
+        const boardData = await boardRes.json();
+        const linkedCard = boardData.cards.find(c => c.project_id === projectId);
+        if (linkedCard) {
+          owner = linkedCard.owner || '-';
+        }
+      }
+      
+      setProject({
+        id: proj.id,
+        name: proj.title || 'Untitled Project',
+        stage: proj.status || 'Unknown',
+        owner: owner,
+        targetClose: '-',
+        budget: '-',
+        actualSpend: '-',
+        health: '-'
+      });
+    } catch (error) {
+      console.error('Failed to fetch project:', error);
+    }
   };
 
   const fetchPeople = async () => {
@@ -96,27 +133,15 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
             </div>
             <div className="stat-card">
               <div className="stat-label">Target Close</div>
-              <div className="stat-value">{new Date(project.targetClose).toLocaleDateString()}</div>
+              <div className="stat-value">{project.targetClose}</div>
             </div>
             <div className="stat-card">
               <div className="stat-label">Budget</div>
-              <div className="stat-value">
-                ${project.actualSpend.toLocaleString()} / ${project.budget.toLocaleString()}
-              </div>
-              <div className="stat-progress">
-                <div 
-                  className="stat-progress-bar" 
-                  style={{ width: `${(project.actualSpend / project.budget) * 100}%` }}
-                />
-              </div>
+              <div className="stat-value">{project.budget}</div>
             </div>
             <div className="stat-card">
               <div className="stat-label">Health</div>
-              <div className={`stat-value health-${project.health}`}>
-                {project.health === 'on_track' && '✓ On Track'}
-                {project.health === 'at_risk' && '⚠️ At Risk'}
-                {project.health === 'blocked' && '🔴 Blocked'}
-              </div>
+              <div className="stat-value">{project.health}</div>
             </div>
           </div>
 
