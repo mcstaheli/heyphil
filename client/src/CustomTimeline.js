@@ -93,7 +93,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       let newStartDate = new Date(dragStartDate);
       newStartDate.setDate(newStartDate.getDate() + deltaDays);
 
-      // Check dependency constraints - clamp to minimum without auto-adjusting
+      // Check predecessor constraints (tasks this depends on)
       if (task.dependencies && task.dependencies.length > 0) {
         const latestDepEndDate = task.dependencies.reduce((latest, depId) => {
           const depTask = tasks.find(t => t.id === depId);
@@ -112,6 +112,31 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           newStartDate = minStartDate;
           // Don't update lastDeltaDays so it won't jump when moving back to valid range
           return;
+        }
+      }
+
+      // Check successor constraints (tasks that depend on this)
+      const successors = tasks.filter(t => t.dependencies && t.dependencies.includes(task.id));
+      if (successors.length > 0) {
+        const duration = getDaysBetween(new Date(task.start), new Date(task.end));
+        const proposedEndDate = new Date(newStartDate);
+        proposedEndDate.setDate(proposedEndDate.getDate() + duration);
+        
+        // Find earliest successor start date
+        const earliestSuccessorStart = successors.reduce((earliest, successor) => {
+          const succStart = (successor.type === 'milestone' || successor.type === 'event')
+            ? new Date(successor.date)
+            : new Date(successor.start);
+          succStart.setHours(0, 0, 0, 0);
+          return succStart < earliest ? succStart : earliest;
+        }, new Date('2100-01-01'));
+        
+        // If proposed end would be after earliest successor start, clamp it
+        if (proposedEndDate > earliestSuccessorStart) {
+          // Calculate max start date that keeps end before successor
+          const maxStartDate = new Date(earliestSuccessorStart);
+          maxStartDate.setDate(maxStartDate.getDate() - duration);
+          newStartDate = maxStartDate;
         }
       }
 
