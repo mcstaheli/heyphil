@@ -82,9 +82,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           return depEnd > latest ? depEnd : latest;
         }, new Date(0));
         
-        // Add one day buffer after dependency
+        // Allow tasks to start on the same day dependency ends
         const minStartDate = new Date(latestDepEndDate);
-        minStartDate.setDate(minStartDate.getDate() + 1);
         
         // Clamp to minimum date - don't allow earlier
         if (newStartDate < minStartDate) {
@@ -607,7 +606,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         return depEnd > latest ? depEnd : latest;
       }, new Date(0));
       
-      latestEndDate.setDate(latestEndDate.getDate() + 1); // Add 1 day buffer
+      // Allow tasks to start on the same day dependency ends (no buffer)
       
       const currentStart = (task.type === 'milestone' || task.type === 'event')
         ? new Date(task.date)
