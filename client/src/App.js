@@ -60,6 +60,14 @@ function App() {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
     
+    // Check for project URL on mount
+    const path = window.location.pathname;
+    const projectMatch = path.match(/^\/projects\/([^\/]+)$/);
+    if (projectMatch && currentApp === 'origination') {
+      const projectId = projectMatch[1];
+      setTimeout(() => setProjectDetailId(projectId), 100); // Slight delay to ensure state is ready
+    }
+    
     checkAuth();
     
     // Check token expiry every 5 minutes
@@ -69,6 +77,42 @@ function App() {
     
     return () => clearInterval(tokenCheckInterval);
   }, []);
+
+  // Sync URL with projectDetailId (only in origination board)
+  useEffect(() => {
+    if (currentApp !== 'origination') return;
+    
+    // Listen for browser back/forward
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      const projectMatch = path.match(/^\/projects\/([^\/]+)$/);
+      if (projectMatch) {
+        setProjectDetailId(projectMatch[1]);
+      } else if (path === '/' || path === '') {
+        setProjectDetailId(null);
+      }
+    };
+    
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentApp]);
+
+  // Update URL when projectDetailId changes
+  useEffect(() => {
+    if (currentApp !== 'origination') return;
+    
+    if (projectDetailId) {
+      // Push project URL
+      if (window.location.pathname !== `/projects/${projectDetailId}`) {
+        window.history.pushState({}, '', `/projects/${projectDetailId}`);
+      }
+    } else {
+      // Clear URL back to root
+      if (window.location.pathname !== '/' && window.location.pathname !== '') {
+        window.history.pushState({}, '', '/');
+      }
+    }
+  }, [projectDetailId, currentApp]);
   
   const checkTokenExpiry = () => {
     const token = localStorage.getItem('authToken');
