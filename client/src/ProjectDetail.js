@@ -10,9 +10,14 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
   useEffect(() => {
     // Load project data
-    fetchProject();
-    fetchPeople();
+    loadData();
   }, [projectId]);
+
+  const loadData = async () => {
+    setLoading(true);
+    await Promise.all([fetchProject(), fetchPeople()]);
+    setLoading(false);
+  };
 
   const fetchProject = async () => {
     // TODO: Fetch from API
@@ -37,14 +42,14 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
         credentials: 'include'
       });
       const data = await response.json();
-      console.log('People data from API:', data.people);
+      console.log('ProjectDetail: People data from API:', data.people);
       setPeople(data.people || {});
     } catch (error) {
       console.error('Failed to load people:', error);
     }
   };
 
-  if (!project) return <div className="loading">Loading project...</div>;
+  if (loading || !project) return <div className="loading">Loading project...</div>;
 
   const modules = [
     { id: 'timeline', name: 'Timeline', icon: '📅', description: 'Gantt chart & tasks' },
