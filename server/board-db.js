@@ -1,6 +1,109 @@
 // Database queries for Project Board
 import pool from './db.js';
 
+// ========== PROJECTS ==========
+
+export async function getAllProjects() {
+  const result = await pool.query(`
+    SELECT 
+      id, title, description, status, target_close, deal_value,
+      budget, timeline, team, files,
+      created_at, updated_at
+    FROM projects
+    ORDER BY created_at DESC
+  `);
+  return result.rows;
+}
+
+export async function getProjectById(id) {
+  const result = await pool.query(`
+    SELECT 
+      id, title, description, status, target_close, deal_value,
+      budget, timeline, team, files,
+      created_at, updated_at
+    FROM projects 
+    WHERE id = $1
+  `, [id]);
+  return result.rows[0];
+}
+
+export async function createProject(project) {
+  const result = await pool.query(`
+    INSERT INTO projects (title, description, status, target_close, deal_value, budget, timeline, team, files)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING *
+  `, [
+    project.title,
+    project.description || null,
+    project.status || null,
+    project.targetClose || null,
+    project.dealValue || null,
+    project.budget ? JSON.stringify(project.budget) : null,
+    project.timeline ? JSON.stringify(project.timeline) : null,
+    project.team ? JSON.stringify(project.team) : null,
+    project.files ? JSON.stringify(project.files) : null
+  ]);
+  return result.rows[0];
+}
+
+export async function updateProject(id, updates) {
+  const fields = [];
+  const values = [];
+  let paramCount = 1;
+
+  if (updates.title !== undefined) {
+    fields.push(`title = $${paramCount++}`);
+    values.push(updates.title);
+  }
+  if (updates.description !== undefined) {
+    fields.push(`description = $${paramCount++}`);
+    values.push(updates.description);
+  }
+  if (updates.status !== undefined) {
+    fields.push(`status = $${paramCount++}`);
+    values.push(updates.status);
+  }
+  if (updates.targetClose !== undefined) {
+    fields.push(`target_close = $${paramCount++}`);
+    values.push(updates.targetClose);
+  }
+  if (updates.dealValue !== undefined) {
+    fields.push(`deal_value = $${paramCount++}`);
+    values.push(updates.dealValue);
+  }
+  if (updates.budget !== undefined) {
+    fields.push(`budget = $${paramCount++}`);
+    values.push(JSON.stringify(updates.budget));
+  }
+  if (updates.timeline !== undefined) {
+    fields.push(`timeline = $${paramCount++}`);
+    values.push(JSON.stringify(updates.timeline));
+  }
+  if (updates.team !== undefined) {
+    fields.push(`team = $${paramCount++}`);
+    values.push(JSON.stringify(updates.team));
+  }
+  if (updates.files !== undefined) {
+    fields.push(`files = $${paramCount++}`);
+    values.push(JSON.stringify(updates.files));
+  }
+
+  if (fields.length === 0) {
+    return getProjectById(id);
+  }
+
+  values.push(id);
+  const result = await pool.query(
+    `UPDATE projects SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`,
+    values
+  );
+  return result.rows[0];
+}
+
+export async function deleteProject(id) {
+  await pool.query('DELETE FROM projects WHERE id = $1', [id]);
+}
+
 // ========== CARDS ==========
 
 export async function getAllCards() {

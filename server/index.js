@@ -300,6 +300,120 @@ const logActivity = async (sheets, spreadsheetId, cardTitle, action, user, detai
   }
 };
 
+// ========== PROJECTS ENDPOINTS ==========
+
+// Get all projects
+app.get('/api/projects', requireAuth, async (req, res) => {
+  try {
+    const projects = await boardDb.getAllProjects();
+    res.json({ projects });
+  } catch (error) {
+    console.error('Failed to fetch projects:', error);
+    res.status(500).json({ error: 'Failed to fetch projects' });
+  }
+});
+
+// Get single project
+app.get('/api/projects/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const project = await boardDb.getProjectById(id);
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    res.json({ project });
+  } catch (error) {
+    console.error('Failed to fetch project:', error);
+    res.status(500).json({ error: 'Failed to fetch project' });
+  }
+});
+
+// Create new project
+app.post('/api/projects', requireAuth, async (req, res) => {
+  try {
+    const { title, description, status, targetClose, dealValue, budget, timeline, team, files } = req.body;
+    
+    // Input validation
+    if (!title || title.trim().length === 0) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    if (title.length > 500) {
+      return res.status(400).json({ error: 'Title must be 500 characters or less' });
+    }
+    
+    const project = await boardDb.createProject({
+      title,
+      description,
+      status,
+      targetClose,
+      dealValue,
+      budget,
+      timeline,
+      team,
+      files
+    });
+    
+    // Broadcast to all clients
+    broadcastChange('project:created', { project });
+    
+    res.json({ project });
+  } catch (error) {
+    console.error('Failed to create project:', error);
+    res.status(500).json({ error: 'Failed to create project' });
+  }
+});
+
+// Update project
+app.put('/api/projects/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    
+    // Input validation
+    if (updates.title !== undefined) {
+      if (!updates.title || updates.title.trim().length === 0) {
+        return res.status(400).json({ error: 'Title cannot be empty' });
+      }
+      if (updates.title.length > 500) {
+        return res.status(400).json({ error: 'Title must be 500 characters or less' });
+      }
+    }
+    
+    const project = await boardDb.updateProject(id, updates);
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    // Broadcast to all clients
+    broadcastChange('project:updated', { project });
+    
+    res.json({ project });
+  } catch (error) {
+    console.error('Failed to update project:', error);
+    res.status(500).json({ error: 'Failed to update project' });
+  }
+});
+
+// Delete project
+app.delete('/api/projects/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await boardDb.deleteProject(id);
+    
+    // Broadcast to all clients
+    broadcastChange('project:deleted', { projectId: id });
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete project:', error);
+    res.status(500).json({ error: 'Failed to delete project' });
+  }
+});
+
 // ========== ORG CHARTS ENDPOINTS ==========
 
 // Get all charts for user
