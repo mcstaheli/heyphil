@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './CustomTimeline.css';
 
 function CustomTimeline({ projectId, compact = false, people = {} }) {
@@ -27,6 +27,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [tightenChanges, setTightenChanges] = useState([]);
   const [tightenExclusions, setTightenExclusions] = useState(new Set());
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [gridWidth, setGridWidth] = useState(1000);
+  const gridRef = useRef(null);
 
   useEffect(() => {
     loadTasks();
@@ -37,6 +39,26 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       calculateTimelineRange();
     }
   }, [tasks]);
+
+  // Update grid width for dependency arrow calculations
+  useEffect(() => {
+    const updateGridWidth = () => {
+      if (gridRef.current) {
+        setGridWidth(gridRef.current.offsetWidth);
+      }
+    };
+
+    updateGridWidth();
+    window.addEventListener('resize', updateGridWidth);
+    
+    // Update on task changes (dragging, resizing)
+    const timeout = setTimeout(updateGridWidth, 100);
+
+    return () => {
+      window.removeEventListener('resize', updateGridWidth);
+      clearTimeout(timeout);
+    };
+  }, [tasks, draggingTask, resizingTask]);
 
   // Handle drag events
   useEffect(() => {
@@ -1185,7 +1207,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
         {/* Timeline Grid */}
         <div className="timeline-grid-wrapper">
-          <div className="timeline-grid">
+          <div className="timeline-grid" ref={gridRef}>
             {/* Column Grid Lines & Weekend Stripes */}
             <div className="grid-overlay">
               {dateColumns.map((date, i) => {
@@ -1247,10 +1269,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 zIndex: 1
               }}>
                 {dependencyArrows.map((arrow, i) => {
-                const containerWidth = document.querySelector('.timeline-grid')?.offsetWidth || 1000;
-                
-                const x1 = (arrow.fromX / 100) * containerWidth;
-                const x2 = (arrow.toX / 100) * containerWidth;
+                const x1 = (arrow.fromX / 100) * gridWidth;
+                const x2 = (arrow.toX / 100) * gridWidth;
                 const y1 = arrow.fromY + 40; // offset for header
                 const y2 = arrow.toY + 40;
                 
