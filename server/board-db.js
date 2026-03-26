@@ -1,16 +1,18 @@
-// Database queries for Project Board
+// Database queries for Project Board (unified projects table)
 import pool from './db.js';
 
-// ========== PROJECTS ==========
+// ========== PROJECTS (unified with board cards) ==========
 
 export async function getAllProjects() {
   const result = await pool.query(`
     SELECT 
-      id, title, description, status, target_close, deal_value,
-      budget, timeline, team, files,
+      id, title, description, status, owner, notes, project_type,
+      deal_value, target_close, date_created, deleted_at,
+      budget, timeline, team, files, tasks, links,
       created_at, updated_at
     FROM projects
-    ORDER BY created_at DESC
+    WHERE deleted_at IS NULL
+    ORDER BY date_created DESC
   `);
   return result.rows;
 }
@@ -18,8 +20,9 @@ export async function getAllProjects() {
 export async function getProjectById(id) {
   const result = await pool.query(`
     SELECT 
-      id, title, description, status, target_close, deal_value,
-      budget, timeline, team, files,
+      id, title, description, status, owner, notes, project_type,
+      deal_value, target_close, date_created, deleted_at,
+      budget, timeline, team, files, tasks, links,
       created_at, updated_at
     FROM projects 
     WHERE id = $1
@@ -29,19 +32,28 @@ export async function getProjectById(id) {
 
 export async function createProject(project) {
   const result = await pool.query(`
-    INSERT INTO projects (title, description, status, target_close, deal_value, budget, timeline, team, files)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    INSERT INTO projects (
+      title, description, status, owner, notes, project_type,
+      deal_value, target_close, date_created, budget, timeline, team, files, tasks, links
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     RETURNING *
   `, [
     project.title,
     project.description || null,
-    project.status || null,
-    project.targetClose || null,
+    project.status || project.column || 'ideation',
+    project.owner || null,
+    project.notes || null,
+    project.projectType || null,
     project.dealValue || null,
+    project.targetClose || null,
+    project.dateCreated || new Date(),
     project.budget ? JSON.stringify(project.budget) : null,
     project.timeline ? JSON.stringify(project.timeline) : null,
     project.team ? JSON.stringify(project.team) : null,
-    project.files ? JSON.stringify(project.files) : null
+    project.files ? JSON.stringify(project.files) : null,
+    project.tasks ? JSON.stringify(project.tasks) : '[]',
+    project.links ? JSON.stringify(project.links) : '[]'
   ]);
   return result.rows[0];
 }
@@ -63,13 +75,30 @@ export async function updateProject(id, updates) {
     fields.push(`status = $${paramCount++}`);
     values.push(updates.status);
   }
-  if (updates.targetClose !== undefined) {
-    fields.push(`target_close = $${paramCount++}`);
-    values.push(updates.targetClose);
+  // Support 'column' as alias for 'status' (for board compatibility)
+  if (updates.column !== undefined && updates.status === undefined) {
+    fields.push(`status = $${paramCount++}`);
+    values.push(updates.column);
+  }
+  if (updates.owner !== undefined) {
+    fields.push(`owner = $${paramCount++}`);
+    values.push(updates.owner);
+  }
+  if (updates.notes !== undefined) {
+    fields.push(`notes = $${paramCount++}`);
+    values.push(updates.notes);
+  }
+  if (updates.projectType !== undefined) {
+    fields.push(`project_type = $${paramCount++}`);
+    values.push(updates.projectType);
   }
   if (updates.dealValue !== undefined) {
     fields.push(`deal_value = $${paramCount++}`);
     values.push(updates.dealValue);
+  }
+  if (updates.targetClose !== undefined) {
+    fields.push(`target_close = $${paramCount++}`);
+    values.push(updates.targetClose);
   }
   if (updates.budget !== undefined) {
     fields.push(`budget = $${paramCount++}`);
@@ -87,6 +116,14 @@ export async function updateProject(id, updates) {
     fields.push(`files = $${paramCount++}`);
     values.push(JSON.stringify(updates.files));
   }
+  if (updates.tasks !== undefined) {
+    fields.push(`tasks = $${paramCount++}`);
+    values.push(JSON.stringify(updates.tasks));
+  }
+  if (updates.links !== undefined) {
+    fields.push(`links = $${paramCount++}`);
+    values.push(JSON.stringify(updates.links));
+  }
 
   if (fields.length === 0) {
     return getProjectById(id);
@@ -101,219 +138,146 @@ export async function updateProject(id, updates) {
 }
 
 export async function deleteProject(id) {
-  await pool.query('DELETE FROM projects WHERE id = $1', [id]);
+  // Soft delete
+  await pool.query('UPDATE projects SET deleted_at = NOW() WHERE id = $1', [id]);
 }
 
-// ========== CARDS ==========
-
-export async function getAllCards() {
+export async function getDeletedProjects() {
   const result = await pool.query(`
     SELECT 
-      id, title, description, column_name as column, owner, notes,
-      deal_value, date_created, project_type, project_id,
+      id, title, description, status, owner, notes, project_type,
+      deal_value, date_created, deleted_at,
       created_at, updated_at
-    FROM cards
-    WHERE deleted_at IS NULL
-    ORDER BY date_created DESC
-  `);
-  return result.rows;
-}
-
-export async function getCardById(id) {
-  const result = await pool.query(`
-    SELECT 
-      id, title, description, column_name as column, owner, notes,
-      deal_value, date_created, project_type, project_id,
-      created_at, updated_at, deleted_at
-    FROM cards 
-    WHERE id = $1
-  `, [id]);
-  return result.rows[0];
-}
-
-export async function createCard(card) {
-  const result = await pool.query(`
-    INSERT INTO cards (id, title, description, column_name, owner, notes, deal_value, date_created, project_type, project_id)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    RETURNING *
-  `, [
-    card.id,
-    card.title,
-    card.description || null,
-    card.column || 'backlog',
-    card.owner || null,
-    card.notes || null,
-    card.dealValue || null,
-    card.dateCreated || new Date(),
-    card.projectType || null,
-    card.projectId || null
-  ]);
-  return result.rows[0];
-}
-
-export async function updateCard(id, updates) {
-  const fields = [];
-  const values = [];
-  let paramCount = 1;
-  
-  if (updates.title !== undefined) {
-    fields.push(`title = $${paramCount++}`);
-    values.push(updates.title);
-  }
-  if (updates.description !== undefined) {
-    fields.push(`description = $${paramCount++}`);
-    values.push(updates.description);
-  }
-  if (updates.column !== undefined) {
-    fields.push(`column_name = $${paramCount++}`);
-    values.push(updates.column);
-  }
-  if (updates.owner !== undefined) {
-    fields.push(`owner = $${paramCount++}`);
-    values.push(updates.owner);
-  }
-  if (updates.notes !== undefined) {
-    fields.push(`notes = $${paramCount++}`);
-    values.push(updates.notes);
-  }
-  if (updates.dealValue !== undefined) {
-    fields.push(`deal_value = $${paramCount++}`);
-    values.push(updates.dealValue);
-  }
-  if (updates.projectType !== undefined) {
-    fields.push(`project_type = $${paramCount++}`);
-    values.push(updates.projectType);
-  }
-  
-  if (fields.length === 0) return null;
-  
-  values.push(id);
-  const result = await pool.query(
-    `UPDATE cards SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`,
-    values
-  );
-  return result.rows[0];
-}
-
-export async function deleteCard(id) {
-  // Soft delete - mark as deleted
-  await pool.query('UPDATE cards SET deleted_at = NOW() WHERE id = $1', [id]);
-}
-
-export async function getDeletedCards() {
-  const result = await pool.query(`
-    SELECT 
-      id, title, description, column_name as column, owner, notes,
-      deal_value, date_created, project_type,
-      deleted_at, created_at, updated_at
-    FROM cards
+    FROM projects
     WHERE deleted_at IS NOT NULL
     ORDER BY deleted_at DESC
   `);
   return result.rows;
 }
 
-export async function restoreCard(id) {
-  await pool.query('UPDATE cards SET deleted_at = NULL WHERE id = $1', [id]);
+export async function restoreProject(id) {
+  await pool.query('UPDATE projects SET deleted_at = NULL WHERE id = $1', [id]);
 }
 
-// ========== ACTIONS ==========
+// ========== TASKS (JSONB in projects.tasks) ==========
 
-export async function getActionsByCardId(cardId) {
-  const result = await pool.query(
-    'SELECT * FROM actions WHERE card_id = $1 ORDER BY id',
-    [cardId]
-  );
-  return result.rows;
-}
-
-export async function getAllActions() {
-  const result = await pool.query('SELECT * FROM actions ORDER BY id');
-  return result.rows;
-}
-
-export async function createAction(cardId, cardTitle, text) {
-  const result = await pool.query(
-    'INSERT INTO actions (card_id, card_title, text) VALUES ($1, $2, $3) RETURNING *',
-    [cardId, cardTitle, text]
-  );
+export async function addTask(projectId, text) {
+  const result = await pool.query(`
+    UPDATE projects
+    SET tasks = tasks || jsonb_build_array(
+      jsonb_build_object(
+        'id', (SELECT COALESCE(MAX((task->>'id')::int), 0) + 1 FROM projects, jsonb_array_elements(tasks) task WHERE id = $1),
+        'text', $2,
+        'completed', false,
+        'completedOn', null,
+        'completedBy', null
+      )
+    )
+    WHERE id = $1
+    RETURNING tasks
+  `, [projectId, text]);
   return result.rows[0];
 }
 
-export async function toggleAction(actionId, completed, userName) {
-  const result = await pool.query(
-    `UPDATE actions 
-     SET completed_on = $1, completed_by = $2 
-     WHERE id = $3 
-     RETURNING *`,
-    [completed ? new Date() : null, completed ? userName : null, actionId]
-  );
+export async function toggleTask(projectId, taskId, completed, userName) {
+  await pool.query(`
+    UPDATE projects
+    SET tasks = (
+      SELECT jsonb_agg(
+        CASE 
+          WHEN (task->>'id')::int = $2
+          THEN jsonb_set(
+            jsonb_set(task, '{completed}', $3::text::jsonb),
+            '{completedOn}', $4::text::jsonb
+          ) || jsonb_build_object('completedBy', $5)
+          ELSE task
+        END
+      )
+      FROM jsonb_array_elements(tasks) task
+    )
+    WHERE id = $1
+  `, [projectId, taskId, completed, completed ? new Date().toISOString() : null, completed ? userName : null]);
+}
+
+export async function updateTask(projectId, taskId, text) {
+  await pool.query(`
+    UPDATE projects
+    SET tasks = (
+      SELECT jsonb_agg(
+        CASE 
+          WHEN (task->>'id')::int = $2
+          THEN jsonb_set(task, '{text}', to_jsonb($3))
+          ELSE task
+        END
+      )
+      FROM jsonb_array_elements(tasks) task
+    )
+    WHERE id = $1
+  `, [projectId, taskId, text]);
+}
+
+export async function deleteTask(projectId, taskId) {
+  await pool.query(`
+    UPDATE projects
+    SET tasks = (
+      SELECT jsonb_agg(task)
+      FROM jsonb_array_elements(tasks) task
+      WHERE (task->>'id')::int != $2
+    )
+    WHERE id = $1
+  `, [projectId, taskId]);
+}
+
+// ========== LINKS (JSONB in projects.links) ==========
+
+export async function addLink(projectId, title, url) {
+  const result = await pool.query(`
+    UPDATE projects
+    SET links = links || jsonb_build_array(
+      jsonb_build_object(
+        'id', (SELECT COALESCE(MAX((link->>'id')::int), 0) + 1 FROM projects, jsonb_array_elements(links) link WHERE id = $1),
+        'title', $2,
+        'url', $3
+      )
+    )
+    WHERE id = $1
+    RETURNING links
+  `, [projectId, title, url]);
   return result.rows[0];
 }
 
-export async function updateAction(actionId, text) {
-  const result = await pool.query(
-    `UPDATE actions 
-     SET text = $1 
-     WHERE id = $2 
-     RETURNING *`,
-    [text, actionId]
-  );
-  return result.rows[0];
-}
-
-export async function deleteAction(actionId) {
-  await pool.query('DELETE FROM actions WHERE id = $1', [actionId]);
-}
-
-// ========== LINKS ==========
-
-export async function getLinksByCardId(cardId) {
-  const result = await pool.query(
-    'SELECT * FROM links WHERE card_id = $1 ORDER BY id',
-    [cardId]
-  );
-  return result.rows;
-}
-
-export async function getAllLinks() {
-  const result = await pool.query('SELECT * FROM links ORDER BY id');
-  return result.rows;
-}
-
-export async function createLink(cardId, title, url) {
-  const result = await pool.query(
-    'INSERT INTO links (card_id, title, url) VALUES ($1, $2, $3) RETURNING *',
-    [cardId, title, url]
-  );
-  return result.rows[0];
-}
-
-export async function deleteLink(linkId) {
-  await pool.query('DELETE FROM links WHERE id = $1', [linkId]);
+export async function deleteLink(projectId, linkId) {
+  await pool.query(`
+    UPDATE projects
+    SET links = (
+      SELECT jsonb_agg(link)
+      FROM jsonb_array_elements(links) link
+      WHERE (link->>'id')::int != $2
+    )
+    WHERE id = $1
+  `, [projectId, linkId]);
 }
 
 // ========== ACTIVITY LOG ==========
 
-export async function getLogsByCardId(cardId) {
+export async function getLogsByProjectId(projectId) {
   const result = await pool.query(
-    'SELECT * FROM activity_log WHERE card_id = $1 ORDER BY timestamp DESC',
-    [cardId]
+    'SELECT * FROM activity_log WHERE project_id = $1 ORDER BY timestamp DESC',
+    [projectId]
   );
   return result.rows.map(row => ({
     timestamp: row.timestamp,
-    cardTitle: row.card_title,
     action: row.action,
     user: row.user_name,
     details: row.details,
-    cardId: row.card_id
+    projectId: row.project_id
   }));
 }
 
-export async function addLog(cardId, cardTitle, action, userName, details) {
+export async function addLog(projectId, action, userName, details) {
   await pool.query(
-    'INSERT INTO activity_log (card_id, card_title, action, user_name, details) VALUES ($1, $2, $3, $4, $5)',
-    [cardId, cardTitle, action, userName, details]
+    'INSERT INTO activity_log (project_id, action, user_name, details) VALUES ($1, $2, $3, $4)',
+    [projectId, action, userName, details]
   );
 }
 
@@ -363,73 +327,45 @@ export async function createProjectType(name, color) {
 
 export async function getBoardData() {
   // Get all data in parallel
-  const [cardsResult, actionsResult, linksResult, logsResult, peopleData, projectTypeColors] = await Promise.all([
-    getAllCards(),
-    getAllActions(),
-    getAllLinks(),
-    pool.query('SELECT * FROM activity_log ORDER BY timestamp DESC'),
+  const [projectsResult, logsResult, peopleData, projectTypeColors] = await Promise.all([
+    getAllProjects(),
+    pool.query('SELECT * FROM activity_log WHERE project_id IS NOT NULL ORDER BY timestamp DESC'),
     getAllPeople(),
     getAllProjectTypes()
   ]);
   
-  // Group actions by card
-  const actionsByCard = {};
-  actionsResult.forEach(action => {
-    if (!actionsByCard[action.card_id]) actionsByCard[action.card_id] = [];
-    actionsByCard[action.card_id].push({
-      id: action.id,
-      cardId: action.card_id,
-      cardTitle: action.card_title,
-      text: action.text,
-      completedOn: action.completed_on,
-      completedBy: action.completed_by
-    });
-  });
-  
-  // Group links by card
-  const linksByCard = {};
-  linksResult.forEach(link => {
-    if (!linksByCard[link.card_id]) linksByCard[link.card_id] = [];
-    linksByCard[link.card_id].push({
-      id: link.id,
-      cardId: link.card_id,
-      title: link.title,
-      url: link.url
-    });
-  });
-  
-  // Group logs by card
-  const logsByCard = {};
+  // Group logs by project
+  const logsByProject = {};
   logsResult.rows.forEach(log => {
-    const cardId = log.card_id || log.card_title;
-    if (cardId) {
-      if (!logsByCard[cardId]) logsByCard[cardId] = [];
-      logsByCard[cardId].push({
+    const projectId = log.project_id;
+    if (projectId) {
+      if (!logsByProject[projectId]) logsByProject[projectId] = [];
+      logsByProject[projectId].push({
         timestamp: log.timestamp,
-        cardTitle: log.card_title,
         action: log.action,
         user: log.user_name,
         details: log.details,
-        cardId: log.card_id
+        projectId: log.project_id
       });
     }
   });
   
-  // Build complete cards with actions, links, and logs
-  const cards = cardsResult.map(card => ({
-    id: card.id,
-    title: card.title,
-    description: card.description,
-    column: card.column,
-    owner: card.owner,
-    notes: card.notes,
-    dealValue: parseFloat(card.deal_value) || 0,
-    dateCreated: card.date_created,
-    projectType: card.project_type,
-    project_id: card.project_id,
-    actions: actionsByCard[card.id] || [],
-    links: linksByCard[card.id] || [],
-    log: logsByCard[card.id] || []
+  // Build complete projects with embedded tasks, links, and logs
+  // Convert to board card format for compatibility
+  const cards = projectsResult.map(project => ({
+    id: project.id,
+    title: project.title,
+    description: project.description,
+    column: project.status,  // Map status -> column for board
+    owner: project.owner,
+    notes: project.notes,
+    dealValue: parseFloat(project.deal_value) || 0,
+    dateCreated: project.date_created,
+    projectType: project.project_type,
+    project_id: project.id,  // Self-reference (every card IS a project now)
+    actions: project.tasks || [],  // Map tasks -> actions for compatibility
+    links: project.links || [],
+    log: logsByProject[project.id] || []
   }));
   
   return {

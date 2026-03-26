@@ -768,39 +768,41 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Notes must be 10,000 characters or less' });
     }
     
-    // Generate unique card ID
-    const cardId = `card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // Create a project for this card
+    // Create project (cards are now projects)
     const project = await boardDb.createProject({
       title,
       description,
-      status: column,
-      dealValue: dealValue || 0
-    });
-    
-    // Create card in database with project_id
-    const card = await boardDb.createCard({
-      id: cardId,
-      title,
-      description,
-      column,
+      column,  // Maps to status
       owner,
       notes,
       dealValue: dealValue || 0,
-      dateCreated: new Date(),
       projectType,
-      projectId: project.id
+      dateCreated: new Date()
     });
     
     // Log creation
     await boardDb.addLog(
-      cardId,
-      title,
+      project.id,
       'Created',
       req.user.name || req.user.email,
-      `New card in ${column}. Owner: ${owner || 'Unassigned'}`
+      `New project in ${column}. Owner: ${owner || 'Unassigned'}`
     );
+    
+    // Convert to card format for frontend compatibility
+    const card = {
+      id: project.id,
+      title: project.title,
+      description: project.description,
+      column: project.status,
+      owner: project.owner,
+      notes: project.notes,
+      dealValue: parseFloat(project.deal_value) || 0,
+      projectType: project.project_type,
+      dateCreated: project.date_created,
+      project_id: project.id,
+      actions: [],
+      links: []
+    };
     
     // Broadcast to all clients
     broadcastChange('card:created', card);
@@ -820,17 +822,17 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     const { id } = req.params;
     const { title, description, column, owner, notes, dealValue, projectType } = req.body;
     
-    // Get old card for change tracking
-    const oldCard = await boardDb.getCardById(id);
-    if (!oldCard) {
-      return res.status(404).json({ error: 'Card not found' });
+    // Get old project for change tracking
+    const oldProject = await boardDb.getProjectById(id);
+    if (!oldProject) {
+      return res.status(404).json({ error: 'Project not found' });
     }
     
-    // Update in database
-    const updatedCard = await boardDb.updateCard(id, {
+    // Update project (cards ARE projects now)
+    const updatedProject = await boardDb.updateProject(id, {
       title,
       description,
-      column,
+      column,  // Maps to status
       owner,
       notes,
       dealValue,
@@ -839,49 +841,25 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     
     // Log changes
     const changes = [];
-    if (oldCard.column !== column) changes.push(`Status: ${oldCard.column} → ${column}`);
-    if (oldCard.owner !== owner) changes.push(`Owner: ${oldCard.owner || 'Unassigned'} → ${owner || 'Unassigned'}`);
-    if (oldCard.title !== title) changes.push(`Title changed`);
-    if (oldCard.description !== description) changes.push(`Description updated`);
-    if (oldCard.notes !== notes) changes.push(`Notes updated`);
-    if (parseFloat(oldCard.deal_value || 0) !== parseFloat(dealValue || 0)) {
-      changes.push(`Deal value: $${oldCard.deal_value || 0} → $${dealValue || 0}`);
+    if (oldProject.status !== column) changes.push(`Status: ${oldProject.status} → ${column}`);
+    if (oldProject.owner !== owner) changes.push(`Owner: ${oldProject.owner || 'Unassigned'} → ${owner || 'Unassigned'}`);
+    if (oldProject.title !== title) changes.push(`Title changed`);
+    if (oldProject.description !== description) changes.push(`Description updated`);
+    if (oldProject.notes !== notes) changes.push(`Notes updated`);
+    if (parseFloat(oldProject.deal_value || 0) !== parseFloat(dealValue || 0)) {
+      changes.push(`Deal value: $${oldProject.deal_value || 0} → $${dealValue || 0}`);
     }
-    if ((oldCard.project_type || '') !== (projectType || '')) {
-      changes.push(`Project type: ${oldCard.project_type || 'None'} → ${projectType || 'None'}`);
+    if ((oldProject.project_type || '') !== (projectType || '')) {
+      changes.push(`Project type: ${oldProject.project_type || 'None'} → ${projectType || 'None'}`);
     }
     
     if (changes.length > 0) {
       await boardDb.addLog(
         id,
-        title,
         'Updated',
         req.user.name || req.user.email,
         changes.join(', ')
       );
-    }
-    
-    // Phase 4: Sync card changes to project
-    if (updatedCard.project_id) {
-      try {
-        const syncUpdates = {};
-        if (title !== undefined) syncUpdates.title = title;
-        if (description !== undefined) syncUpdates.description = description;
-        if (dealValue !== undefined) syncUpdates.dealValue = dealValue;
-        if (column !== undefined) syncUpdates.status = column; // column_name → status
-        
-        if (Object.keys(syncUpdates).length > 0) {
-          await boardDb.updateProject(updatedCard.project_id, syncUpdates);
-          // Broadcast project update to all clients
-          const project = await boardDb.getProjectById(updatedCard.project_id);
-          if (project) {
-            broadcastChange('project:updated', { project });
-          }
-        }
-      } catch (error) {
-        console.error('Failed to sync card to project:', error);
-        // Don't fail the request if sync fails
-      }
     }
     
     // Broadcast to all clients
