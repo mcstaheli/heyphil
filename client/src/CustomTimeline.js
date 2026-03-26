@@ -766,25 +766,38 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       if (task.type === 'phase') {
         const children = tasks.filter(t => t.parentId === task.id && t.type !== 'milestone' && t.type !== 'event');
         
-        if (children.length > 0) {
-          // Calculate start date (earliest child start)
-          const earliestStart = children.reduce((earliest, child) => {
-            const childStart = new Date(child.start);
+        // Include ALL children for date calculations (tasks, milestones, events)
+        const allChildren = tasks.filter(t => t.parentId === task.id);
+        
+        if (allChildren.length > 0) {
+          // Calculate start date (earliest child start or date)
+          const earliestStart = allChildren.reduce((earliest, child) => {
+            const childStart = child.type === 'milestone' || child.type === 'event' 
+              ? new Date(child.date) 
+              : new Date(child.start);
             return childStart < earliest ? childStart : earliest;
-          }, new Date(children[0].start));
+          }, new Date(allChildren[0].start || allChildren[0].date));
           
-          // Calculate end date (latest child end)
-          const latestEnd = children.reduce((latest, child) => {
-            const childEnd = new Date(child.end);
+          // Calculate end date (latest child end or date)
+          const latestEnd = allChildren.reduce((latest, child) => {
+            const childEnd = child.type === 'milestone' || child.type === 'event'
+              ? new Date(child.date)
+              : new Date(child.end);
             return childEnd > latest ? childEnd : latest;
-          }, new Date(children[0].end));
-          
-          // Calculate average progress
-          const avgProgress = children.reduce((sum, child) => sum + (child.progress || 0), 0) / children.length;
+          }, new Date(allChildren[0].end || allChildren[0].date));
           
           task.start = earliestStart.toISOString().split('T')[0];
           task.end = latestEnd.toISOString().split('T')[0];
+        }
+        
+        // Calculate progress ONLY from regular tasks (not milestones/events)
+        if (children.length > 0) {
+          const avgProgress = children.reduce((sum, child) => sum + (child.progress || 0), 0) / children.length;
           task.progress = Math.round(avgProgress);
+          console.log(`Phase "${task.name}": ${children.length} tasks, avg progress: ${avgProgress}%`, children.map(c => `${c.name}: ${c.progress}%`));
+        } else {
+          // No regular tasks, only milestones/events - show 0%
+          task.progress = 0;
         }
       }
     });
