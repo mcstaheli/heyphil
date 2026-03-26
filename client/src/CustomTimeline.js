@@ -96,7 +96,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
       const originalDuration = (task.type === 'milestone' || task.type === 'event') 
         ? 1 
-        : getDaysBetween(new Date(task.start), new Date(task.end));
+        : getDaysBetween(new Date(task.start), new Date(task.end)) + 1;
 
       let newStartDate = new Date(dragStartDate);
       newStartDate.setDate(newStartDate.getDate() + deltaDays);
@@ -156,9 +156,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           date: newStartDate.toISOString().split('T')[0]
         });
       } else {
-        // Calculate proposed end date
+        // Calculate proposed end date (originalDuration is inclusive, so subtract 1)
         let newEndDate = new Date(newStartDate);
-        newEndDate.setDate(newEndDate.getDate() + originalDuration);
+        newEndDate.setDate(newEndDate.getDate() + originalDuration - 1);
 
         // If we have successors, ensure end date doesn't violate them
         if (successors.length > 0) {
@@ -177,8 +177,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           }
         }
 
-        // Verify duration is maintained
-        const finalDuration = getDaysBetween(newStartDate, newEndDate);
+        // Verify duration is maintained (inclusive)
+        const finalDuration = getDaysBetween(newStartDate, newEndDate) + 1;
         if (finalDuration < 1) {
           console.warn('Duration would be less than 1 day - blocking drag');
           return;
@@ -236,7 +236,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       if (!task) return;
 
       const newEndDate = new Date(task.start);
-      newEndDate.setDate(newEndDate.getDate() + newDuration);
+      newEndDate.setDate(newEndDate.getDate() + newDuration - 1);
 
       updateTask(task.id, {
         end: newEndDate.toISOString().split('T')[0]
@@ -471,7 +471,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     endDate.setHours(0, 0, 0, 0);
 
     const startOffset = getDaysBetween(timelineRange.start, startDate);
-    const duration = (task.type === 'milestone' || task.type === 'event') ? 1 : getDaysBetween(startDate, endDate);
+    const duration = (task.type === 'milestone' || task.type === 'event') ? 1 : getDaysBetween(startDate, endDate) + 1;
 
     const leftPercent = (startOffset / totalDays) * 100;
     const widthPercent = (duration / totalDays) * 100;
@@ -598,12 +598,12 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         if (task.type === 'milestone' || task.type === 'event') {
           task.date = latestEndDate.toISOString().split('T')[0];
         } else {
-          const duration = getDaysBetween(new Date(task.start), new Date(task.end));
+          const duration = getDaysBetween(new Date(task.start), new Date(task.end)) + 1;
           task.start = latestEndDate.toISOString().split('T')[0];
           
-          // Adjust end date to maintain duration
+          // Adjust end date to maintain duration (inclusive)
           const newEnd = new Date(latestEndDate);
-          newEnd.setDate(newEnd.getDate() + duration);
+          newEnd.setDate(newEnd.getDate() + duration - 1);
           task.end = newEnd.toISOString().split('T')[0];
         }
       }
@@ -649,9 +649,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         if (task.type === 'milestone' || task.type === 'event') {
           newDates.date = latestEndDate.toISOString().split('T')[0];
         } else {
-          const duration = getDaysBetween(new Date(task.start), new Date(task.end));
+          const duration = getDaysBetween(new Date(task.start), new Date(task.end)) + 1;
           const newEnd = new Date(latestEndDate);
-          newEnd.setDate(newEnd.getDate() + duration);
+          newEnd.setDate(newEnd.getDate() + duration - 1);
           
           newDates.start = latestEndDate.toISOString().split('T')[0];
           newDates.end = newEnd.toISOString().split('T')[0];
@@ -734,9 +734,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             if (t.type === 'milestone' || t.type === 'event') {
               return { ...t, date: latestEndDate.toISOString().split('T')[0] };
             } else {
-              const duration = getDaysBetween(new Date(t.start), new Date(t.end));
+              const duration = getDaysBetween(new Date(t.start), new Date(t.end)) + 1;
               const newEnd = new Date(latestEndDate);
-              newEnd.setDate(newEnd.getDate() + duration);
+              newEnd.setDate(newEnd.getDate() + duration - 1);
               
               return {
                 ...t,
@@ -1202,7 +1202,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     <div className="task-days-badge">
                       {task.type === 'milestone' || task.type === 'event' 
                         ? '1'
-                        : getDaysBetween(new Date(task.start), new Date(task.end))}
+                        : getDaysBetween(new Date(task.start), new Date(task.end)) + 1}
                     </div>
                   )}
                   
@@ -1240,7 +1240,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         fontSize: '11px',
                         fontWeight: '500'
                       }}>
-                        ({getDaysBetween(new Date(task.start), new Date(task.end))} days)
+                        ({getDaysBetween(new Date(task.start), new Date(task.end)) + 1} days)
                       </span>
                     )}
                   </div>
@@ -1508,7 +1508,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                                 e.stopPropagation();
                                 setResizingTask(task.id);
                                 setResizeStartX(e.clientX);
-                                const duration = getDaysBetween(new Date(task.start), new Date(task.end));
+                                const duration = getDaysBetween(new Date(task.start), new Date(task.end)) + 1;
                                 setResizeStartDuration(duration);
                                 setHasDragged(true); // Prevent click from opening modal
                               }}
@@ -1521,7 +1521,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       {resizingTask === task.id && (
                         <div className="resize-tooltip-enhanced">
                           <div className="resize-days-badge">
-                            {getDaysBetween(new Date(task.start), new Date(task.end))}
+                            {getDaysBetween(new Date(task.start), new Date(task.end)) + 1}
                           </div>
                           <div className="resize-days-label">days</div>
                           <div className="resize-dates">
@@ -1632,11 +1632,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     type="number"
                     min="1"
                     value={editingTask.start && editingTask.end ? 
-                      getDaysBetween(new Date(editingTask.start), new Date(editingTask.end)) : 1}
+                      getDaysBetween(new Date(editingTask.start), new Date(editingTask.end)) + 1 : 1}
                     onChange={(e) => {
                       const days = parseInt(e.target.value) || 1;
                       const newEnd = new Date(editingTask.start);
-                      newEnd.setDate(newEnd.getDate() + days);
+                      newEnd.setDate(newEnd.getDate() + days - 1);
                       setEditingTask({ ...editingTask, end: newEnd.toISOString().split('T')[0] });
                     }}
                     disabled={editingTask.type === 'phase'}
