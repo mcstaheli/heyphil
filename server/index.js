@@ -387,6 +387,33 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
     
+    // Phase 4: Sync project changes to linked card(s)
+    try {
+      const syncUpdates = {};
+      if (updates.title !== undefined) syncUpdates.title = updates.title;
+      if (updates.description !== undefined) syncUpdates.description = updates.description;
+      if (updates.dealValue !== undefined) syncUpdates.dealValue = updates.dealValue;
+      if (updates.status !== undefined) syncUpdates.column = updates.status; // status → column_name
+      
+      if (Object.keys(syncUpdates).length > 0) {
+        // Find cards linked to this project
+        const allCards = await boardDb.getAllCards();
+        const linkedCards = allCards.filter(c => c.project_id === id);
+        
+        for (const card of linkedCards) {
+          await boardDb.updateCard(card.id, syncUpdates);
+          // Broadcast card update to all clients
+          broadcastChange('card:updated', {
+            id: card.id,
+            ...syncUpdates
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to sync project to cards:', error);
+      // Don't fail the request if sync fails
+    }
+    
     // Broadcast to all clients
     broadcastChange('project:updated', { project });
     
@@ -823,6 +850,29 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
         req.user.name || req.user.email,
         changes.join(', ')
       );
+    }
+    
+    // Phase 4: Sync card changes to project
+    if (updatedCard.project_id) {
+      try {
+        const syncUpdates = {};
+        if (title !== undefined) syncUpdates.title = title;
+        if (description !== undefined) syncUpdates.description = description;
+        if (dealValue !== undefined) syncUpdates.dealValue = dealValue;
+        if (column !== undefined) syncUpdates.status = column; // column_name → status
+        
+        if (Object.keys(syncUpdates).length > 0) {
+          await boardDb.updateProject(updatedCard.project_id, syncUpdates);
+          // Broadcast project update to all clients
+          const project = await boardDb.getProjectById(updatedCard.project_id);
+          if (project) {
+            broadcastChange('project:updated', { project });
+          }
+        }
+      } catch (error) {
+        console.error('Failed to sync card to project:', error);
+        // Don't fail the request if sync fails
+      }
     }
     
     // Broadcast to all clients

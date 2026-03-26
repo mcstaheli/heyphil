@@ -110,7 +110,7 @@ export async function getAllCards() {
   const result = await pool.query(`
     SELECT 
       id, title, description, column_name as column, owner, notes,
-      deal_value, date_created, project_type,
+      deal_value, date_created, project_type, project_id,
       created_at, updated_at
     FROM cards
     WHERE deleted_at IS NULL
@@ -123,7 +123,7 @@ export async function getCardById(id) {
   const result = await pool.query(`
     SELECT 
       id, title, description, column_name as column, owner, notes,
-      deal_value, date_created, project_type,
+      deal_value, date_created, project_type, project_id,
       created_at, updated_at, deleted_at
     FROM cards 
     WHERE id = $1
