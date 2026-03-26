@@ -425,6 +425,7 @@ export async function getBoardData() {
     dealValue: parseFloat(card.deal_value) || 0,
     dateCreated: card.date_created,
     projectType: card.project_type,
+    project_id: card.project_id,
     actions: actionsByCard[card.id] || [],
     links: linksByCard[card.id] || [],
     log: logsByCard[card.id] || []
