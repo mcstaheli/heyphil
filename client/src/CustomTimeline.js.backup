@@ -1247,7 +1247,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                   }
                 }
                 
-                const monthBg = monthIndex % 2 === 0 ? 'rgba(0, 0, 0, 0.02)' : 'rgba(0, 0, 0, 0.05)';
+                const monthBg = monthIndex % 2 === 0 ? 'rgba(102, 126, 234, 0.02)' : 'rgba(52, 168, 83, 0.02)';
                 const weekendBg = 'rgba(0, 0, 0, 0.03)';
                 
                 return (
@@ -1263,16 +1263,78 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             </div>
 
             {/* Month Headers */}
+            <div className="timeline-month-row">
+              {(() => {
+                const monthSpans = [];
+                let currentMonth = null;
+                let spanStart = 0;
+                let spanCount = 0;
+                
+                dateColumns.forEach((date, i) => {
+                  const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+                  
+                  if (currentMonth !== monthKey) {
+                    if (currentMonth !== null) {
+                      monthSpans.push({ 
+                        start: spanStart, 
+                        count: spanCount, 
+                        date: dateColumns[spanStart],
+                        monthIndex: monthSpans.length 
+                      });
+                    }
+                    currentMonth = monthKey;
+                    spanStart = i;
+                    spanCount = 1;
+                  } else {
+                    spanCount++;
+                  }
+                  
+                  if (i === dateColumns.length - 1) {
+                    monthSpans.push({ 
+                      start: spanStart, 
+                      count: spanCount, 
+                      date: dateColumns[spanStart],
+                      monthIndex: monthSpans.length 
+                    });
+                  }
+                });
+                
+                return monthSpans.map((span, idx) => (
+                  <div 
+                    key={idx} 
+                    className="timeline-month-header"
+                    style={{
+                      gridColumn: `span ${span.count}`,
+                      backgroundColor: span.monthIndex % 2 === 0 ? 'rgba(102, 126, 234, 0.08)' : 'rgba(52, 168, 83, 0.08)',
+                      borderBottom: '1px solid #e2e8f0',
+                      padding: '4px 8px',
+                      textAlign: 'center',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: '#334155'
+                    }}
+                  >
+                    {span.date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                  </div>
+                ));
+              })()}
+            </div>
+
             {/* Date Headers */}
             <div className="timeline-header-row">
               {dateColumns.map((date, i) => {
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6;
                 const prevDate = i > 0 ? dateColumns[i - 1] : null;
                 
+                // Determine month for alternating backgrounds
+                const monthIndex = Math.floor((date - new Date(date.getFullYear(), 0, 1)) / (1000 * 60 * 60 * 24 * 30));
+                const monthBg = monthIndex % 2 === 0 ? 'rgba(102, 126, 234, 0.03)' : 'rgba(52, 168, 83, 0.03)';
+                
                 return (
                   <div 
                     key={i} 
                     className={`timeline-date-header ${isWeekend ? 'weekend' : ''}`}
+                    style={{ backgroundColor: isWeekend ? undefined : monthBg }}
                   >
                     {formatDate(date, prevDate)}
                   </div>
