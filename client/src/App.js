@@ -1939,14 +1939,18 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button type="submit" className="btn-primary">Save</button>
-                {card && currentUser?.email === 'chad@philo.ventures' && onViewProject && card.project_id && (
-                  <button 
-                    type="button" 
-                    className="btn-project-detail"
-                    onClick={() => {
-                      onClose();
-                      onViewProject(card.project_id);
-                    }}
+                {card && currentUser?.email === 'chad@philo.ventures' && onViewProject && (
+                  <>
+                    {!card.project_id && <div style={{ padding: '10px', background: '#fef3c7', borderRadius: '4px', fontSize: '12px' }}>Debug: card.project_id is missing (check console)</div>}
+                    {card.project_id && (
+                      <button 
+                        type="button" 
+                        className="btn-project-detail"
+                        onClick={() => {
+                          console.log('Card data:', card);
+                          onClose();
+                          onViewProject(card.project_id);
+                        }}
                     style={{
                       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                       color: 'white',
@@ -1966,7 +1970,9 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
                       <line x1="9" y1="3" x2="9" y2="21"></line>
                     </svg>
                     View Project Detail
-                  </button>
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
               <div>
