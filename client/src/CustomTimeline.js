@@ -900,11 +900,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
   return (
     <div className={`custom-timeline ${compact ? 'compact' : ''}`}>
-      {!compact && (
-        <div className="timeline-toolbar">
-          <button onClick={addTask} className="timeline-add-btn">+ Add Task</button>
-        </div>
-      )}
 
       {/* Filter Bar */}
       {!compact && (
@@ -1048,7 +1043,25 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         {/* Task List Column */}
         <div className="timeline-tasks-column">
           <div className="timeline-header-cell">
-            Tasks
+            Items
+            {!compact && (
+              <button 
+                onClick={addTask} 
+                style={{
+                  marginLeft: '8px',
+                  background: 'none',
+                  border: 'none',
+                  color: '#667eea',
+                  fontSize: '16px',
+                  cursor: 'pointer',
+                  padding: '0 4px',
+                  lineHeight: '1'
+                }}
+                title="Add task"
+              >
+                +
+              </button>
+            )}
           </div>
           {displayTasks.map((task, taskIndex) => {
             const getOwnerInitials = (name) => {
