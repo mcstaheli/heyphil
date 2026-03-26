@@ -785,14 +785,15 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   
   // Auto-calculate phase dates and progress from children
   const calculatePhaseMetrics = () => {
-    const updatedTasks = [...tasks];
+    // Deep clone to avoid mutating state during render
+    const updatedTasks = tasks.map(t => ({ ...t }));
     
     updatedTasks.forEach(task => {
       if (task.type === 'phase') {
-        const children = tasks.filter(t => t.parentId === task.id && t.type !== 'milestone' && t.type !== 'event');
+        const children = updatedTasks.filter(t => t.parentId === task.id && t.type !== 'milestone' && t.type !== 'event');
         
         // Include ALL children for date calculations (tasks, milestones, events)
-        const allChildren = tasks.filter(t => t.parentId === task.id);
+        const allChildren = updatedTasks.filter(t => t.parentId === task.id);
         
         if (allChildren.length > 0) {
           // Calculate start date (earliest child start or date)
