@@ -11,6 +11,27 @@ import ProjectDetail from './ProjectDetail';
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 
+// Helper function to generate consistent colors for initials
+function getInitialsColor(name) {
+  const colors = [
+    '#4285F4', // Blue
+    '#34A853', // Green
+    '#FBBC04', // Yellow
+    '#EA4335', // Red
+    '#9C27B0', // Purple
+    '#00ACC1', // Cyan
+    '#FF6F00', // Orange
+    '#7CB342', // Light Green
+  ];
+  
+  // Simple hash function to get consistent color for same name
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
 function App() {
   const [authenticated, setAuthenticated] = useState(null);
   const [user, setUser] = useState(null);
@@ -1205,15 +1226,36 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
                   >
                     {!isPrePost && card.daysInStage > 30 && <div className="stale-indicator" title={`${card.daysInStage} days in stage`}>⚠️</div>}
                     <div className="card-main">
-                      {card.owner && people[card.owner] && (
+                      {card.owner && (
                         <div className="card-photo">
-                          <img 
-                            src={people[card.owner]} 
-                            alt={card.owner}
-                            style={{
-                              border: '2px solid #555'
-                            }}
-                          />
+                          {people[card.owner] ? (
+                            <img 
+                              src={people[card.owner]} 
+                              alt={card.owner}
+                              style={{
+                                border: '2px solid #555'
+                              }}
+                            />
+                          ) : (
+                            <div 
+                              className="avatar-initials"
+                              style={{
+                                width: '60px',
+                                height: '60px',
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: getInitialsColor(card.owner),
+                                color: 'white',
+                                fontSize: '24px',
+                                fontWeight: 'bold',
+                                border: '2px solid #555'
+                              }}
+                            >
+                              {card.owner.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                            </div>
+                          )}
                         </div>
                       )}
                       <div className="card-content">
@@ -1392,17 +1434,37 @@ function TrashModal({ deletedCards, onClose, onRestore, people, projectTypeColor
                       : '4px solid transparent'
                   }}
                 >
-                  {card.owner && people[card.owner] && (
-                    <img 
-                      src={people[card.owner]} 
-                      alt={card.owner}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        border: '2px solid #555'
-                      }}
-                    />
+                  {card.owner && (
+                    people[card.owner] ? (
+                      <img 
+                        src={people[card.owner]} 
+                        alt={card.owner}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          border: '2px solid #555'
+                        }}
+                      />
+                    ) : (
+                      <div 
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: getInitialsColor(card.owner),
+                          color: 'white',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          border: '2px solid #555'
+                        }}
+                      >
+                        {card.owner.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                      </div>
+                    )
                   )}
                   <div style={{ flex: 1 }}>
                     <h4 style={{ margin: '0 0 4px 0', fontSize: '16px' }}>{card.title}</h4>

@@ -26,6 +26,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [showTightenModal, setShowTightenModal] = useState(false);
   const [tightenChanges, setTightenChanges] = useState([]);
   const [tightenExclusions, setTightenExclusions] = useState(new Set());
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   useEffect(() => {
     loadTasks();
