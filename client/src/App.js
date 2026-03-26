@@ -1939,13 +1939,13 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button type="submit" className="btn-primary">Save</button>
-                {card && currentUser?.email === 'chad@philo.ventures' && onViewProject && (
+                {card && currentUser?.email === 'chad@philo.ventures' && onViewProject && card.project_id && (
                   <button 
                     type="button" 
                     className="btn-project-detail"
                     onClick={() => {
                       onClose();
-                      onViewProject(card.id);
+                      onViewProject(card.project_id);
                     }}
                     style={{
                       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
