@@ -38,9 +38,20 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
   const fetchPeople = async () => {
     try {
       const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+      const token = localStorage.getItem('authToken');
+      
       const response = await fetch(`${API_BASE_URL}/api/origination/board`, {
-        credentials: 'include'
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
+      
+      if (!response.ok) {
+        console.error('API error:', response.status, response.statusText);
+        return;
+      }
+      
       const data = await response.json();
       console.log('ProjectDetail: People data from API:', data.people);
       setPeople(data.people || {});
