@@ -28,8 +28,17 @@ async function main() {
   try {
     console.log('\n🚀 Starting database migration...\n');
     
-    // Run Phase 1 migration
-    await runMigration('001-add-projects-table.sql');
+    // Get migration file from command line arg, or run all
+    const targetMigration = process.argv[2];
+    
+    if (targetMigration) {
+      // Run specific migration
+      await runMigration(targetMigration);
+    } else {
+      // Run all migrations in order
+      await runMigration('001-add-projects-table.sql');
+      await runMigration('002-backfill-projects-from-cards.sql');
+    }
     
     console.log('\n✅ All migrations completed!\n');
     process.exit(0);
