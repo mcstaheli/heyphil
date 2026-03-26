@@ -1459,7 +1459,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                                     position: 'relative'
                                   }}
                                 >
-                                  {task.progress}%
+                                  {(() => {
+                                    if (isPhase) console.log(`Rendering phase "${task.name}": ${task.progress}%`);
+                                    return task.progress;
+                                  })()}%
                                 </div>
                               )}
                             </>
