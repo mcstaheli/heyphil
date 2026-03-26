@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './CustomTimeline.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+
 function CustomTimeline({ projectId, compact = false, people = {} }) {
   // Debug people data
   useEffect(() => {
@@ -360,105 +362,49 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     return validatedTasks;
   };
 
-  const loadTasks = () => {
-    // TODO: Load from API
-    const mockTasks = [
-      {
-        id: '1',
-        name: 'Phase 1: Diligence',
-        type: 'phase',
-        start: '2026-03-01',
-        end: '2026-03-15',
-        progress: 80,
-        owner: '',
-        color: '#48bb78',
-        dependencies: []
-      },
-      {
-        id: '2',
-        name: 'Site Visit',
-        type: 'task',
-        start: '2026-03-01',
-        end: '2026-03-03',
-        progress: 100,
-        owner: 'Chad',
-        parentId: '1',
-        dependencies: []
-      },
-      {
-        id: '3',
-        name: 'Document Review',
-        type: 'task',
-        start: '2026-03-04',
-        end: '2026-03-08',
-        progress: 100,
-        owner: 'Tracy',
-        parentId: '1',
-        dependencies: ['2']
-      },
-      {
-        id: '4',
-        name: 'Financial Analysis',
-        type: 'task',
-        start: '2026-03-06',
-        end: '2026-03-15',
-        progress: 75,
-        owner: 'Greg',
-        parentId: '1',
-        dependencies: ['3']
-      },
-      {
-        id: '5',
-        name: 'Phase 2: Financing',
-        type: 'phase',
-        start: '2026-03-16',
-        end: '2026-04-10',
-        progress: 30,
-        owner: '',
-        color: '#667eea',
-        dependencies: ['1']
-      },
-      {
-        id: '6',
-        name: 'Loan Application',
-        type: 'task',
-        start: '2026-03-16',
-        end: '2026-03-20',
-        progress: 100,
-        owner: 'Tracy',
-        parentId: '5',
-        dependencies: []
-      },
-      {
-        id: '7',
-        name: 'Underwriting',
-        type: 'task',
-        start: '2026-03-21',
-        end: '2026-04-05',
-        progress: 40,
-        owner: 'Bank',
-        parentId: '5',
-        dependencies: ['6']
-      },
-      {
-        id: '8',
-        name: 'Loan Approval',
-        type: 'event',
-        date: '2026-04-10',
-        owner: 'Bank',
-        parentId: '5',
-        dependencies: ['7']
-      },
-      {
-        id: '9',
-        name: 'Closing Meeting',
-        type: 'event',
-        date: '2026-04-12',
-        owner: 'Chad',
-        dependencies: []
+  const loadTasks = async () => {
+    if (!projectId) {
+      setTasks([]);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+        credentials: 'include'
+      });
+      
+      if (!res.ok) {
+        console.error('Failed to load project:', res.status);
+        setTasks([]);
+        return;
       }
-    ];
-    setTasks(validateTaskDependencies(mockTasks));
+      
+      const data = await res.json();
+      const loadedTasks = data.project?.timeline || [];
+      setTasks(validateTaskDependencies(loadedTasks));
+    } catch (error) {
+      console.error('Error loading timeline:', error);
+      setTasks([]);
+    }
+  };
+
+  const saveTasks = async (updatedTasks) => {
+    if (!projectId) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ timeline: updatedTasks })
+      });
+      
+      if (!res.ok) {
+        console.error('Failed to save timeline:', res.status);
+      }
+    } catch (error) {
+      console.error('Error saving timeline:', error);
+    }
   };
 
   const calculateTimelineRange = () => {
@@ -606,7 +552,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       owner: '',
       dependencies: []
     };
-    setTasks([...tasks, newTask]);
+    const updatedTasks = [...tasks, newTask];
+    setTasks(updatedTasks);
+    saveTasks(updatedTasks);
     setEditingTask(newTask);
   };
 
@@ -665,6 +613,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     updatedTasks = cascadeDependencyChanges(updatedTasks, taskId);
     
     setTasks(updatedTasks);
+    saveTasks(updatedTasks);
   };
   
   // Calculate what would change if we tighten all dependencies (0 day gaps)
@@ -809,7 +758,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
   const deleteTask = (taskId) => {
     if (window.confirm('Delete this task?')) {
-      setTasks(tasks.filter(t => t.id !== taskId));
+      const updatedTasks = tasks.filter(t => t.id !== taskId);
+      setTasks(updatedTasks);
+      saveTasks(updatedTasks);
       setEditingTask(null);
     }
   };
