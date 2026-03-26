@@ -5,6 +5,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   // Debug people data
   useEffect(() => {
     console.log('CustomTimeline received people prop:', people);
+    console.log('People keys:', Object.keys(people));
+    console.log('People values:', Object.values(people));
   }, [people]);
   
   const [tasks, setTasks] = useState([]);
