@@ -90,8 +90,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       const task = tasks.find(t => t.id === draggingTask);
       if (!task) return;
 
+      // Calculate duration once at the beginning
+      const originalDuration = (task.type === 'milestone' || task.type === 'event') 
+        ? 1 
+        : getDaysBetween(new Date(task.start), new Date(task.end));
+
       let newStartDate = new Date(dragStartDate);
       newStartDate.setDate(newStartDate.getDate() + deltaDays);
+
+      let minStartDate = null;
+      let maxEndDate = null;
 
       // Check predecessor constraints (tasks this depends on)
       if (task.dependencies && task.dependencies.length > 0) {
@@ -105,23 +113,12 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         }, new Date(0));
         
         // Allow tasks to start on the same day dependency ends
-        const minStartDate = new Date(latestDepEndDate);
-        
-        // Clamp to minimum date - don't allow earlier
-        if (newStartDate < minStartDate) {
-          newStartDate = minStartDate;
-          // Don't update lastDeltaDays so it won't jump when moving back to valid range
-          return;
-        }
+        minStartDate = new Date(latestDepEndDate);
       }
 
       // Check successor constraints (tasks that depend on this)
       const successors = tasks.filter(t => t.dependencies && t.dependencies.includes(task.id));
       if (successors.length > 0) {
-        const duration = getDaysBetween(new Date(task.start), new Date(task.end));
-        const proposedEndDate = new Date(newStartDate);
-        proposedEndDate.setDate(proposedEndDate.getDate() + duration);
-        
         // Find earliest successor start date
         const earliestSuccessorStart = successors.reduce((earliest, successor) => {
           const succStart = (successor.type === 'milestone' || successor.type === 'event')
@@ -131,24 +128,29 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           return succStart < earliest ? succStart : earliest;
         }, new Date('2100-01-01'));
         
-        // If proposed end would be after earliest successor start, clamp it
-        if (proposedEndDate > earliestSuccessorStart) {
-          // Calculate max start date that keeps end before successor
-          const maxStartDate = new Date(earliestSuccessorStart);
-          maxStartDate.setDate(maxStartDate.getDate() - duration);
-          newStartDate = maxStartDate;
-        }
+        maxEndDate = new Date(earliestSuccessorStart);
       }
 
-      if (task.type === 'milestone') {
+      // Apply constraints
+      if (minStartDate && newStartDate < minStartDate) {
+        newStartDate = new Date(minStartDate);
+      }
+
+      // Calculate proposed end date
+      const newEndDate = new Date(newStartDate);
+      newEndDate.setDate(newEndDate.getDate() + originalDuration);
+
+      // Check if end date violates successor constraint
+      if (maxEndDate && newEndDate > maxEndDate) {
+        // Task won't fit - don't allow this drag position
+        return;
+      }
+
+      if (task.type === 'milestone' || task.type === 'event') {
         updateTask(task.id, {
           date: newStartDate.toISOString().split('T')[0]
         });
       } else {
-        const duration = getDaysBetween(new Date(task.start), new Date(task.end));
-        const newEndDate = new Date(newStartDate);
-        newEndDate.setDate(newEndDate.getDate() + duration);
-
         updateTask(task.id, {
           start: newStartDate.toISOString().split('T')[0],
           end: newEndDate.toISOString().split('T')[0]
