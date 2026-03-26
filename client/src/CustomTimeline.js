@@ -145,6 +145,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       // Check if task fits between constraints
       if (minStartDate && maxStartDate && minStartDate > maxStartDate) {
         // Task doesn't fit - don't update
+        console.warn('Task does not fit between constraints');
         return;
       }
 
@@ -153,8 +154,33 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           date: newStartDate.toISOString().split('T')[0]
         });
       } else {
-        const newEndDate = new Date(newStartDate);
+        // Calculate proposed end date
+        let newEndDate = new Date(newStartDate);
         newEndDate.setDate(newEndDate.getDate() + originalDuration);
+
+        // If we have successors, ensure end date doesn't violate them
+        if (successors.length > 0) {
+          const earliestSuccessorStart = successors.reduce((earliest, successor) => {
+            const succStart = (successor.type === 'milestone' || successor.type === 'event')
+              ? new Date(successor.date)
+              : new Date(successor.start);
+            succStart.setHours(0, 0, 0, 0);
+            return succStart < earliest ? succStart : earliest;
+          }, new Date('2100-01-01'));
+
+          // If proposed end is after successor start, clamp it
+          if (newEndDate >= earliestSuccessorStart) {
+            console.warn('End date would violate successor - blocking drag');
+            return; // Don't allow this position
+          }
+        }
+
+        // Verify duration is maintained
+        const finalDuration = getDaysBetween(newStartDate, newEndDate);
+        if (finalDuration < 1) {
+          console.warn('Duration would be less than 1 day - blocking drag');
+          return;
+        }
 
         updateTask(task.id, {
           start: newStartDate.toISOString().split('T')[0],
