@@ -875,12 +875,12 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
     }
   };
 
-  const updateAction = async (actionId, text) => {
+  const updateAction = async (actionId, text, cardId) => {
     try {
       const response = await apiFetch(`${API_BASE_URL}/api/origination/action/${actionId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ text })
+        body: JSON.stringify({ text, cardId })
       });
       
       if (response.ok) {
@@ -891,9 +891,9 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
     }
   };
 
-  const deleteAction = async (actionId) => {
+  const deleteAction = async (actionId, cardId) => {
     try {
-      const response = await apiFetch(`${API_BASE_URL}/api/origination/action/${actionId}`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/action/${actionId}?cardId=${cardId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
@@ -922,9 +922,9 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
     }
   };
 
-  const deleteLink = async (linkId) => {
+  const deleteLink = async (linkId, cardId) => {
     try {
-      const response = await apiFetch(`${API_BASE_URL}/api/origination/link/${linkId}`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/link/${linkId}?cardId=${cardId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       });

@@ -885,22 +885,21 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Get card details before deletion for logging
-    const card = await boardDb.getCardById(id);
-    if (!card) {
-      return res.status(404).json({ error: 'Card not found' });
+    // Get project details before deletion for logging
+    const project = await boardDb.getProjectById(id);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
     }
     
     // Soft delete from database
-    await boardDb.deleteCard(id);
+    await boardDb.deleteProject(id);
     
     // Log deletion
     await boardDb.addLog(
       id,
-      card.title,
       'Deleted',
       req.user.name || req.user.email,
-      `Card moved to trash`
+      `Project moved to trash`
     );
     
     // Broadcast to all clients
@@ -916,8 +915,21 @@ app.delete('/api/origination/card/:id', requireAuth, async (req, res) => {
 // Get deleted cards (trash)
 app.get('/api/origination/trash', requireAuth, async (req, res) => {
   try {
-    const deletedCards = await boardDb.getDeletedCards();
-    res.json({ cards: deletedCards });
+    const deletedProjects = await boardDb.getDeletedProjects();
+    // Convert to card format for frontend compatibility
+    const cards = deletedProjects.map(p => ({
+      id: p.id,
+      title: p.title,
+      description: p.description,
+      column: p.status,
+      owner: p.owner,
+      notes: p.notes,
+      deal_value: p.deal_value,
+      date_created: p.date_created,
+      project_type: p.project_type,
+      deleted_at: p.deleted_at
+    }));
+    res.json({ cards });
   } catch (error) {
     console.error('Failed to get deleted cards:', error);
     res.status(500).json({ error: 'Failed to get deleted cards' });
@@ -929,59 +941,71 @@ app.post('/api/origination/card/:id/restore', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Get card details for logging
-    const card = await boardDb.getCardById(id);
-    if (!card) {
-      return res.status(404).json({ error: 'Card not found' });
+    // Get project details for logging
+    const project = await boardDb.getProjectById(id);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
     }
     
-    // Restore the card
-    await boardDb.restoreCard(id);
+    // Restore the project
+    await boardDb.restoreProject(id);
     
     // Log restoration
     await boardDb.addLog(
       id,
-      card.title,
       'Restored',
       req.user.name || req.user.email,
-      `Card restored from trash`
+      `Project restored from trash`
     );
     
-    // Get the restored card with all data
-    const restoredCard = await boardDb.getCardById(id);
-    const actions = await boardDb.getActionsByCardId(id);
-    const links = await boardDb.getLinksByCardId(id);
+    // Get the restored project
+    const restoredProject = await boardDb.getProjectById(id);
+    
+    // Convert to card format
+    const card = {
+      id: restoredProject.id,
+      title: restoredProject.title,
+      description: restoredProject.description,
+      column: restoredProject.status,
+      owner: restoredProject.owner,
+      notes: restoredProject.notes,
+      dealValue: parseFloat(restoredProject.deal_value) || 0,
+      dateCreated: restoredProject.date_created,
+      projectType: restoredProject.project_type,
+      project_id: restoredProject.id,
+      actions: restoredProject.tasks || [],
+      links: restoredProject.links || []
+    };
     
     // Broadcast to all clients
-    broadcastChange('card:created', {
-      ...restoredCard,
-      actions,
-      links
-    });
+    broadcastChange('card:created', card);
     
-    res.json({ success: true, card: restoredCard });
+    res.json({ success: true, card });
   } catch (error) {
     console.error('Failed to restore card:', error);
     res.status(500).json({ error: 'Failed to restore card' });
   }
 });
 
-// Toggle action item completion
+// Toggle action item completion (now updates JSONB tasks)
 app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
   try {
-    const { actionId, completed, cardId, cardTitle } = req.body;
+    const { actionId, completed, cardId } = req.body;
     const user = req.user.name || req.user.email;
     
-    // Toggle action in database
-    const action = await boardDb.toggleAction(actionId, completed, user);
+    // Toggle task in project JSONB
+    await boardDb.toggleTask(cardId, actionId, completed, user);
+    
+    // Get updated project for logging
+    const project = await boardDb.getProjectById(cardId);
+    const task = project.tasks.find(t => t.id === actionId);
     
     // Log activity
     await boardDb.addLog(
       cardId,
-      cardTitle,
-      completed ? 'Action Completed' : 'Action Uncompleted',
+      completed ? 'Task Completed' : 'Task Uncompleted',
       user,
-      action.text
+      task ? task.text : ''
     );
     
     // Broadcast to all clients
@@ -989,79 +1013,79 @@ app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
       actionId,
       cardId,
       completed,
-      completedOn: action.completed_on,
-      completedBy: action.completed_by
+      completedOn: completed ? new Date() : null,
+      completedBy: completed ? user : null
     });
     
-    res.json({ success: true, action });
+    res.json({ success: true });
   } catch (error) {
     console.error('Failed to toggle action:', error);
     res.status(500).json({ error: 'Failed to toggle action' });
   }
 });
 
-// Add new action item
+// Add new action item (now adds to JSONB tasks)
 app.post('/api/origination/action', requireAuth, async (req, res) => {
   try {
-    const { cardId, cardTitle, text } = req.body;
+    const { cardId, text } = req.body;
     
     // Input validation
-    if (!cardId || cardId.trim().length === 0) {
-      return res.status(400).json({ error: 'Card ID is required' });
+    if (!cardId) {
+      return res.status(400).json({ error: 'Project ID is required' });
     }
     if (!text || text.trim().length === 0) {
-      return res.status(400).json({ error: 'Action text is required' });
+      return res.status(400).json({ error: 'Task text is required' });
     }
     if (text.length > 1000) {
-      return res.status(400).json({ error: 'Action text must be 1,000 characters or less' });
+      return res.status(400).json({ error: 'Task text must be 1,000 characters or less' });
     }
     
-    // Create action in database
-    const action = await boardDb.createAction(cardId, cardTitle, text);
+    // Add task to project
+    await boardDb.addTask(cardId, text);
+    
+    // Get the new task ID
+    const project = await boardDb.getProjectById(cardId);
+    const newTask = project.tasks[project.tasks.length - 1];
     
     // Broadcast to all clients
     broadcastChange('action:created', {
-      actionId: action.id,
+      actionId: newTask.id,
       cardId,
-      cardTitle,
       text
     });
     
-    res.json({ success: true, action });
+    res.json({ success: true, action: newTask });
   } catch (error) {
     console.error('Failed to add action:', error);
     res.status(500).json({ error: 'Failed to add action' });
   }
 });
 
-// Update action item
+// Update action item (now updates JSONB tasks)
 app.put('/api/origination/action/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { text } = req.body;
+    const { text, cardId } = req.body;
     
     // Input validation
     if (!text || text.trim().length === 0) {
-      return res.status(400).json({ error: 'Action text is required' });
+      return res.status(400).json({ error: 'Task text is required' });
     }
     if (text.length > 1000) {
-      return res.status(400).json({ error: 'Action text must be 1,000 characters or less' });
+      return res.status(400).json({ error: 'Task text must be 1,000 characters or less' });
+    }
+    if (!cardId) {
+      return res.status(400).json({ error: 'Project ID is required' });
     }
     
-    // Get action details for cardId before update
-    const actions = await boardDb.getAllActions();
-    const action = actions.find(a => a.id === parseInt(id));
+    await boardDb.updateTask(cardId, parseInt(id), text);
     
-    if (action) {
-      await boardDb.updateAction(id, text);
-      
-      // Broadcast to all clients
-      broadcastChange('action:updated', {
-        actionId: parseInt(id),
-        cardId: action.card_id,
-        text
-      });
-    }
+    // Broadcast to all clients
+    broadcastChange('action:updated', {
+      actionId: parseInt(id),
+      cardId: cardId,
+      text
+    });
     
     res.json({ success: true });
   } catch (error) {
@@ -1070,24 +1094,23 @@ app.put('/api/origination/action/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Delete action item
+// Delete action item (now deletes from JSONB tasks)
 app.delete('/api/origination/action/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const { cardId } = req.query;  // Pass as query param
     
-    // Get action details for cardId before deletion
-    const actions = await boardDb.getAllActions();
-    const action = actions.find(a => a.id === parseInt(id));
-    
-    if (action) {
-      await boardDb.deleteAction(id);
-      
-      // Broadcast to all clients
-      broadcastChange('action:deleted', {
-        actionId: parseInt(id),
-        cardId: action.card_id
-      });
+    if (!cardId) {
+      return res.status(400).json({ error: 'Project ID is required' });
     }
+    
+    await boardDb.deleteTask(cardId, parseInt(id));
+    
+    // Broadcast to all clients
+    broadcastChange('action:deleted', {
+      actionId: parseInt(id),
+      cardId: cardId
+    });
     
     res.json({ success: true });
   } catch (error) {
@@ -1096,23 +1119,23 @@ app.delete('/api/origination/action/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Add link to card
+// Add link (now adds to JSONB links)
 app.post('/api/origination/link', requireAuth, async (req, res) => {
   try {
     const { cardId, title, url } = req.body;
     
     // Input validation
-    if (!cardId || cardId.trim().length === 0) {
-      return res.status(400).json({ error: 'Card ID is required' });
+    if (!cardId) {
+      return res.status(400).json({ error: 'Project ID is required' });
     }
     if (!title || title.trim().length === 0) {
       return res.status(400).json({ error: 'Link title is required' });
     }
-    if (title.length > 255) {
-      return res.status(400).json({ error: 'Link title must be 255 characters or less' });
-    }
     if (!url || url.trim().length === 0) {
       return res.status(400).json({ error: 'URL is required' });
+    }
+    if (title.length > 255) {
+      return res.status(400).json({ error: 'Link title must be 255 characters or less' });
     }
     // Basic URL validation
     try {
@@ -1121,41 +1144,45 @@ app.post('/api/origination/link', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid URL format' });
     }
     
-    const link = await boardDb.createLink(cardId, title, url);
+    // Add link to project
+    await boardDb.addLink(cardId, title, url);
+    
+    // Get the new link ID
+    const project = await boardDb.getProjectById(cardId);
+    const newLink = project.links[project.links.length - 1];
     
     // Broadcast to all clients
     broadcastChange('link:created', {
-      linkId: link.id,
+      linkId: newLink.id,
       cardId,
       title,
       url
     });
     
-    res.json({ success: true, link });
+    res.json({ success: true, link: newLink });
   } catch (error) {
     console.error('Failed to add link:', error);
     res.status(500).json({ error: 'Failed to add link' });
   }
 });
 
-// Delete link
+// Delete link (now deletes from JSONB links)
 app.delete('/api/origination/link/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const { cardId } = req.query;  // Pass as query param
     
-    // Get link details for cardId before deletion
-    const links = await boardDb.getAllLinks();
-    const link = links.find(l => l.id === parseInt(id));
-    
-    if (link) {
-      await boardDb.deleteLink(id);
-      
-      // Broadcast to all clients
-      broadcastChange('link:deleted', {
-        linkId: parseInt(id),
-        cardId: link.card_id
-      });
+    if (!cardId) {
+      return res.status(400).json({ error: 'Project ID is required' });
     }
+    
+    await boardDb.deleteLink(cardId, parseInt(id));
+    
+    // Broadcast to all clients
+    broadcastChange('link:deleted', {
+      linkId: parseInt(id),
+      cardId: cardId
+    });
     
     res.json({ success: true });
   } catch (error) {
