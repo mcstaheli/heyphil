@@ -544,7 +544,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const addTask = () => {
     const newTask = {
       id: String(Date.now()),
-      name: 'New Task',
+      name: 'New Name',
       type: 'task',
       start: new Date().toISOString().split('T')[0],
       end: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -555,7 +555,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     const updatedTasks = [...tasks, newTask];
     setTasks(updatedTasks);
     saveTasks(updatedTasks);
-    setEditingTask(newTask);
+    setEditingTask({ ...newTask, isNew: true });
   };
 
   const updateTask = (taskId, updates) => {
@@ -1522,16 +1522,36 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       {editingTask && !compact && (
         <div className="timeline-edit-overlay" onClick={() => setEditingTask(null)}>
           <div className="timeline-edit-panel" onClick={(e) => e.stopPropagation()}>
-            <h3>Edit {editingTask.type === 'milestone' ? 'Milestone' : 'Task'}</h3>
-            
-            <label>
-              Name:
-              <input
-                type="text"
-                value={editingTask.name}
-                onChange={(e) => setEditingTask({ ...editingTask, name: e.target.value })}
-              />
-            </label>
+            <h3 
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => setEditingTask({ ...editingTask, name: e.target.textContent })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.target.blur();
+                }
+              }}
+              style={{ 
+                cursor: 'text',
+                padding: '8px',
+                borderRadius: '4px',
+                outline: 'none',
+                backgroundColor: editingTask.isNew ? '#fef3c7' : 'transparent'
+              }}
+              ref={(el) => {
+                if (el && editingTask.isNew) {
+                  el.focus();
+                  const range = document.createRange();
+                  range.selectNodeContents(el);
+                  const selection = window.getSelection();
+                  selection?.removeAllRanges();
+                  selection?.addRange(range);
+                }
+              }}
+            >
+              {editingTask.name}
+            </h3>
 
             <label>
               Type:
@@ -1582,6 +1602,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       setEditingTask({ ...editingTask, end: newEnd.toISOString().split('T')[0] });
                     }}
                     disabled={editingTask.type === 'phase'}
+                    style={{
+                      fontSize: '16px',
+                      padding: '8px 12px',
+                      textAlign: 'center'
+                    }}
                   />
                   {editingTask.type !== 'phase' && (
                     <small style={{ display: 'block', marginTop: '4px', color: '#6b7280', fontSize: '11px' }}>
