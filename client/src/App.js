@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import './App.css';
 import './Loading.css';
@@ -32,6 +33,20 @@ function getInitialsColor(name) {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// Wrapper component for project detail route
+function ProjectDetailRoute({ user, onBack }) {
+  const { projectId } = useParams();
+  const navigate = useNavigate();
+  
+  return (
+    <ProjectDetail
+      projectId={projectId}
+      onClose={() => navigate('/board')}
+      currentUser={user}
+    />
+  );
+}
+
 function App() {
   const [authenticated, setAuthenticated] = useState(null);
   const [user, setUser] = useState(null);
@@ -60,14 +75,6 @@ function App() {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
     
-    // Check for project URL on mount
-    const path = window.location.pathname;
-    const projectMatch = path.match(/^\/projects\/([^\/]+)$/);
-    if (projectMatch && currentApp === 'origination') {
-      const projectId = projectMatch[1];
-      setTimeout(() => setProjectDetailId(projectId), 100); // Slight delay to ensure state is ready
-    }
-    
     checkAuth();
     
     // Check token expiry every 5 minutes
@@ -77,42 +84,6 @@ function App() {
     
     return () => clearInterval(tokenCheckInterval);
   }, []);
-
-  // Sync URL with projectDetailId (only in origination board)
-  useEffect(() => {
-    if (currentApp !== 'origination') return;
-    
-    // Listen for browser back/forward
-    const handlePopState = () => {
-      const path = window.location.pathname;
-      const projectMatch = path.match(/^\/projects\/([^\/]+)$/);
-      if (projectMatch) {
-        setProjectDetailId(projectMatch[1]);
-      } else if (path === '/' || path === '') {
-        setProjectDetailId(null);
-      }
-    };
-    
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [currentApp]);
-
-  // Update URL when projectDetailId changes
-  useEffect(() => {
-    if (currentApp !== 'origination') return;
-    
-    if (projectDetailId) {
-      // Push project URL
-      if (window.location.pathname !== `/projects/${projectDetailId}`) {
-        window.history.pushState({}, '', `/projects/${projectDetailId}`);
-      }
-    } else {
-      // Clear URL back to root
-      if (window.location.pathname !== '/' && window.location.pathname !== '') {
-        window.history.pushState({}, '', '/');
-      }
-    }
-  }, [projectDetailId, currentApp]);
   
   const checkTokenExpiry = () => {
     const token = localStorage.getItem('authToken');
@@ -306,11 +277,15 @@ function App() {
     );
   }
 
-  // Project Board app
+  // Project Board app with routing
   if (currentApp === 'origination') {
     return (
       <>
-        <OriginationBoard user={user} onBack={() => setCurrentApp(null)} onLogout={handleLogout} />
+        <Routes>
+          <Route path="/" element={<Navigate to="/board" replace />} />
+          <Route path="/board" element={<OriginationBoard user={user} onBack={() => setCurrentApp(null)} onLogout={handleLogout} />} />
+          <Route path="/projects/:projectId" element={<ProjectDetailRoute user={user} onBack={() => setCurrentApp(null)} />} />
+        </Routes>
         {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
         {!showDevTools && (
           <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
@@ -344,6 +319,7 @@ function App() {
 }
 
 function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
+  const navigate = useNavigate();
   const [cards, setCards] = useState([]);
   const [people, setPeople] = useState({});
   const [_ownerColors, setOwnerColors] = useState({});
@@ -352,7 +328,6 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
   const [loading, setLoading] = useState(true);
   const [showNewCard, setShowNewCard] = useState(false);
   const [newCardColumn, setNewCardColumn] = useState(null);
-  const [projectDetailId, setProjectDetailId] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
   const [draggedCard, setDraggedCard] = useState(null);
   const [filterOwner, setFilterOwner] = useState('');
@@ -1068,17 +1043,6 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
     );
   }
 
-  // Show project detail page if one is selected
-  if (projectDetailId) {
-    return (
-      <ProjectDetail
-        projectId={projectDetailId}
-        onClose={() => setProjectDetailId(null)}
-        currentUser={user}
-      />
-    );
-  }
-
   return (
     <div className="app-container">
       <header className="app-header">
@@ -1389,7 +1353,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           projectTypeColors={projectTypeColors}
           people={people}
           studioMode={studioMode}
-          onViewProject={setProjectDetailId}
+          onViewProject={(projectId) => navigate(`/projects/${projectId}`)}
           currentUser={user}
         />
       )}
