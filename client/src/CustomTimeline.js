@@ -1160,7 +1160,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       t.id === draggedTask.id ? { ...t, parentId: newParentId } : t
                     );
                     setTasks(newTasks);
-                    // TODO: Save to API
+                    saveTasks(newTasks);
                   }
                   setReorderingTask(null);
                   setReorderTargetIndex(null);
