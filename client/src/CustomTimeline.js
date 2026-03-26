@@ -1155,10 +1155,19 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       newParentId = targetTask.parentId;
                     }
                     
-                    // Update the task
-                    const newTasks = tasks.map(t => 
-                      t.id === draggedTask.id ? { ...t, parentId: newParentId } : t
-                    );
+                    // Update the task AND reorder the array
+                    let newTasks = [...tasks];
+                    
+                    // Remove the dragged task from its current position
+                    const draggedIndex = newTasks.findIndex(t => t.id === draggedTask.id);
+                    newTasks.splice(draggedIndex, 1);
+                    
+                    // Find where to insert it (relative to target in the ORIGINAL tasks array, not displayTasks)
+                    const targetIndex = newTasks.findIndex(t => t.id === targetTask.id);
+                    
+                    // Insert AFTER the target (so dropping ON a task puts it below that task)
+                    newTasks.splice(targetIndex + 1, 0, { ...draggedTask, parentId: newParentId });
+                    
                     setTasks(newTasks);
                     saveTasks(newTasks);
                   }
