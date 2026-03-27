@@ -1092,12 +1092,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         {/* Task List Column */}
         <div className="timeline-tasks-column">
           <div className="timeline-header-cell">
-            Items
             {!compact && (
               <button 
                 onClick={(e) => addPhase(e)} 
                 style={{
-                  marginLeft: '8px',
                   padding: '4px 10px',
                   background: '#667eea',
                   border: 'none',
