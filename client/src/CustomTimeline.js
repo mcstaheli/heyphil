@@ -371,8 +371,12 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
     try {
       console.log('📥 Loading timeline for project:', projectId);
+      const token = localStorage.getItem('authToken');
       const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
-        credentials: 'include'
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
       
       if (!res.ok) {
@@ -403,9 +407,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       console.log('   Tasks to save:', updatedTasks.length);
       console.log('   Task data:', updatedTasks);
       
+      const token = localStorage.getItem('authToken');
       const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         credentials: 'include',
         body: JSON.stringify({ timeline: updatedTasks })
       });
