@@ -564,7 +564,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     return '#667eea'; // default blue for orphan tasks
   };
 
-  const addTask = () => {
+  const addTask = (parentPhaseId = null) => {
     const newTask = {
       id: String(Date.now()),
       name: 'New Name',
@@ -573,12 +573,33 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       end: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       progress: 0,
       owner: '',
-      dependencies: []
+      dependencies: [],
+      parentId: parentPhaseId
     };
     const updatedTasks = [...tasks, newTask];
     setTasks(updatedTasks);
     saveTasks(updatedTasks);
     setEditingTask({ ...newTask, isNew: true });
+  };
+
+  const addPhase = () => {
+    const newPhase = {
+      id: String(Date.now()),
+      name: 'New Section',
+      type: 'phase',
+      color: '#48bb78',
+      start: new Date().toISOString().split('T')[0],
+      end: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      progress: 0
+    };
+    const updatedTasks = [...tasks, newPhase];
+    setTasks(updatedTasks);
+    saveTasks(updatedTasks);
+    setPhasePopover({
+      taskId: newPhase.id,
+      x: window.innerWidth / 2,
+      y: 200
+    });
   };
 
   const updateTask = (taskId, updates) => {
@@ -1069,20 +1090,21 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             Items
             {!compact && (
               <button 
-                onClick={addTask} 
+                onClick={addPhase} 
                 style={{
                   marginLeft: '8px',
-                  background: 'none',
+                  padding: '4px 10px',
+                  background: '#667eea',
                   border: 'none',
-                  color: '#667eea',
-                  fontSize: '16px',
-                  cursor: 'pointer',
-                  padding: '0 4px',
-                  lineHeight: '1'
+                  borderRadius: '4px',
+                  color: 'white',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
                 }}
-                title="Add task"
+                title="Add new section"
               >
-                +
+                New Section
               </button>
             )}
           </div>
@@ -1265,6 +1287,29 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       }}>
                         ({getDaysBetween(new Date(task.start), new Date(task.end)) + 1} days)
                       </span>
+                    )}
+                    {task.type === 'phase' && !compact && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addTask(task.id);
+                        }}
+                        style={{
+                          marginLeft: '12px',
+                          background: 'none',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '4px',
+                          color: '#64748b',
+                          fontSize: '14px',
+                          cursor: 'pointer',
+                          padding: '2px 8px',
+                          fontWeight: '500',
+                          opacity: 0.7
+                        }}
+                        title="Add item to this section"
+                      >
+                        +
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1603,8 +1648,23 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 onChange={(e) => setEditingTask({ ...editingTask, type: e.target.value })}
               >
                 <option value="task">Task</option>
-                <option value="phase">Phase</option>
+                <option value="milestone">Milestone</option>
                 <option value="event">Event</option>
+              </select>
+            </label>
+
+            <label>
+              Parent Section:
+              <select
+                value={editingTask.parentId || ''}
+                onChange={(e) => setEditingTask({ ...editingTask, parentId: e.target.value || null })}
+              >
+                <option value="">None (top-level)</option>
+                {tasks.filter(t => t.type === 'phase').map(phase => (
+                  <option key={phase.id} value={phase.id}>
+                    {phase.name}
+                  </option>
+                ))}
               </select>
             </label>
 
