@@ -460,7 +460,9 @@
 
 .timeline-bar.phase {
   height: 36px;
-  opacity: 0.9;
+  opacity: 1;
+  border-left-width: 6px !important;
+  border-left-style: solid !important;
 }
 
 .timeline-bar.milestone {
@@ -510,13 +512,16 @@
 
 .timeline-bar-label {
   position: absolute;
-  right: 8px;
+  left: 0;
+  right: 0;
   top: 50%;
   transform: translateY(-50%);
   font-size: 11px;
   font-weight: 600;
   color: white;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  pointer-events: none;
 }
 
 /* Today Marker - Full Height */

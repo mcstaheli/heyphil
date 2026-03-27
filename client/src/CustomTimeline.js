@@ -1480,10 +1480,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       style={{
                         left: isMilestone ? `calc(${position.left}% - 10px)` : `${position.left}%`,
                         width: isMilestone ? '24px' : `${position.width}%`,
-                        backgroundColor: isMilestone ? 'transparent' : (isPhase ? 'white' : getTaskColor(task)),
-                        border: isPhase ? `2px solid ${getTaskColor(task)}` : 'none',
+                        backgroundColor: isMilestone ? 'transparent' : (isPhase ? (() => {
+                          const hex = getTaskColor(task).replace('#', '');
+                          const r = parseInt(hex.substring(0, 2), 16);
+                          const g = parseInt(hex.substring(2, 4), 16);
+                          const b = parseInt(hex.substring(4, 6), 16);
+                          return `rgba(${r}, ${g}, ${b}, 0.08)`;
+                        })() : getTaskColor(task)),
+                        border: isPhase ? `1px solid ${getTaskColor(task)}` : 'none',
+                        borderLeftColor: isPhase ? getTaskColor(task) : (hasDependencies && !isPhase ? 'rgba(0, 0, 0, 0.2)' : 'transparent'),
                         cursor: compact || isPhase ? 'default' : 'grab',
-                        borderLeft: hasDependencies && !isPhase ? '3px solid rgba(0, 0, 0, 0.2)' : (isPhase ? `2px solid ${getTaskColor(task)}` : 'none'),
                         display: isMilestone ? 'flex' : 'block',
                         alignItems: isMilestone ? 'center' : 'initial',
                         justifyContent: isMilestone ? 'center' : 'initial'
@@ -1515,7 +1521,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       {!isMilestone && !isEvent && (
                         <>
                           {isPhase ? (
-                            // Phase progress bar - light tint fill
+                            // Phase progress bar - darker accent fill
                             <>
                               <div 
                                 style={{ 
@@ -1523,13 +1529,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                                   left: 0,
                                   top: 0,
                                   bottom: 0,
-                                  width: `${task.progress}%`,
+                                  width: `${task.progress || 0}%`,
                                   backgroundColor: (() => {
                                     const hex = getTaskColor(task).replace('#', '');
                                     const r = parseInt(hex.substring(0, 2), 16);
                                     const g = parseInt(hex.substring(2, 4), 16);
                                     const b = parseInt(hex.substring(4, 6), 16);
-                                    return `rgba(${r}, ${g}, ${b}, 0.15)`;
+                                    return `rgba(${r}, ${g}, ${b}, 0.25)`;
                                   })(),
                                   borderRadius: '4px 0 0 4px',
                                   zIndex: 0
@@ -1537,18 +1543,21 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                               />
                               {!compact && position.width > 5 && (
                                 <div 
-                                  className="timeline-bar-label"
                                   style={{ 
+                                    position: 'absolute',
+                                    left: 0,
+                                    width: `${task.progress || 0}%`,
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    fontSize: '11px',
+                                    fontWeight: '700',
                                     color: '#334155',
-                                    fontWeight: '600',
+                                    textAlign: 'center',
                                     zIndex: 1,
-                                    position: 'relative'
+                                    pointerEvents: 'none'
                                   }}
                                 >
-                                  {(() => {
-                                    if (isPhase) console.log(`Rendering phase "${task.name}": ${task.progress}%`);
-                                    return task.progress;
-                                  })()}%
+                                  {task.progress || 0}%
                                 </div>
                               )}
                             </>
@@ -1558,12 +1567,28 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                               <div 
                                 className="timeline-bar-progress"
                                 style={{ 
-                                  width: `${task.progress}%`,
+                                  width: `${task.progress || 0}%`,
                                   backgroundColor: `color-mix(in srgb, ${getTaskColor(task)} 80%, black)`
                                 }}
                               />
                               {!compact && position.width > 5 && (
-                                <div className="timeline-bar-label">{task.progress}%</div>
+                                <div 
+                                  style={{
+                                    position: 'absolute',
+                                    left: 0,
+                                    width: `${task.progress || 0}%`,
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    color: 'white',
+                                    textAlign: 'center',
+                                    textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
+                                    pointerEvents: 'none'
+                                  }}
+                                >
+                                  {task.progress || 0}%
+                                </div>
                               )}
                             </>
                           )}
