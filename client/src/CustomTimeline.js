@@ -116,7 +116,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           return depEnd > latest ? depEnd : latest;
         }, new Date(0));
         
+        // Start the day after the dependency ends (no gap, no overlap)
         minStartDate = new Date(latestDepEndDate);
+        minStartDate.setDate(minStartDate.getDate() + 1);
       }
 
       // Check successor constraints (latest we can end)
@@ -222,13 +224,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
       const deltaX = e.clientX - resizeStartX;
       
-      // Much more sensitive: 15px per day (easier to control)
-      const pixelsPerDay = 15;
+      // Smooth resize: 8px per day for more responsive feel
+      const pixelsPerDay = 8;
       const deltaDays = Math.round(deltaX / pixelsPerDay);
       
       const newDuration = Math.max(1, resizeStartDuration + deltaDays);
       
-      // Only update if duration changed (prevents choppy updates)
+      // Only update if duration changed
       if (newDuration === lastDuration) return;
       lastDuration = newDuration;
       
