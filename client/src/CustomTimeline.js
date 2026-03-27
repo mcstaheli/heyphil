@@ -364,34 +364,45 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
   const loadTasks = async () => {
     if (!projectId) {
+      console.warn('⚠️ loadTasks called with no projectId');
       setTasks([]);
       return;
     }
 
     try {
+      console.log('📥 Loading timeline for project:', projectId);
       const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
         credentials: 'include'
       });
       
       if (!res.ok) {
-        console.error('Failed to load project:', res.status);
+        console.error('❌ Failed to load project:', res.status);
         setTasks([]);
         return;
       }
       
       const data = await res.json();
       const loadedTasks = data.project?.timeline || [];
+      console.log('✅ Loaded timeline:', loadedTasks.length, 'tasks');
+      console.log('Timeline data:', loadedTasks);
       setTasks(validateTaskDependencies(loadedTasks));
     } catch (error) {
-      console.error('Error loading timeline:', error);
+      console.error('❌ Error loading timeline:', error);
       setTasks([]);
     }
   };
 
   const saveTasks = async (updatedTasks) => {
-    if (!projectId) return;
+    if (!projectId) {
+      console.warn('⚠️ saveTasks called with no projectId - NOT SAVING');
+      return;
+    }
 
     try {
+      console.log('💾 Saving timeline for project:', projectId);
+      console.log('   Tasks to save:', updatedTasks.length);
+      console.log('   Task data:', updatedTasks);
+      
       const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -400,10 +411,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       });
       
       if (!res.ok) {
-        console.error('Failed to save timeline:', res.status);
+        console.error('❌ Failed to save timeline:', res.status);
+        const errorText = await res.text();
+        console.error('   Error response:', errorText);
+      } else {
+        console.log('✅ Timeline saved successfully');
       }
     } catch (error) {
-      console.error('Error saving timeline:', error);
+      console.error('❌ Error saving timeline:', error);
     }
   };
 
