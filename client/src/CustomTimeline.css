@@ -172,15 +172,14 @@
 .task-days-badge {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 4px 8px;
-  border-radius: 10px;
-  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 10px;
   font-weight: 700;
-  min-width: 24px;
   text-align: center;
   flex-shrink: 0;
-  margin-right: 8px;
   box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+  white-space: nowrap;
 }
 
 .owner-avatar {

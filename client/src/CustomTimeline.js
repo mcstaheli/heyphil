@@ -218,43 +218,50 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     if (!resizingTask) return;
 
     let lastDuration = resizeStartDuration;
+    let rafId = null;
 
     const handleMouseMove = (e) => {
       if (!resizeStartX || resizeStartDuration === null) return;
 
-      const deltaX = e.clientX - resizeStartX;
-      
-      // Smooth resize: 8px per day for more responsive feel
-      const pixelsPerDay = 8;
-      const deltaDays = Math.round(deltaX / pixelsPerDay);
-      
-      const newDuration = Math.max(1, resizeStartDuration + deltaDays);
-      
-      // Only update if duration changed
-      if (newDuration === lastDuration) return;
-      lastDuration = newDuration;
-      
-      const task = tasks.find(t => t.id === resizingTask);
-      if (!task) return;
+      // Cancel any pending animation frame
+      if (rafId) cancelAnimationFrame(rafId);
 
-      const newEndDate = new Date(task.start);
-      newEndDate.setDate(newEndDate.getDate() + newDuration - 1);
+      // Use requestAnimationFrame for smooth 60fps updates
+      rafId = requestAnimationFrame(() => {
+        const deltaX = e.clientX - resizeStartX;
+        
+        // Very smooth: 5px per day
+        const pixelsPerDay = 5;
+        const deltaDays = Math.round(deltaX / pixelsPerDay);
+        
+        const newDuration = Math.max(1, resizeStartDuration + deltaDays);
+        
+        // Only update if duration changed
+        if (newDuration === lastDuration) return;
+        lastDuration = newDuration;
+        
+        const task = tasks.find(t => t.id === resizingTask);
+        if (!task) return;
 
-      updateTask(task.id, {
-        end: newEndDate.toISOString().split('T')[0]
-      });
-      
-      // Auto-expand timeline range if resizing beyond current view
-      const currentEnd = new Date(timelineRange.end);
-      if (newEndDate > currentEnd) {
-        // Extend timeline to accommodate the new end date + buffer
-        const extendedEnd = new Date(newEndDate);
-        extendedEnd.setDate(extendedEnd.getDate() + 14); // 2 week buffer
-        setTimelineRange({
-          ...timelineRange,
-          end: extendedEnd
+        const newEndDate = new Date(task.start);
+        newEndDate.setDate(newEndDate.getDate() + newDuration - 1);
+
+        updateTask(task.id, {
+          end: newEndDate.toISOString().split('T')[0]
         });
-      }
+        
+        // Auto-expand timeline range if resizing beyond current view
+        const currentEnd = new Date(timelineRange.end);
+        if (newEndDate > currentEnd) {
+          // Extend timeline to accommodate the new end date + buffer
+          const extendedEnd = new Date(newEndDate);
+          extendedEnd.setDate(extendedEnd.getDate() + 14); // 2 week buffer
+          setTimelineRange({
+            ...timelineRange,
+            end: extendedEnd
+          });
+        }
+      });
     };
 
     const handleMouseUp = () => {
@@ -271,6 +278,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
+      if (rafId) cancelAnimationFrame(rafId);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
@@ -1245,14 +1253,81 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 <div className="task-row-content" style={{
                   opacity: ownerFilter && task.owner !== ownerFilter ? 0.4 : 1
                 }}>
-                  {/* Days Badge */}
-                  {task.type !== 'phase' && (task.start || task.date) && (
-                    <div className="task-days-badge">
-                      {task.type === 'milestone' || task.type === 'event' 
-                        ? '1'
-                        : getDaysBetween(new Date(task.start), new Date(task.end)) + 1}
-                    </div>
-                  )}
+                  {/* Days Badge - Interactive */}
+                  {task.type !== 'phase' && (task.start || task.date) && (() => {
+                    const days = task.type === 'milestone' || task.type === 'event' 
+                      ? 1
+                      : getDaysBetween(new Date(task.start), new Date(task.end)) + 1;
+                    
+                    const adjustDays = (delta) => {
+                      if (task.type === 'milestone' || task.type === 'event') return; // Can't adjust milestone/event
+                      const newDays = Math.max(1, days + delta);
+                      const newEndDate = new Date(task.start);
+                      newEndDate.setDate(newEndDate.getDate() + newDays - 1);
+                      updateTask(task.id, {
+                        end: newEndDate.toISOString().split('T')[0]
+                      });
+                    };
+                    
+                    return (
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        marginRight: '8px'
+                      }}>
+                        <div className="task-days-badge">
+                          {days} {days === 1 ? 'Day' : 'Days'}
+                        </div>
+                        {!compact && task.type !== 'milestone' && task.type !== 'event' && (
+                          <div style={{ 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            gap: '1px' 
+                          }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                adjustDays(1);
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: '0',
+                                fontSize: '8px',
+                                color: '#667eea',
+                                lineHeight: '1',
+                                opacity: 0.7
+                              }}
+                              title="Add 1 day"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                adjustDays(-1);
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: '0',
+                                fontSize: '8px',
+                                color: '#667eea',
+                                lineHeight: '1',
+                                opacity: 0.7
+                              }}
+                              title="Remove 1 day"
+                            >
+                              ▼
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   
                   {task.owner && (
                     ownerPhotoUrl ? (
