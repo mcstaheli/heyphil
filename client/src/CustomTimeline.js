@@ -584,23 +584,26 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     setEditingTask({ ...newTask, isNew: true });
   };
 
-  const addPhase = () => {
+  const addPhase = (event) => {
     const newPhase = {
       id: String(Date.now()),
       name: 'New Section',
       type: 'phase',
       color: '#48bb78',
       start: new Date().toISOString().split('T')[0],
-      end: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      end: new Date().toISOString().split('T')[0], // 0 days duration
       progress: 0
     };
     const updatedTasks = [...tasks, newPhase];
     setTasks(updatedTasks);
     saveTasks(updatedTasks);
+    
+    // Position modal near the button
+    const buttonRect = event?.target?.getBoundingClientRect();
     setPhasePopover({
       taskId: newPhase.id,
-      x: window.innerWidth / 2,
-      y: 200
+      x: buttonRect ? buttonRect.right + 10 : 400,
+      y: buttonRect ? buttonRect.top : 100
     });
   };
 
@@ -1092,7 +1095,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             Items
             {!compact && (
               <button 
-                onClick={addPhase} 
+                onClick={(e) => addPhase(e)} 
                 style={{
                   marginLeft: '8px',
                   padding: '4px 10px',
@@ -1298,15 +1301,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         }}
                         style={{
                           marginLeft: '12px',
-                          background: 'none',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: '4px',
-                          color: '#64748b',
-                          fontSize: '14px',
+                          background: '#667eea',
+                          border: 'none',
+                          borderRadius: '6px',
+                          color: 'white',
+                          fontSize: '16px',
                           cursor: 'pointer',
-                          padding: '2px 8px',
-                          fontWeight: '500',
-                          opacity: 0.7
+                          padding: '2px 10px',
+                          fontWeight: '600',
+                          lineHeight: '1',
+                          boxShadow: '0 1px 3px rgba(102, 126, 234, 0.3)'
                         }}
                         title="Add item to this section"
                       >
@@ -1950,7 +1954,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         />
       )}
 
-      {/* Phase Settings Popover */}
+      {/* Section Settings Popover */}
       {phasePopover && (
         <>
           <div 
@@ -1980,7 +1984,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               return (
                 <>
                   <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '13px' }}>
-                    Edit Phase
+                    Edit Section
                   </div>
                   
                   <label style={{ display: 'block', marginBottom: '12px' }}>
