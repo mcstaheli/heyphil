@@ -1188,8 +1188,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     // Find where to insert it (relative to target in the ORIGINAL tasks array, not displayTasks)
                     const targetIndex = newTasks.findIndex(t => t.id === targetTask.id);
                     
-                    // Insert AFTER the target (so dropping ON a task puts it below that task)
-                    newTasks.splice(targetIndex + 1, 0, { ...draggedTask, parentId: newParentId });
+                    // Insert BEFORE the target (so dropping ON a task puts it above that task)
+                    newTasks.splice(targetIndex, 0, { ...draggedTask, parentId: newParentId });
                     
                     setTasks(newTasks);
                     saveTasks(newTasks);
