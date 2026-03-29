@@ -32,6 +32,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [tightenExclusions, setTightenExclusions] = useState(new Set());
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [gridWidth, setGridWidth] = useState(1000);
+  const [editingDaysTaskId, setEditingDaysTaskId] = useState(null);
   const gridRef = useRef(null);
 
   useEffect(() => {
@@ -1253,76 +1254,73 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 <div className="task-row-content" style={{
                   opacity: ownerFilter && task.owner !== ownerFilter ? 0.4 : 1
                 }}>
-                  {/* Days Badge - Interactive */}
+                  {/* Days Badge - Inline Editable */}
                   {task.type !== 'phase' && (task.start || task.date) && (() => {
                     const days = task.type === 'milestone' || task.type === 'event' 
                       ? 1
                       : getDaysBetween(new Date(task.start), new Date(task.end)) + 1;
                     
-                    const adjustDays = (delta) => {
-                      if (task.type === 'milestone' || task.type === 'event') return; // Can't adjust milestone/event
-                      const newDays = Math.max(1, days + delta);
-                      const newEndDate = new Date(task.start);
-                      newEndDate.setDate(newEndDate.getDate() + newDays - 1);
-                      updateTask(task.id, {
-                        end: newEndDate.toISOString().split('T')[0]
-                      });
-                    };
+                    const isEditing = editingDaysTaskId === task.id;
+                    const canEdit = !compact && task.type !== 'milestone' && task.type !== 'event';
                     
                     return (
-                      <div style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '4px',
-                        marginRight: '8px'
-                      }}>
-                        <div className="task-days-badge">
-                          {days} {days === 1 ? 'Day' : 'Days'}
-                        </div>
-                        {!compact && task.type !== 'milestone' && task.type !== 'event' && (
-                          <div style={{ 
-                            display: 'flex', 
-                            flexDirection: 'column', 
-                            gap: '1px' 
-                          }}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                adjustDays(1);
-                              }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '0',
-                                fontSize: '8px',
-                                color: '#667eea',
-                                lineHeight: '1',
-                                opacity: 0.7
-                              }}
-                              title="Add 1 day"
-                            >
-                              ▲
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                adjustDays(-1);
-                              }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '0',
-                                fontSize: '8px',
-                                color: '#667eea',
-                                lineHeight: '1',
-                                opacity: 0.7
-                              }}
-                              title="Remove 1 day"
-                            >
-                              ▼
-                            </button>
+                      <div style={{ marginRight: '8px' }}>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min="1"
+                            defaultValue={days}
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const newDays = Math.max(1, parseInt(e.target.value) || 1);
+                                const newEndDate = new Date(task.start);
+                                newEndDate.setDate(newEndDate.getDate() + newDays - 1);
+                                updateTask(task.id, {
+                                  end: newEndDate.toISOString().split('T')[0]
+                                });
+                                setEditingDaysTaskId(null);
+                              } else if (e.key === 'Escape') {
+                                setEditingDaysTaskId(null);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const newDays = Math.max(1, parseInt(e.target.value) || days);
+                              if (newDays !== days) {
+                                const newEndDate = new Date(task.start);
+                                newEndDate.setDate(newEndDate.getDate() + newDays - 1);
+                                updateTask(task.id, {
+                                  end: newEndDate.toISOString().split('T')[0]
+                                });
+                              }
+                              setEditingDaysTaskId(null);
+                            }}
+                            style={{
+                              width: '50px',
+                              padding: '4px 8px',
+                              borderRadius: '10px',
+                              border: '1px solid #cbd5e1',
+                              fontSize: '10px',
+                              fontWeight: '600',
+                              textAlign: 'center'
+                            }}
+                          />
+                        ) : (
+                          <div 
+                            className="task-days-badge"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (canEdit) {
+                                setEditingDaysTaskId(task.id);
+                              }
+                            }}
+                            style={{
+                              cursor: canEdit ? 'pointer' : 'default'
+                            }}
+                            title={canEdit ? 'Click to edit duration' : undefined}
+                          >
+                            {days} {days === 1 ? 'Day' : 'Days'}
                           </div>
                         )}
                       </div>

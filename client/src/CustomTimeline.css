@@ -170,16 +170,21 @@
 }
 
 .task-days-badge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: #e5e7eb;
+  color: #6b7280;
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   text-align: center;
   flex-shrink: 0;
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
   white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+
+.task-days-badge:hover {
+  background: #d1d5db;
+  color: #4b5563;
 }
 
 .owner-avatar {
