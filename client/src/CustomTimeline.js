@@ -805,18 +805,33 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   
   // Organize tasks hierarchically
   const organizeHierarchy = () => {
+    // Build hierarchy respecting array order
+    // Sections appear where they are in the array, followed immediately by their children
     const hierarchy = [];
-    const phases = calculatedTasks.filter(t => t.type === 'phase');
+    const processed = new Set();
     
-    phases.forEach(phase => {
-      hierarchy.push(phase);
-      const children = calculatedTasks.filter(t => t.parentId === phase.id);
-      hierarchy.push(...children);
+    calculatedTasks.forEach(task => {
+      if (processed.has(task.id)) return;
+      
+      if (task.type === 'phase') {
+        // Add section
+        hierarchy.push(task);
+        processed.add(task.id);
+        
+        // Immediately add all its children in array order
+        calculatedTasks.forEach(child => {
+          if (child.parentId === task.id && !processed.has(child.id)) {
+            hierarchy.push(child);
+            processed.add(child.id);
+          }
+        });
+      } else if (!task.parentId) {
+        // Orphan task - add at current position
+        hierarchy.push(task);
+        processed.add(task.id);
+      }
+      // Child tasks already added under their parent
     });
-    
-    // Add any orphaned tasks
-    const orphans = calculatedTasks.filter(t => !t.parentId && t.type !== 'phase');
-    hierarchy.push(...orphans);
     
     return hierarchy;
   };
@@ -1138,15 +1153,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       return;
                     }
                     
-                    // Determine new parent
-                    let newParentId = null;
-                    if (targetTask.type === 'phase') {
-                      // Dropping onto a phase - make it a child
-                      newParentId = targetTask.id;
-                    } else if (targetTask.parentId) {
-                      // Dropping onto a child - use same parent
-                      newParentId = targetTask.parentId;
-                    }
+                    // Determine new parent - inherit from target task
+                    // Sections have no parent, child tasks inherit their parent
+                    let newParentId = targetTask.parentId || null;
                     
                     // Update the task AND reorder the array
                     let newTasks = [...tasks];
