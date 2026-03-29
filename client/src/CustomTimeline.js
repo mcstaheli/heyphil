@@ -18,9 +18,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [dragStartX, setDragStartX] = useState(null);
   const [dragStartDate, setDragStartDate] = useState(null);
   const [hasDragged, setHasDragged] = useState(false);
-  const [resizingTask, setResizingTask] = useState(null);
-  const [resizeStartX, setResizeStartX] = useState(null);
-  const [resizeStartDuration, setResizeStartDuration] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [reorderingTask, setReorderingTask] = useState(null);
   const [reorderTargetIndex, setReorderTargetIndex] = useState(null);
@@ -214,77 +211,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [draggingTask, dragStartX, dragStartDate, tasks, timelineRange]);
-
-  // Handle resize events
-  useEffect(() => {
-    if (!resizingTask) return;
-
-    let lastDuration = resizeStartDuration;
-    let rafId = null;
-
-    const handleMouseMove = (e) => {
-      if (!resizeStartX || resizeStartDuration === null) return;
-
-      // Cancel any pending animation frame
-      if (rafId) cancelAnimationFrame(rafId);
-
-      // Use requestAnimationFrame for smooth 60fps updates
-      rafId = requestAnimationFrame(() => {
-        const deltaX = e.clientX - resizeStartX;
-        
-        // Very smooth: 5px per day
-        const pixelsPerDay = 5;
-        const deltaDays = Math.round(deltaX / pixelsPerDay);
-        
-        const newDuration = Math.max(1, resizeStartDuration + deltaDays);
-        
-        // Only update if duration changed
-        if (newDuration === lastDuration) return;
-        lastDuration = newDuration;
-        
-        const task = tasks.find(t => t.id === resizingTask);
-        if (!task) return;
-
-        const newEndDate = new Date(task.start);
-        newEndDate.setDate(newEndDate.getDate() + newDuration - 1);
-
-        updateTask(task.id, {
-          end: newEndDate.toISOString().split('T')[0]
-        });
-        
-        // Auto-expand timeline range if resizing beyond current view
-        const currentEnd = new Date(timelineRange.end);
-        if (newEndDate > currentEnd) {
-          // Extend timeline to accommodate the new end date + buffer
-          const extendedEnd = new Date(newEndDate);
-          extendedEnd.setDate(extendedEnd.getDate() + 14); // 2 week buffer
-          setTimelineRange({
-            ...timelineRange,
-            end: extendedEnd
-          });
-        }
-      });
-    };
-
-    const handleMouseUp = () => {
-      setResizingTask(null);
-      setResizeStartX(null);
-      setResizeStartDuration(null);
-      
-      setTimeout(() => {
-        setHasDragged(false);
-      }, 100);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [resizingTask, resizeStartX, resizeStartDuration, tasks, timelineRange]);
 
   // Handle Escape key to close modal, context menu, and popover
   useEffect(() => {
@@ -1549,6 +1475,26 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
               return (
                 <div key={task.id} className="timeline-row">
+                  {/* Percentage indicator - positioned to the right of the bar */}
+                  {!isMilestone && !isEvent && !compact && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: `calc(${position.left}% + ${position.width}% + 8px)`,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: isPhase ? '#6b7280' : '#9ca3af',
+                        whiteSpace: 'nowrap',
+                        pointerEvents: 'none',
+                        zIndex: 5
+                      }}
+                    >
+                      {task.progress || 0}%
+                    </div>
+                  )}
+                  
                   {isEvent ? (
                     // Diamond shape for events
                     <div
@@ -1613,107 +1559,35 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         <>
                           {isPhase ? (
                             // Phase progress bar - darker accent fill
-                            <>
-                              <div 
-                                style={{ 
-                                  position: 'absolute',
-                                  left: 0,
-                                  top: 0,
-                                  bottom: 0,
-                                  width: `${task.progress || 0}%`,
-                                  backgroundColor: (() => {
-                                    const hex = getTaskColor(task).replace('#', '');
-                                    const r = parseInt(hex.substring(0, 2), 16);
-                                    const g = parseInt(hex.substring(2, 4), 16);
-                                    const b = parseInt(hex.substring(4, 6), 16);
-                                    return `rgba(${r}, ${g}, ${b}, 0.25)`;
-                                  })(),
-                                  borderRadius: '4px 0 0 4px',
-                                  zIndex: 0
-                                }}
-                              />
-                              {!compact && position.width > 5 && (
-                                <div 
-                                  style={{ 
-                                    position: 'absolute',
-                                    left: 0,
-                                    width: `${task.progress || 0}%`,
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    fontSize: '11px',
-                                    fontWeight: '700',
-                                    color: '#334155',
-                                    textAlign: 'center',
-                                    zIndex: 1,
-                                    pointerEvents: 'none'
-                                  }}
-                                >
-                                  {task.progress || 0}%
-                                </div>
-                              )}
-                            </>
+                            <div 
+                              style={{ 
+                                position: 'absolute',
+                                left: 0,
+                                top: 0,
+                                bottom: 0,
+                                width: `${task.progress || 0}%`,
+                                backgroundColor: (() => {
+                                  const hex = getTaskColor(task).replace('#', '');
+                                  const r = parseInt(hex.substring(0, 2), 16);
+                                  const g = parseInt(hex.substring(2, 4), 16);
+                                  const b = parseInt(hex.substring(4, 6), 16);
+                                  return `rgba(${r}, ${g}, ${b}, 0.25)`;
+                                })(),
+                                borderRadius: '4px 0 0 4px',
+                                zIndex: 0
+                              }}
+                            />
                           ) : (
                             // Regular task progress bar
-                            <>
-                              <div 
-                                className="timeline-bar-progress"
-                                style={{ 
-                                  width: `${task.progress || 0}%`,
-                                  backgroundColor: `color-mix(in srgb, ${getTaskColor(task)} 80%, black)`
-                                }}
-                              />
-                              {!compact && position.width > 5 && (
-                                <div 
-                                  style={{
-                                    position: 'absolute',
-                                    left: 0,
-                                    width: `${task.progress || 0}%`,
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    fontSize: '11px',
-                                    fontWeight: '600',
-                                    color: 'white',
-                                    textAlign: 'center',
-                                    textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
-                                    pointerEvents: 'none'
-                                  }}
-                                >
-                                  {task.progress || 0}%
-                                </div>
-                              )}
-                            </>
-                          )}
-                          {/* Resize Handle - disabled for phases */}
-                          {!compact && !isPhase && (
                             <div 
-                              className="timeline-resize-handle"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setResizingTask(task.id);
-                                setResizeStartX(e.clientX);
-                                const duration = getDaysBetween(new Date(task.start), new Date(task.end)) + 1;
-                                setResizeStartDuration(duration);
-                                setHasDragged(true); // Prevent click from opening modal
+                              className="timeline-bar-progress"
+                              style={{ 
+                                width: `${task.progress || 0}%`,
+                                backgroundColor: `color-mix(in srgb, ${getTaskColor(task)} 80%, black)`
                               }}
-                              title="Drag to resize"
                             />
                           )}
                         </>
-                      )}
-                      {/* Show duration tooltip while resizing */}
-                      {resizingTask === task.id && (
-                        <div className="resize-tooltip-enhanced">
-                          <div className="resize-days-badge">
-                            {getDaysBetween(new Date(task.start), new Date(task.end)) + 1}
-                          </div>
-                          <div className="resize-days-label">days</div>
-                          <div className="resize-dates">
-                            {new Date(task.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            {' → '}
-                            {new Date(task.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </div>
-                        </div>
                       )}
                     </div>
                   )}
