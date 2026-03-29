@@ -1284,6 +1284,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                             min="1"
                             defaultValue={days}
                             autoFocus
+                            onFocus={(e) => e.target.select()}
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
