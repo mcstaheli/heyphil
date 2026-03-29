@@ -24,6 +24,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [reorderingTask, setReorderingTask] = useState(null);
   const [reorderTargetIndex, setReorderTargetIndex] = useState(null);
+  const [reorderDropPosition, setReorderDropPosition] = useState('before'); // 'before' or 'after'
   const [phasePopover, setPhasePopover] = useState(null);
   const [ownerFilter, setOwnerFilter] = useState(null);
   const [showDependencies, setShowDependencies] = useState(true);
@@ -1149,7 +1150,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
             return (
               <div 
                 key={task.id} 
-                className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''} ${reorderingTask === task.id ? 'reordering' : ''} ${reorderTargetIndex === taskIndex ? 'drop-target' : ''}`}
+                className={`timeline-task-row ${task.type} ${task.parentId ? 'child-task' : ''} ${reorderingTask === task.id ? 'reordering' : ''} ${reorderTargetIndex === taskIndex ? `drop-target-${reorderDropPosition}` : ''}`}
                 style={(() => {
                   // If owner filter is active and this task doesn't match, make it light gray
                   if (ownerFilter && task.owner !== ownerFilter) {
@@ -1181,7 +1182,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 }}
                 onDragOver={(e) => {
                   e.preventDefault();
+                  
+                  // Determine if we're in the top or bottom half of the row
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const mouseY = e.clientY - rect.top;
+                  const isTopHalf = mouseY < rect.height / 2;
+                  
                   setReorderTargetIndex(taskIndex);
+                  setReorderDropPosition(isTopHalf ? 'before' : 'after');
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
@@ -1192,6 +1200,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     if (!draggedTask || !targetTask || draggedTask.id === targetTask.id) {
                       setReorderingTask(null);
                       setReorderTargetIndex(null);
+                      setReorderDropPosition('before');
                       return;
                     }
                     
@@ -1199,6 +1208,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     if (draggedTask.type === 'phase' && targetTask.parentId === draggedTask.id) {
                       setReorderingTask(null);
                       setReorderTargetIndex(null);
+                      setReorderDropPosition('before');
                       return;
                     }
                     
@@ -1222,14 +1232,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     // Find where to insert it (relative to target in the ORIGINAL tasks array, not displayTasks)
                     const targetIndex = newTasks.findIndex(t => t.id === targetTask.id);
                     
-                    // Insert BEFORE the target (so dropping ON a task puts it above that task)
-                    newTasks.splice(targetIndex, 0, { ...draggedTask, parentId: newParentId });
+                    // Insert based on drop position (before or after the target)
+                    const insertIndex = reorderDropPosition === 'after' ? targetIndex + 1 : targetIndex;
+                    newTasks.splice(insertIndex, 0, { ...draggedTask, parentId: newParentId });
                     
                     setTasks(newTasks);
                     saveTasks(newTasks);
                   }
                   setReorderingTask(null);
                   setReorderTargetIndex(null);
+                  setReorderDropPosition('before');
                 }}
               >
                 {/* Drag Handle */}
@@ -1244,6 +1256,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     onDragEnd={() => {
                       setReorderingTask(null);
                       setReorderTargetIndex(null);
+                      setReorderDropPosition('before');
                     }}
                     title="Drag to reorder"
                   >

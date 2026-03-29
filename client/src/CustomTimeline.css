@@ -156,9 +156,14 @@
   opacity: 0.5;
 }
 
-.timeline-task-row.drop-target {
+.timeline-task-row.drop-target-before {
   border-top: 3px solid #667eea;
-  background: rgba(102, 126, 234, 0.1);
+  box-shadow: inset 0 3px 0 rgba(102, 126, 234, 0.2);
+}
+
+.timeline-task-row.drop-target-after {
+  border-bottom: 3px solid #667eea;
+  box-shadow: inset 0 -3px 0 rgba(102, 126, 234, 0.2);
 }
 
 .task-row-content {
