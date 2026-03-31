@@ -1153,9 +1153,22 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       return;
                     }
                     
-                    // Determine new parent - inherit from target task
-                    // Sections have no parent, child tasks inherit their parent
-                    let newParentId = targetTask.parentId || null;
+                    // Determine new parent based on target and drop position
+                    let newParentId = null;
+                    
+                    if (targetTask.type === 'phase') {
+                      // Dropping on a section
+                      if (reorderDropPosition === 'after') {
+                        // Bottom half of section → make it a child of the section
+                        newParentId = targetTask.id;
+                      } else {
+                        // Top half of section → keep at top level (no parent)
+                        newParentId = null;
+                      }
+                    } else {
+                      // Dropping on a regular task → inherit its parent
+                      newParentId = targetTask.parentId || null;
+                    }
                     
                     // Update the task AND reorder the array
                     let newTasks = [...tasks];
@@ -1257,7 +1270,6 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                           />
                         ) : (
                           <div 
-                            className="task-days-badge"
                             onClick={(e) => {
                               e.stopPropagation();
                               if (canEdit) {
@@ -1265,11 +1277,24 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                               }
                             }}
                             style={{
-                              cursor: canEdit ? 'pointer' : 'default'
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              cursor: canEdit ? 'pointer' : 'default',
+                              minWidth: '70px'
                             }}
                             title={canEdit ? 'Click to edit duration' : undefined}
                           >
-                            {days} {days === 1 ? 'Day' : 'Days'}
+                            <div className="task-days-badge" style={{ minWidth: '32px' }}>
+                              {days}
+                            </div>
+                            <span style={{ 
+                              fontSize: '11px', 
+                              color: '#9ca3af',
+                              fontWeight: '500'
+                            }}>
+                              {days === 1 ? 'Day' : 'Days'}
+                            </span>
                           </div>
                         )}
                       </div>
