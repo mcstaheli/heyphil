@@ -54,14 +54,14 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     updateGridWidth();
     window.addEventListener('resize', updateGridWidth);
     
-    // Update on task changes (dragging, resizing)
+    // Update on task changes (dragging)
     const timeout = setTimeout(updateGridWidth, 100);
 
     return () => {
       window.removeEventListener('resize', updateGridWidth);
       clearTimeout(timeout);
     };
-  }, [tasks, draggingTask, resizingTask]);
+  }, [tasks, draggingTask]);
 
   // Handle drag events
   useEffect(() => {
