@@ -13,7 +13,8 @@
     "migrate:deleted-at": "node server/add-deleted-at.js",
     "db:init": "node server/init-db.js",
     "railway:build": "npm install && cd client && npm install && npm run build",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "smoke": "node scripts/smoke.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

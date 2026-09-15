@@ -167,9 +167,23 @@ const requireAuth = (req, res, next) => {
 };
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+app.get('/health', async (req, res) => {
+  let database = true;
+  try {
+    // Deliberately bypass the shared `query()` helper's retry logic here: a health
+    // check should fail fast on a single attempt, not stack up retries (each holding
+    // a pool connection attempt) on every poll during a sustained outage.
+    await Promise.race([
+      pool.query('SELECT 1'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('health check DB query timed out')), 3000)),
+    ]);
+  } catch (error) {
+    database = false;
+    console.error('Health check DB query failed:', error.message);
+  }
+  res.json({
+    status: 'ok',
+    database,
     serviceAccount: !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON || fs.existsSync(path.join(__dirname, '..', 'service-account.json')),
     timestamp: new Date().toISOString()
   });
