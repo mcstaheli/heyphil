@@ -1,4 +1,5 @@
 // Database queries for the Cashflow Labs app
+import { randomUUID } from 'crypto';
 import pool, { transaction } from './db.js';
 
 // ========== MIGRATIONS ==========
@@ -19,21 +20,79 @@ export async function createTables() {
     CREATE TABLE IF NOT EXISTS cashflow_divisions (
       id VARCHAR(50) PRIMARY KEY,
       name VARCHAR(100) NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'retired')),
       sort_order INT NOT NULL DEFAULT 0
     )
   `));
 
-  await step('cashflow_line_items table', () => pool.query(`
-    CREATE TABLE IF NOT EXISTS cashflow_line_items (
+  await step('cashflow_divisions status column (existing rows)', () => pool.query(`
+    ALTER TABLE cashflow_divisions ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'
+  `));
+
+  // Postgres has no "ADD CONSTRAINT IF NOT EXISTS"; on the already-existing
+  // production table (the fresh CREATE TABLE above bakes this CHECK in
+  // directly, so this is a no-op there) this throws "already exists" on
+  // every boot after the first, which step() correctly treats as harmless.
+  await step('cashflow_divisions status check constraint', () => pool.query(`
+    ALTER TABLE cashflow_divisions ADD CONSTRAINT cashflow_divisions_status_check CHECK (status IN ('active', 'retired'))
+  `));
+
+  await step('cashflow_sections table', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS cashflow_sections (
       id SERIAL PRIMARY KEY,
       division_id VARCHAR(50) NOT NULL REFERENCES cashflow_divisions(id) ON DELETE CASCADE,
       name VARCHAR(255) NOT NULL,
-      category VARCHAR(20) NOT NULL DEFAULT 'operations' CHECK (category IN ('operations', 'investment')),
+      status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'retired')),
+      sort_order INT NOT NULL DEFAULT 0
+    )
+  `));
+
+  // Guards the "General" backfill below against two boots racing to create
+  // it (e.g. a rolling deploy briefly running two instances).
+  await step('cashflow_sections division+name uniqueness', () => pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cashflow_sections_division_name ON cashflow_sections(division_id, name)
+  `));
+
+  // CREATE TABLE IF NOT EXISTS only applies to a brand-new database - this
+  // table already existed in production with an older division_id/category
+  // shape, so the ALTER/backfill/DROP steps below are what actually migrate
+  // real rows. Safe to run every boot: each becomes a no-op once applied.
+  await step('cashflow_line_items table', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS cashflow_line_items (
+      id SERIAL PRIMARY KEY,
+      section_id INT NOT NULL REFERENCES cashflow_sections(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
       status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'retired')),
       sort_order INT NOT NULL DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `));
+
+  await step('cashflow_line_items section_id column (existing rows)', () => pool.query(`
+    ALTER TABLE cashflow_line_items ADD COLUMN IF NOT EXISTS section_id INT REFERENCES cashflow_sections(id) ON DELETE CASCADE
+  `));
+
+  await step('cashflow_line_items section_id backfill', () => migrateLineItemsToSections());
+
+  // Only proceed to NOT NULL + dropping the legacy columns if the backfill
+  // actually finished: those columns are the only way to recover an
+  // orphaned row's division, so dropping them while any row is still
+  // unbackfilled would make it permanently unrecoverable.
+  const stillOrphaned = await pool.query(`
+    SELECT count(*)::int AS n FROM cashflow_line_items WHERE section_id IS NULL
+  `).catch(() => ({ rows: [{ n: 0 }] })); // column already gone = already migrated
+  if (stillOrphaned.rows[0].n === 0) {
+    await step('cashflow_line_items section_id NOT NULL', () => pool.query(`
+      ALTER TABLE cashflow_line_items ALTER COLUMN section_id SET NOT NULL
+    `));
+
+    await step('cashflow_line_items drop legacy columns', async () => {
+      await pool.query(`ALTER TABLE cashflow_line_items DROP COLUMN IF EXISTS division_id`);
+      await pool.query(`ALTER TABLE cashflow_line_items DROP COLUMN IF EXISTS category`);
+    });
+  } else {
+    console.error(`⚠️  Cashflow migration: ${stillOrphaned.rows[0].n} line item(s) still missing section_id - skipping NOT NULL/column drop this boot to avoid data loss`);
+  }
 
   await step('cashflow_entries table', () => pool.query(`
     CREATE TABLE IF NOT EXISTS cashflow_entries (
@@ -72,7 +131,46 @@ export async function createTables() {
 
   await step('cashflow_entries week index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_entries_week ON cashflow_entries(week_ending)`));
   await step('cashflow_debt_entries week index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_debt_entries_week ON cashflow_debt_entries(week_ending)`));
-  await step('cashflow_line_items division index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_line_items_division ON cashflow_line_items(division_id)`));
+  await step('cashflow_line_items section index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_line_items_section ON cashflow_line_items(section_id)`));
+  await step('cashflow_sections division index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_sections_division ON cashflow_sections(division_id)`));
+}
+
+// One-time backfill for line items created before sections existed: gives
+// each affected division a "General" section and attaches its orphaned
+// items there. No-ops once the old division_id/category columns are gone.
+async function migrateLineItemsToSections() {
+  const columnCheck = await pool.query(`
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'cashflow_line_items' AND column_name = 'division_id'
+  `);
+  if (columnCheck.rows.length === 0) return; // already migrated
+
+  const orphans = await pool.query(`
+    SELECT DISTINCT division_id FROM cashflow_line_items WHERE section_id IS NULL
+  `);
+
+  for (const { division_id: divisionId } of orphans.rows) {
+    // Atomic upsert (relies on the unique index on division_id+name added
+    // above) so two boots racing to create "General" can't both succeed.
+    const created = await pool.query(
+      `INSERT INTO cashflow_sections (division_id, name) VALUES ($1, 'General')
+       ON CONFLICT (division_id, name) DO NOTHING
+       RETURNING id`,
+      [divisionId]
+    );
+    let sectionId = created.rows[0]?.id;
+    if (!sectionId) {
+      const existing = await pool.query(
+        `SELECT id FROM cashflow_sections WHERE division_id = $1 AND name = 'General'`,
+        [divisionId]
+      );
+      sectionId = existing.rows[0].id;
+    }
+    await pool.query(
+      `UPDATE cashflow_line_items SET section_id = $1 WHERE division_id = $2 AND section_id IS NULL`,
+      [sectionId, divisionId]
+    );
+  }
 }
 
 const DEFAULT_DIVISIONS = [
@@ -96,14 +194,40 @@ export async function seedDivisions() {
 
 // ========== DIVISIONS ==========
 
-export async function getDivisions() {
-  const result = await pool.query(`SELECT * FROM cashflow_divisions ORDER BY sort_order`);
+export async function getDivisions({ status } = {}) {
+  const where = status ? `WHERE status = $1` : '';
+  const result = await pool.query(
+    `SELECT * FROM cashflow_divisions ${where} ORDER BY sort_order`,
+    status ? [status] : []
+  );
   return result.rows;
 }
 
-// ========== LINE ITEMS ==========
+export async function createDivision({ name, sortOrder = 0 }) {
+  const id = randomUUID();
+  const result = await pool.query(
+    `INSERT INTO cashflow_divisions (id, name, sort_order) VALUES ($1, $2, $3) RETURNING *`,
+    [id, name, sortOrder]
+  );
+  return result.rows[0];
+}
 
-export async function getLineItems({ divisionId, status } = {}) {
+export async function updateDivision(id, { name, status, sortOrder }) {
+  const result = await pool.query(
+    `UPDATE cashflow_divisions
+     SET name = COALESCE($2, name),
+         status = COALESCE($3, status),
+         sort_order = COALESCE($4, sort_order)
+     WHERE id = $1
+     RETURNING *`,
+    [id, name ?? null, status ?? null, sortOrder ?? null]
+  );
+  return result.rows[0];
+}
+
+// ========== SECTIONS ==========
+
+export async function getSections({ divisionId, status } = {}) {
   const conditions = [];
   const params = [];
   if (divisionId) {
@@ -116,31 +240,72 @@ export async function getLineItems({ divisionId, status } = {}) {
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const result = await pool.query(
-    `SELECT * FROM cashflow_line_items ${where} ORDER BY division_id, sort_order, id`,
+    `SELECT * FROM cashflow_sections ${where} ORDER BY division_id, sort_order, id`,
     params
   );
   return result.rows;
 }
 
-export async function createLineItem({ divisionId, name, category = 'operations', sortOrder = 0 }) {
+export async function createSection({ divisionId, name, sortOrder = 0 }) {
   const result = await pool.query(
-    `INSERT INTO cashflow_line_items (division_id, name, category, sort_order)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [divisionId, name, category, sortOrder]
+    `INSERT INTO cashflow_sections (division_id, name, sort_order) VALUES ($1, $2, $3) RETURNING *`,
+    [divisionId, name, sortOrder]
   );
   return result.rows[0];
 }
 
-export async function updateLineItem(id, { name, category, status, sortOrder }) {
+export async function updateSection(id, { name, status, sortOrder }) {
+  const result = await pool.query(
+    `UPDATE cashflow_sections
+     SET name = COALESCE($2, name),
+         status = COALESCE($3, status),
+         sort_order = COALESCE($4, sort_order)
+     WHERE id = $1
+     RETURNING *`,
+    [id, name ?? null, status ?? null, sortOrder ?? null]
+  );
+  return result.rows[0];
+}
+
+// ========== LINE ITEMS ==========
+
+export async function getLineItems({ sectionId, status } = {}) {
+  const conditions = [];
+  const params = [];
+  if (sectionId) {
+    params.push(sectionId);
+    conditions.push(`section_id = $${params.length}`);
+  }
+  if (status) {
+    params.push(status);
+    conditions.push(`status = $${params.length}`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const result = await pool.query(
+    `SELECT * FROM cashflow_line_items ${where} ORDER BY section_id, sort_order, id`,
+    params
+  );
+  return result.rows;
+}
+
+export async function createLineItem({ sectionId, name, sortOrder = 0 }) {
+  const result = await pool.query(
+    `INSERT INTO cashflow_line_items (section_id, name, sort_order)
+     VALUES ($1, $2, $3) RETURNING *`,
+    [sectionId, name, sortOrder]
+  );
+  return result.rows[0];
+}
+
+export async function updateLineItem(id, { name, status, sortOrder }) {
   const result = await pool.query(
     `UPDATE cashflow_line_items
      SET name = COALESCE($2, name),
-         category = COALESCE($3, category),
-         status = COALESCE($4, status),
-         sort_order = COALESCE($5, sort_order)
+         status = COALESCE($3, status),
+         sort_order = COALESCE($4, sort_order)
      WHERE id = $1
      RETURNING *`,
-    [id, name ?? null, category ?? null, status ?? null, sortOrder ?? null]
+    [id, name ?? null, status ?? null, sortOrder ?? null]
   );
   return result.rows[0];
 }
@@ -149,9 +314,10 @@ export async function updateLineItem(id, { name, category, status, sortOrder }) 
 
 export async function getEntries({ startWeek, endWeek }) {
   const result = await pool.query(
-    `SELECT e.line_item_id, e.week_ending, e.amount, li.division_id, li.category
+    `SELECT e.line_item_id, e.week_ending, e.amount, li.section_id, s.division_id
      FROM cashflow_entries e
      JOIN cashflow_line_items li ON li.id = e.line_item_id
+     JOIN cashflow_sections s ON s.id = li.section_id
      WHERE e.week_ending BETWEEN $1 AND $2`,
     [startWeek, endWeek]
   );

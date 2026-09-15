@@ -15,6 +15,26 @@ const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
 const isValidWeek = (w) => typeof w === 'string' && WEEK_RE.test(w);
 const isFiniteAmount = (a) => typeof a === 'number' && Number.isFinite(a);
 
+// Shared by the four PUT .../:id routes below (divisions, sections,
+// line-items, lenders), which all patch the same name/status/sortOrder
+// shape. Returns the normalized fields, or null after writing the error
+// response itself.
+function validatePatchFields(res, { name, status, sortOrder }) {
+  if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
+    res.status(400).json({ error: 'name cannot be blank' });
+    return null;
+  }
+  if (status !== undefined && !['active', 'retired'].includes(status)) {
+    res.status(400).json({ error: 'status must be active or retired' });
+    return null;
+  }
+  if (sortOrder !== undefined && !Number.isFinite(sortOrder)) {
+    res.status(400).json({ error: 'sortOrder must be numeric' });
+    return null;
+  }
+  return { name: name !== undefined ? name.trim() : undefined, status, sortOrder };
+}
+
 function validateWeekRange(res, startWeek, endWeek) {
   if (!isValidWeek(startWeek) || !isValidWeek(endWeek)) {
     res.status(400).json({ error: 'startWeek and endWeek must be YYYY-MM-DD' });
@@ -33,6 +53,7 @@ const CLIENT_ERROR_MESSAGES = {
   '22P02': 'Invalid value format', // invalid_text_representation (e.g. non-numeric :id)
   '22007': 'Invalid date format', // invalid_datetime_format
   '22008': 'Invalid date', // datetime_field_overflow (e.g. 2024-13-01)
+  '23505': 'A section with that name already exists in this department', // unique_violation
 };
 
 function handleDbError(res, error) {
@@ -48,7 +69,79 @@ function handleDbError(res, error) {
 
 router.get('/divisions', async (req, res) => {
   try {
-    res.json(await cashflowDb.getDivisions());
+    const { status } = req.query;
+    res.json(await cashflowDb.getDivisions({ status }));
+  } catch (error) {
+    handleDbError(res, error);
+  }
+});
+
+router.post('/divisions', async (req, res) => {
+  try {
+    const { name, sortOrder } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    const division = await cashflowDb.createDivision({
+      name: name.trim(),
+      sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
+    });
+    res.status(201).json(division);
+  } catch (error) {
+    handleDbError(res, error);
+  }
+});
+
+router.put('/divisions/:id', async (req, res) => {
+  try {
+    const fields = validatePatchFields(res, req.body);
+    if (!fields) return;
+    const division = await cashflowDb.updateDivision(req.params.id, fields);
+    if (!division) return res.status(404).json({ error: 'Not found' });
+    res.json(division);
+  } catch (error) {
+    handleDbError(res, error);
+  }
+});
+
+// ========== SECTIONS ==========
+
+router.get('/sections', async (req, res) => {
+  try {
+    const { divisionId, status } = req.query;
+    res.json(await cashflowDb.getSections({ divisionId, status }));
+  } catch (error) {
+    handleDbError(res, error);
+  }
+});
+
+router.post('/sections', async (req, res) => {
+  try {
+    const { divisionId, name, sortOrder } = req.body;
+    if (!divisionId || typeof divisionId !== 'string') {
+      return res.status(400).json({ error: 'divisionId is required' });
+    }
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    const section = await cashflowDb.createSection({
+      divisionId,
+      name: name.trim(),
+      sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
+    });
+    res.status(201).json(section);
+  } catch (error) {
+    handleDbError(res, error);
+  }
+});
+
+router.put('/sections/:id', async (req, res) => {
+  try {
+    const fields = validatePatchFields(res, req.body);
+    if (!fields) return;
+    const section = await cashflowDb.updateSection(req.params.id, fields);
+    if (!section) return res.status(404).json({ error: 'Not found' });
+    res.json(section);
   } catch (error) {
     handleDbError(res, error);
   }
@@ -58,8 +151,8 @@ router.get('/divisions', async (req, res) => {
 
 router.get('/line-items', async (req, res) => {
   try {
-    const { divisionId, status } = req.query;
-    res.json(await cashflowDb.getLineItems({ divisionId, status }));
+    const { sectionId, status } = req.query;
+    res.json(await cashflowDb.getLineItems({ sectionId, status }));
   } catch (error) {
     handleDbError(res, error);
   }
@@ -67,20 +160,16 @@ router.get('/line-items', async (req, res) => {
 
 router.post('/line-items', async (req, res) => {
   try {
-    const { divisionId, name, category, sortOrder } = req.body;
-    if (!divisionId || typeof divisionId !== 'string') {
-      return res.status(400).json({ error: 'divisionId is required' });
+    const { sectionId, name, sortOrder } = req.body;
+    if (!Number.isInteger(sectionId)) {
+      return res.status(400).json({ error: 'sectionId is required' });
     }
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
-    if (category && !['operations', 'investment'].includes(category)) {
-      return res.status(400).json({ error: 'category must be operations or investment' });
-    }
     const item = await cashflowDb.createLineItem({
-      divisionId,
+      sectionId,
       name: name.trim(),
-      category,
       sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
     });
     res.status(201).json(item);
@@ -91,25 +180,9 @@ router.post('/line-items', async (req, res) => {
 
 router.put('/line-items/:id', async (req, res) => {
   try {
-    const { name, category, status, sortOrder } = req.body;
-    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
-      return res.status(400).json({ error: 'name cannot be blank' });
-    }
-    if (category && !['operations', 'investment'].includes(category)) {
-      return res.status(400).json({ error: 'category must be operations or investment' });
-    }
-    if (status && !['active', 'retired'].includes(status)) {
-      return res.status(400).json({ error: 'status must be active or retired' });
-    }
-    if (sortOrder !== undefined && !Number.isFinite(sortOrder)) {
-      return res.status(400).json({ error: 'sortOrder must be numeric' });
-    }
-    const item = await cashflowDb.updateLineItem(req.params.id, {
-      name: name !== undefined ? name.trim() : undefined,
-      category,
-      status,
-      sortOrder,
-    });
+    const fields = validatePatchFields(res, req.body);
+    if (!fields) return;
+    const item = await cashflowDb.updateLineItem(req.params.id, fields);
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json(item);
   } catch (error) {
@@ -177,21 +250,9 @@ router.post('/lenders', async (req, res) => {
 
 router.put('/lenders/:id', async (req, res) => {
   try {
-    const { name, status, sortOrder } = req.body;
-    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
-      return res.status(400).json({ error: 'name cannot be blank' });
-    }
-    if (status && !['active', 'retired'].includes(status)) {
-      return res.status(400).json({ error: 'status must be active or retired' });
-    }
-    if (sortOrder !== undefined && !Number.isFinite(sortOrder)) {
-      return res.status(400).json({ error: 'sortOrder must be numeric' });
-    }
-    const lender = await cashflowDb.updateLender(req.params.id, {
-      name: name !== undefined ? name.trim() : undefined,
-      status,
-      sortOrder,
-    });
+    const fields = validatePatchFields(res, req.body);
+    if (!fields) return;
+    const lender = await cashflowDb.updateLender(req.params.id, fields);
     if (!lender) return res.status(404).json({ error: 'Not found' });
     res.json(lender);
   } catch (error) {
