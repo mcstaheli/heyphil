@@ -4,10 +4,11 @@ import { io } from 'socket.io-client';
 import './App.css';
 import './Loading.css';
 import Landing from './Landing';
-import HotelVisual from './HotelVisual';
 import OrgCharts from './OrgCharts';
 import Settings from './Settings';
+import SettingsPage from './SettingsPage';
 import ProjectDetail from './ProjectDetail';
+import Layout from './Layout';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -34,14 +35,14 @@ function getInitialsColor(name) {
 }
 
 // Wrapper component for project detail route
-function ProjectDetailRoute({ user, onBack }) {
+function ProjectDetailRoute({ user }) {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  
+
   return (
     <ProjectDetail
       projectId={projectId}
-      onClose={() => navigate('/board')}
+      onClose={() => navigate('/labs/board')}
       currentUser={user}
     />
   );
@@ -50,19 +51,7 @@ function ProjectDetailRoute({ user, onBack }) {
 function App() {
   const [authenticated, setAuthenticated] = useState(null);
   const [user, setUser] = useState(null);
-  const [currentApp, setCurrentAppState] = useState(() => {
-    return localStorage.getItem('currentApp') || null;
-  });
   const [showDevTools, setShowDevTools] = useState(false);
-  
-  const setCurrentApp = (app) => {
-    setCurrentAppState(app);
-    if (app) {
-      localStorage.setItem('currentApp', app);
-    } else {
-      localStorage.removeItem('currentApp');
-    }
-  };
 
   useEffect(() => {
     // Check for token in URL (after OAuth callback)
@@ -165,7 +154,6 @@ function App() {
     localStorage.removeItem('authToken');
     setAuthenticated(false);
     setUser(null);
-    setCurrentApp(null);
   };
 
   // Login screen
@@ -193,132 +181,32 @@ function App() {
     );
   }
 
-  // App launcher
-  if (!currentApp) {
-    return (
-      <>
-        <div className="app-container">
-          <header className="app-header">
-            <h1>✨ 🤖 HeyPhil</h1>
-            <div className="user-info">
-              {user?.picture && <img src={user.picture} alt={user.name} />}
-              <span>{user?.name}</span>
-              <button className="btn-secondary" onClick={handleLogout}>Logout</button>
-            </div>
-          </header>
-          <div className="app-launcher">
-            <h2>Your Apps</h2>
-            <div className="app-grid">
-              <div className="app-card" onClick={() => setCurrentApp('origination')}>
-                <div className="app-icon">📋</div>
-                <h3>Project Board</h3>
-                <p>Manage projects with your team</p>
-              </div>
-              <div className="app-card" onClick={() => setCurrentApp('studio')}>
-                <div className="app-icon">🎬</div>
-                <h3>Studio Board</h3>
-                <p>Venture studio pipeline</p>
-              </div>
-              <div className="app-card" onClick={() => setCurrentApp('orgcharts')}>
-                <div className="app-icon">📊</div>
-                <h3>Org Charts</h3>
-                <p>Infinite canvas with nodes & connections</p>
-              </div>
-              <div className="app-card disabled">
-                <div className="app-icon">🏨</div>
-                <h3>Hotel Empire</h3>
-                <p>Coming soon...</p>
-              </div>
-              <div className="app-card disabled">
-                <div className="app-icon">📧</div>
-                <h3>Email Triage</h3>
-                <p>Coming soon...</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
-        {!showDevTools && (
-          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧
-          </button>
-        )}
-      </>
-    );
-  }
-
-  // Hotel Empire app
-  if (currentApp === 'hotel-tycoon') {
-    return (
-      <>
-        <HotelVisual user={user} onBack={() => setCurrentApp(null)} />
-        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
-        {!showDevTools && (
-          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧
-          </button>
-        )}
-      </>
-    );
-  }
-
-  // Org Charts app
-  if (currentApp === 'orgcharts') {
-    return (
-      <>
-        <OrgCharts user={user} onBack={() => setCurrentApp(null)} />
-        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
-        {!showDevTools && (
-          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧
-          </button>
-        )}
-      </>
-    );
-  }
-
-  // Project Board app with routing
-  if (currentApp === 'origination') {
-    return (
-      <>
+  // Authenticated app shell
+  return (
+    <>
+      <Layout user={user} onLogout={handleLogout}>
         <Routes>
-          <Route path="/" element={<Navigate to="/board" replace />} />
-          <Route path="/board" element={<OriginationBoard user={user} onBack={() => setCurrentApp(null)} onLogout={handleLogout} />} />
-          <Route path="/projects/:projectId" element={<ProjectDetailRoute user={user} onBack={() => setCurrentApp(null)} />} />
+          <Route path="/" element={<Navigate to="/labs/board" replace />} />
+          <Route path="/labs/board" element={<OriginationBoard user={user} />} />
+          <Route path="/labs/board/projects/:projectId" element={<ProjectDetailRoute user={user} />} />
+          <Route path="/labs/studio" element={<OriginationBoard user={user} studioMode={true} />} />
+          <Route path="/labs/orgcharts" element={<OrgCharts />} />
+          <Route path="/settings" element={<SettingsPage user={user} onLogout={handleLogout} />} />
+          <Route path="*" element={<Navigate to="/labs/board" replace />} />
         </Routes>
-        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
-        {!showDevTools && (
-          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧
-          </button>
-        )}
-      </>
-    );
-  }
-
-  // Studio Board app
-  if (currentApp === 'studio') {
-    return (
-      <>
-        <OriginationBoard 
-          user={user} 
-          onBack={() => setCurrentApp(null)} 
-          onLogout={handleLogout}
-          studioMode={true}
-        />
-        {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
-        {!showDevTools && (
-          <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
-            🔧
-          </button>
-        )}
-      </>
-    );
-  }
+      </Layout>
+      {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
+      {!showDevTools && (
+        <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>
+          🔧
+        </button>
+      )}
+    </>
+  );
 
 }
 
-function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
+function OriginationBoard({ user, studioMode = false }) {
   const navigate = useNavigate();
   const [cards, setCards] = useState([]);
   const [people, setPeople] = useState({});
@@ -1047,12 +935,11 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
     <div className="app-container">
       <header className="app-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button className="btn-secondary" onClick={onBack}>← Back</button>
           <h1>{studioMode ? '🎬 Studio Board' : '📋 Project Board'}</h1>
-          <span 
-            style={{ 
-              fontSize: '12px', 
-              padding: '4px 8px', 
+          <span
+            style={{
+              fontSize: '12px',
+              padding: '4px 8px',
               borderRadius: '4px',
               backgroundColor: wsConnected ? '#4caf50' : '#ff9800',
               color: 'white',
@@ -1064,10 +951,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           </span>
         </div>
         <div className="user-info">
-          {user?.picture && <img src={user.picture} alt={user.name} />}
-          <span>{user?.name}</span>
-          <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙️ Settings</button>
-          <button className="btn-secondary" onClick={onLogout}>Logout</button>
+          <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙️ Board Settings</button>
         </div>
       </header>
 
@@ -1353,7 +1237,7 @@ function OriginationBoard({ user, onBack, onLogout, studioMode = false }) {
           projectTypeColors={projectTypeColors}
           people={people}
           studioMode={studioMode}
-          onViewProject={(projectId) => navigate(`/projects/${projectId}`)}
+          onViewProject={(projectId) => navigate(`/labs/board/projects/${projectId}`)}
           currentUser={user}
         />
       )}

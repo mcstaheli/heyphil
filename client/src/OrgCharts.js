@@ -3,7 +3,7 @@ import './OrgCharts.css';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
-function OrgCharts({ user, onBack }) {
+function OrgCharts() {
   const canvasRef = useRef(null);
   
   // Chart management
@@ -936,12 +936,7 @@ function OrgCharts({ user, onBack }) {
       <div className="app-container">
         <header className="app-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <button className="btn-secondary" onClick={onBack}>← Back</button>
             <h1>📊 Org Charts</h1>
-          </div>
-          <div className="user-info">
-            {user?.picture && <img src={user.picture} alt={user.name} />}
-            <span>{user?.name}</span>
           </div>
         </header>
 
@@ -1032,8 +1027,6 @@ function OrgCharts({ user, onBack }) {
             ) : null}
           </div>
           <button className="btn-secondary" onClick={() => saveChart(false)}>💾 Save Now</button>
-          {user?.picture && <img src={user.picture} alt={user.name} />}
-          <span>{user?.name}</span>
         </div>
       </header>
 

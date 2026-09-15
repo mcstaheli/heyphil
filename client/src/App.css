@@ -80,11 +80,8 @@ body {
 
 /* App Container */
 .app-container {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex: 1;
+  min-height: 0;
   background: #f5f7fa;
   display: flex;
   flex-direction: column;
@@ -505,7 +502,7 @@ body {
 .devtools-toggle {
   position: fixed;
   bottom: 20px;
-  left: 20px;
+  right: 20px;
   background: #333;
   color: white;
   border: none;
@@ -531,7 +528,7 @@ body {
 .trash-toggle {
   position: fixed;
   bottom: 20px;
-  left: 88px; /* 20px base + 48px button width + 20px gap */
+  right: 88px; /* 20px base + 48px button width + 20px gap */
   background: #666;
   color: white;
   border: none;
