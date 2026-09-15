@@ -1,15 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import './Sidebar.css';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 const LABS_APPS = [
   { path: '/labs/board', icon: '📋', label: 'Project Board' },
   { path: '/labs/studio', icon: '🎬', label: 'Studio Board' },
   { path: '/labs/orgcharts', icon: '📊', label: 'Org Charts' },
+  { path: '/labs/cashflow', icon: '💰', label: 'Cashflow', accessKey: 'cashflow' },
 ];
 
 function Sidebar({ user, onLogout }) {
   const [labsOpen, setLabsOpen] = useState(true);
+  const [access, setAccess] = useState({});
+
+  useEffect(() => {
+    const gatedKeys = [...new Set(LABS_APPS.map((a) => a.accessKey).filter(Boolean))];
+    const token = localStorage.getItem('authToken');
+    gatedKeys.forEach((key) => {
+      fetch(`${API_BASE_URL}/api/access/${key}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => res.json())
+        .then((data) => setAccess((prev) => ({ ...prev, [key]: !!data.hasAccess })))
+        .catch(() => setAccess((prev) => ({ ...prev, [key]: false })));
+    });
+  }, []);
+
+  const visibleLabsApps = LABS_APPS.filter((app) => !app.accessKey || access[app.accessKey]);
 
   return (
     <div className="sidebar">
@@ -28,7 +47,7 @@ function Sidebar({ user, onLogout }) {
         </button>
         {labsOpen && (
           <div className="sidebar-group-items">
-            {LABS_APPS.map((app) => (
+            {visibleLabsApps.map((app) => (
               <NavLink
                 key={app.path}
                 to={app.path}
