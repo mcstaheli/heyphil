@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './Cashflow.css';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -69,6 +69,10 @@ function Cashflow() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Captured on focus so a rejected rename can revert to the pre-edit value
+  // without a full reload (keyed "division-<id>" / "section-<id>").
+  const originalNames = useRef({});
 
   useEffect(() => {
     (async () => {
@@ -214,8 +218,14 @@ function Cashflow() {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.error || 'Failed to rename department');
-        loadAll(); // resync: local name is now out of sync with the DB
+        const original = originalNames.current[`division-${id}`];
+        if (original !== undefined) {
+          setDivisions((prev) => prev.map((d) => (d.id === id ? { ...d, name: original } : d)));
+        }
+        return;
       }
+      const updated = await res.json();
+      setDivisions((prev) => prev.map((d) => (d.id === id ? { ...d, name: updated.name } : d)));
     } catch {
       setError('Failed to rename department');
     }
@@ -270,8 +280,14 @@ function Cashflow() {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.error || 'Failed to rename section');
-        loadAll(); // resync: local name is now out of sync with the DB
+        const original = originalNames.current[`section-${id}`];
+        if (original !== undefined) {
+          setSections((prev) => prev.map((s) => (s.id === id ? { ...s, name: original } : s)));
+        }
+        return;
       }
+      const updated = await res.json();
+      setSections((prev) => prev.map((s) => (s.id === id ? { ...s, name: updated.name } : s)));
     } catch {
       setError('Failed to rename section');
     }
@@ -455,6 +471,7 @@ function Cashflow() {
                           className="cashflow-header-input cashflow-division-input"
                           value={division.name}
                           disabled={division.status !== 'active'}
+                          onFocus={() => { originalNames.current[`division-${division.id}`] = division.name; }}
                           onChange={(e) => renameDivision(division.id, e.target.value)}
                           onBlur={(e) => saveDivisionName(division.id, e.target.value)}
                         />
@@ -475,7 +492,8 @@ function Cashflow() {
                               <input
                                 className="cashflow-header-input cashflow-section-input"
                                 value={section.name}
-                                disabled={section.status !== 'active'}
+                                disabled={!sectionActive}
+                                onFocus={() => { originalNames.current[`section-${section.id}`] = section.name; }}
                                 onChange={(e) => renameSection(section.id, e.target.value)}
                                 onBlur={(e) => saveSectionName(section.id, e.target.value)}
                               />

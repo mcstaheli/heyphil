@@ -124,6 +124,11 @@ router.post('/sections', async (req, res) => {
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
+    const division = await cashflowDb.getDivisionById(divisionId);
+    if (!division) return res.status(400).json({ error: 'Referenced record does not exist' });
+    if (division.status !== 'active') {
+      return res.status(400).json({ error: 'Cannot add a section to a retired department' });
+    }
     const section = await cashflowDb.createSection({
       divisionId,
       name: name.trim(),
@@ -166,6 +171,15 @@ router.post('/line-items', async (req, res) => {
     }
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
+    }
+    const section = await cashflowDb.getSectionById(sectionId);
+    if (!section) return res.status(400).json({ error: 'Referenced record does not exist' });
+    if (section.status !== 'active') {
+      return res.status(400).json({ error: 'Cannot add an item to a retired section' });
+    }
+    const division = await cashflowDb.getDivisionById(section.division_id);
+    if (!division || division.status !== 'active') {
+      return res.status(400).json({ error: 'Cannot add an item to a section under a retired department' });
     }
     const item = await cashflowDb.createLineItem({
       sectionId,
@@ -218,6 +232,16 @@ router.put('/entries', async (req, res) => {
       if (!isFiniteAmount(e.amount)) {
         return res.status(400).json({ error: 'each entry needs a numeric amount' });
       }
+    }
+    // Defense-in-depth: the UI disables inputs for retired items, but a
+    // stale tab or direct API call could otherwise still write to one.
+    const lineItemIds = [...new Set(entries.map((e) => e.lineItemId))];
+    const items = await cashflowDb.getLineItemsByIds(lineItemIds);
+    const itemsById = new Map(items.map((i) => [i.id, i]));
+    for (const id of lineItemIds) {
+      const item = itemsById.get(id);
+      if (!item) return res.status(400).json({ error: `Line item ${id} does not exist` });
+      if (item.status !== 'active') return res.status(400).json({ error: `Line item ${id} is retired` });
     }
     res.json(await cashflowDb.upsertEntries(entries));
   } catch (error) {
@@ -283,6 +307,11 @@ router.put('/debt-entries', async (req, res) => {
     }
     if (!isFiniteAmount(amount)) {
       return res.status(400).json({ error: 'amount must be numeric' });
+    }
+    const lender = await cashflowDb.getLenderById(lenderId);
+    if (!lender) return res.status(400).json({ error: 'Referenced record does not exist' });
+    if (lender.status !== 'active') {
+      return res.status(400).json({ error: 'Cannot record an entry for a retired lender' });
     }
     res.json(await cashflowDb.upsertDebtEntry({ lenderId, weekEnding, amount }));
   } catch (error) {

@@ -119,7 +119,21 @@ async function autoMigrate() {
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
 // a request until migrations have actually run.
-await autoMigrate();
+//
+// Wrapped in a Postgres advisory lock (held on one dedicated connection,
+// not the shared pool) so two instances overlapping during a rolling
+// deploy can't run destructive migration steps concurrently - e.g. one
+// instance dropping a legacy column while another is still mid-backfill
+// against it.
+const MIGRATION_LOCK_KEY = 823450219;
+const migrationLockClient = await pool.connect();
+try {
+  await migrationLockClient.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
+  await autoMigrate();
+} finally {
+  await migrationLockClient.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
+  migrationLockClient.release();
+}
 
 // Allowed users
 const ALLOWED_EMAILS = ['chad@philo.ventures', 'tracy.stratton@philo.ventures', 'greg@philo.ventures', 'scott@philo.ventures', 'connor.bell@philo.ventures'];
