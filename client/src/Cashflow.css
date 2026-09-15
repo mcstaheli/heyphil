@@ -102,22 +102,44 @@
   background: white;
 }
 
-.cashflow-add-section-row td,
-.cashflow-add-item-row td {
+.cashflow-add-row-compact td {
   background: #fbfbfd;
+  padding: 2px 8px;
+  text-align: left;
 }
 
-.cashflow-add-item-row .cashflow-add-input {
-  margin-left: 20px;
+.cashflow-add-row-compact .cashflow-item-label {
+  padding-left: 36px;
 }
 
-.cashflow-retired {
-  opacity: 0.5;
+.cashflow-add-plus {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px dashed #c7cbe0;
+  background: transparent;
+  color: #8890b3;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
-.cashflow-retired .cashflow-header-input,
-.cashflow-cell-input:disabled {
-  font-style: italic;
+.cashflow-add-plus:hover {
+  border-color: #667eea;
+  color: #667eea;
+  background: #f5f6fb;
+}
+
+.cashflow-add-input-compact {
+  border: 1px solid #667eea;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  width: 200px;
 }
 
 .cashflow-retire-btn {

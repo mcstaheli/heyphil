@@ -66,6 +66,8 @@ function Cashflow() {
   const [newSectionName, setNewSectionName] = useState({}); // divisionId -> string
   const [newItemName, setNewItemName] = useState({}); // sectionId -> string
   const [newLenderName, setNewLenderName] = useState('');
+  const [addingSectionFor, setAddingSectionFor] = useState(null); // divisionId whose compact "+" is expanded
+  const [addingItemFor, setAddingItemFor] = useState(null); // sectionId whose compact "+" is expanded
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -402,20 +404,36 @@ function Cashflow() {
 
   const summaryByWeek = Object.fromEntries(summary.map((s) => [s.weekEnding, s]));
 
-  // Retired rows stay visible (grayed, restorable) rather than disappearing:
-  // their historical entries still count toward every total shown (matching
-  // the server-computed Contribution/Ending cash rollup below), so hiding
-  // the row would make a total no longer match what's visibly summed.
-  const retiredClass = (item) => (item.status === 'retired' ? ' cashflow-retired' : '');
-  const statusToggle = (item, onToggle) => (
-    <button
-      className="cashflow-retire-btn"
-      title={item.status === 'active' ? 'Retire' : 'Restore'}
-      onClick={() => onToggle(item.id, item.status === 'active' ? 'retired' : 'active')}
-    >
-      {item.status === 'active' ? '×' : '↺'}
-    </button>
+  // Removing a department/section/item/lender retires it server-side (so its
+  // historical entries keep counting toward Contribution/Ending cash below,
+  // same as real accounting - closing a department doesn't erase what it
+  // already spent) but it's filtered out of the active view entirely below,
+  // so from here it just looks removed.
+  const removeButton = (entity, onRemove) => (
+    <button className="cashflow-retire-btn" title="Remove" onClick={() => onRemove(entity.id, 'retired')}>×</button>
   );
+
+  // Compact "+"-to-expand control used for Add Section / Add Item, which
+  // are repeated per row and were previously a full input+button each -
+  // this keeps the sheet's footprint small until you actually want to add
+  // something.
+  const compactAdd = ({ isOpen, onOpen, onClose, placeholder, value, onChange, onSubmit }) =>
+    isOpen ? (
+      <input
+        autoFocus
+        className="cashflow-add-input-compact"
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { onSubmit(); onClose(); }
+          if (e.key === 'Escape') onClose();
+        }}
+        onBlur={onClose}
+      />
+    ) : (
+      <button className="cashflow-add-plus" onClick={onOpen} title={placeholder}>+</button>
+    );
 
   const itemTotal = (itemId, week) => entries[`${itemId}_${week}`] || 0;
   const sectionTotal = (sectionId, week) =>
@@ -461,21 +479,20 @@ function Cashflow() {
               </tr>
             </thead>
             <tbody>
-              {divisions.map((division) => {
-                const divisionSections = sections.filter((s) => s.division_id === division.id);
+              {divisions.filter((d) => d.status === 'active').map((division) => {
+                const divisionSections = sections.filter((s) => s.division_id === division.id && s.status === 'active');
                 return (
                   <React.Fragment key={division.id}>
-                    <tr className={`cashflow-division-row${retiredClass(division)}`}>
+                    <tr className="cashflow-division-row">
                       <td className="cashflow-row-label">
                         <input
                           className="cashflow-header-input cashflow-division-input"
                           value={division.name}
-                          disabled={division.status !== 'active'}
                           onFocus={() => { originalNames.current[`division-${division.id}`] = division.name; }}
                           onChange={(e) => renameDivision(division.id, e.target.value)}
                           onBlur={(e) => saveDivisionName(division.id, e.target.value)}
                         />
-                        {statusToggle(division, setDivisionStatus)}
+                        {removeButton(division, setDivisionStatus)}
                       </td>
                       {weeks.map((w) => (
                         <td key={w}>{formatMoney(divisionTotal(division.id, w))}</td>
@@ -483,21 +500,19 @@ function Cashflow() {
                     </tr>
 
                     {divisionSections.map((section) => {
-                      const sectionItems = lineItems.filter((li) => li.section_id === section.id);
-                      const sectionActive = section.status === 'active' && division.status === 'active';
+                      const sectionItems = lineItems.filter((li) => li.section_id === section.id && li.status === 'active');
                       return (
                         <React.Fragment key={section.id}>
-                          <tr className={`cashflow-section-row${retiredClass(section)}`}>
+                          <tr className="cashflow-section-row">
                             <td className="cashflow-row-label">
                               <input
                                 className="cashflow-header-input cashflow-section-input"
                                 value={section.name}
-                                disabled={!sectionActive}
                                 onFocus={() => { originalNames.current[`section-${section.id}`] = section.name; }}
                                 onChange={(e) => renameSection(section.id, e.target.value)}
                                 onBlur={(e) => saveSectionName(section.id, e.target.value)}
                               />
-                              {statusToggle(section, setSectionStatus)}
+                              {removeButton(section, setSectionStatus)}
                             </td>
                             {weeks.map((w) => (
                               <td key={w}>{formatMoney(sectionTotal(section.id, w))}</td>
@@ -505,10 +520,10 @@ function Cashflow() {
                           </tr>
 
                           {sectionItems.map((item) => (
-                            <tr key={item.id} className={retiredClass(item).trim()}>
+                            <tr key={item.id}>
                               <td className="cashflow-row-label cashflow-item-label">
                                 {item.name}
-                                {statusToggle(item, setLineItemStatus)}
+                                {removeButton(item, setLineItemStatus)}
                               </td>
                               {weeks.map((w) => {
                                 const key = `${item.id}_${w}`;
@@ -518,7 +533,6 @@ function Cashflow() {
                                       type="number"
                                       className="cashflow-cell-input"
                                       value={entries[key] ?? ''}
-                                      disabled={item.status !== 'active' || !sectionActive}
                                       onChange={(e) => setEntries((prev) => ({ ...prev, [key]: e.target.value }))}
                                       onBlur={(e) => saveEntry(item.id, w, Number(e.target.value) || 0)}
                                     />
@@ -528,38 +542,36 @@ function Cashflow() {
                             </tr>
                           ))}
 
-                          {sectionActive && (
-                            <tr className="cashflow-add-row cashflow-add-item-row">
-                              <td colSpan={weeks.length + 1}>
-                                <input
-                                  className="cashflow-add-input"
-                                  placeholder={`+ Add item to ${section.name}`}
-                                  value={newItemName[section.id] || ''}
-                                  onChange={(e) => setNewItemName((prev) => ({ ...prev, [section.id]: e.target.value }))}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') addLineItem(section.id); }}
-                                />
-                                <button className="btn-secondary" onClick={() => addLineItem(section.id)}>Add Item</button>
-                              </td>
-                            </tr>
-                          )}
+                          <tr className="cashflow-add-row-compact">
+                            <td className="cashflow-item-label" colSpan={weeks.length + 1}>
+                              {compactAdd({
+                                isOpen: addingItemFor === section.id,
+                                onOpen: () => setAddingItemFor(section.id),
+                                onClose: () => setAddingItemFor(null),
+                                placeholder: `Add item to ${section.name}`,
+                                value: newItemName[section.id] || '',
+                                onChange: (e) => setNewItemName((prev) => ({ ...prev, [section.id]: e.target.value })),
+                                onSubmit: () => addLineItem(section.id),
+                              })}
+                            </td>
+                          </tr>
                         </React.Fragment>
                       );
                     })}
 
-                    {division.status === 'active' && (
-                      <tr className="cashflow-add-row cashflow-add-section-row">
-                        <td colSpan={weeks.length + 1}>
-                          <input
-                            className="cashflow-add-input"
-                            placeholder={`+ Add section to ${division.name}`}
-                            value={newSectionName[division.id] || ''}
-                            onChange={(e) => setNewSectionName((prev) => ({ ...prev, [division.id]: e.target.value }))}
-                            onKeyDown={(e) => { if (e.key === 'Enter') addSection(division.id); }}
-                          />
-                          <button className="btn-secondary" onClick={() => addSection(division.id)}>Add Section</button>
-                        </td>
-                      </tr>
-                    )}
+                    <tr className="cashflow-add-row-compact">
+                      <td colSpan={weeks.length + 1}>
+                        {compactAdd({
+                          isOpen: addingSectionFor === division.id,
+                          onOpen: () => setAddingSectionFor(division.id),
+                          onClose: () => setAddingSectionFor(null),
+                          placeholder: `Add section to ${division.name}`,
+                          value: newSectionName[division.id] || '',
+                          onChange: (e) => setNewSectionName((prev) => ({ ...prev, [division.id]: e.target.value })),
+                          onSubmit: () => addSection(division.id),
+                        })}
+                      </td>
+                    </tr>
                   </React.Fragment>
                 );
               })}
@@ -567,11 +579,11 @@ function Cashflow() {
               <tr className="cashflow-division-row">
                 <td colSpan={weeks.length + 1}>Debt</td>
               </tr>
-              {lenders.map((lender) => (
-                <tr key={lender.id} className={retiredClass(lender).trim()}>
+              {lenders.filter((l) => l.status === 'active').map((lender) => (
+                <tr key={lender.id}>
                   <td className="cashflow-row-label cashflow-item-label">
                     {lender.name}
-                    {statusToggle(lender, setLenderStatus)}
+                    {removeButton(lender, setLenderStatus)}
                   </td>
                   {weeks.map((w) => {
                     const key = `${lender.id}_${w}`;
@@ -581,7 +593,6 @@ function Cashflow() {
                           type="number"
                           className="cashflow-cell-input"
                           value={debtEntries[key] ?? ''}
-                          disabled={lender.status !== 'active'}
                           onChange={(e) => setDebtEntries((prev) => ({ ...prev, [key]: e.target.value }))}
                           onBlur={(e) => saveDebtEntry(lender.id, w, Number(e.target.value) || 0)}
                         />
