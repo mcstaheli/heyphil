@@ -112,7 +112,10 @@ async function autoMigrate() {
     ['chad@philo.ventures', 'cashflow']
   ));
 }
-autoMigrate();
+// Awaited (not fire-and-forget): routes below depend on tables this
+// creates (app_access in particular), so nothing should be able to serve
+// a request until migrations have actually run.
+await autoMigrate();
 
 // Allowed users
 const ALLOWED_EMAILS = ['chad@philo.ventures', 'tracy.stratton@philo.ventures', 'greg@philo.ventures', 'scott@philo.ventures', 'connor.bell@philo.ventures'];
