@@ -16,6 +16,9 @@ import * as boardDb from './board-db.js';
 import * as orgchartDb from './orgchart-db.js';
 import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
+import { JWT_SECRET, requireAuth } from './auth-middleware.js';
+import { hasAppAccess } from './permissions.js';
+import cashflowRouter from './routes/cashflow.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,77 +39,83 @@ const io = new SocketIOServer(httpServer, {
 
 const PORT = process.env.PORT || 3002;
 
-// Auto-migrate: Create tables and add columns as needed
-async function autoMigrate() {
+// Auto-migrate: Create tables and add columns as needed.
+// Each step runs in its own try/catch: one step's failure must never
+// silently block the others (this bit us once already - see CLAUDE.md).
+async function runMigrationStep(label, fn) {
   try {
-    // Add deleted_at column to cards table
-    await pool.query(`
-      ALTER TABLE cards 
-      ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP DEFAULT NULL
-    `);
-    console.log('✅ Database migration: deleted_at column ready');
-    
-    // Create org charts tables
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS orgcharts (
-        id VARCHAR(255) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        owner VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    console.log('✅ Database migration: orgcharts table ready');
-    
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS orgchart_nodes (
-        id SERIAL PRIMARY KEY,
-        chart_id VARCHAR(255) REFERENCES orgcharts(id) ON DELETE CASCADE,
-        node_id BIGINT NOT NULL,
-        x FLOAT NOT NULL,
-        y FLOAT NOT NULL,
-        width FLOAT NOT NULL,
-        height FLOAT NOT NULL,
-        text TEXT,
-        color VARCHAR(50)
-      )
-    `);
-    console.log('✅ Database migration: orgchart_nodes table ready');
-    
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS orgchart_connections (
-        id SERIAL PRIMARY KEY,
-        chart_id VARCHAR(255) REFERENCES orgcharts(id) ON DELETE CASCADE,
-        connection_id BIGINT NOT NULL,
-        from_node BIGINT NOT NULL,
-        to_node BIGINT NOT NULL,
-        from_port VARCHAR(50),
-        to_port VARCHAR(50),
-        label TEXT,
-        color VARCHAR(50),
-        style VARCHAR(50)
-      )
-    `);
-    console.log('✅ Database migration: orgchart_connections table ready');
-    
-    // Create indexes
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_orgchart_nodes_chart_id ON orgchart_nodes(chart_id)
-    `);
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_orgchart_connections_chart_id ON orgchart_connections(chart_id)
-    `);
-    console.log('✅ Database migration: org chart indexes ready');
+    await fn();
+    console.log(`✅ Database migration: ${label} ready`);
   } catch (error) {
-    console.error('⚠️  Migration warning (may be safe to ignore):', error.message);
+    console.error(`⚠️  Migration warning (${label}, may be safe to ignore):`, error.message);
   }
+}
+
+async function autoMigrate() {
+  await runMigrationStep('orgcharts table', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS orgcharts (
+      id VARCHAR(255) PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      owner VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `));
+
+  await runMigrationStep('orgchart_nodes table', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS orgchart_nodes (
+      id SERIAL PRIMARY KEY,
+      chart_id VARCHAR(255) REFERENCES orgcharts(id) ON DELETE CASCADE,
+      node_id BIGINT NOT NULL,
+      x FLOAT NOT NULL,
+      y FLOAT NOT NULL,
+      width FLOAT NOT NULL,
+      height FLOAT NOT NULL,
+      text TEXT,
+      color VARCHAR(50)
+    )
+  `));
+
+  await runMigrationStep('orgchart_connections table', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS orgchart_connections (
+      id SERIAL PRIMARY KEY,
+      chart_id VARCHAR(255) REFERENCES orgcharts(id) ON DELETE CASCADE,
+      connection_id BIGINT NOT NULL,
+      from_node BIGINT NOT NULL,
+      to_node BIGINT NOT NULL,
+      from_port VARCHAR(50),
+      to_port VARCHAR(50),
+      label TEXT,
+      color VARCHAR(50),
+      style VARCHAR(50)
+    )
+  `));
+
+  await runMigrationStep('org chart indexes', async () => {
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_orgchart_nodes_chart_id ON orgchart_nodes(chart_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_orgchart_connections_chart_id ON orgchart_connections(chart_id)`);
+  });
+
+  // Per-app access control, for private Labs apps (in addition to the
+  // login-level ALLOWED_EMAILS gate below)
+  await runMigrationStep('app_access table', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS app_access (
+      email VARCHAR(255) NOT NULL,
+      app_key VARCHAR(100) NOT NULL,
+      granted_at TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (email, app_key)
+    )
+  `));
+
+  await runMigrationStep('app_access seed (chad -> cashflow)', () => pool.query(
+    `INSERT INTO app_access (email, app_key) VALUES ($1, $2) ON CONFLICT (email, app_key) DO NOTHING`,
+    ['chad@philo.ventures', 'cashflow']
+  ));
 }
 autoMigrate();
 
 // Allowed users
 const ALLOWED_EMAILS = ['chad@philo.ventures', 'tracy.stratton@philo.ventures', 'greg@philo.ventures', 'scott@philo.ventures', 'connor.bell@philo.ventures'];
-
-const JWT_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
 
 // Configure Google OAuth
 passport.use(
@@ -147,24 +156,6 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(passport.initialize());
-
-// JWT verification middleware
-const requireAuth = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-
-  const token = authHeader.substring(7);
-  
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-};
 
 // Health check
 app.get('/health', async (req, res) => {
@@ -259,6 +250,20 @@ app.get('/auth/status', requireAuth, (req, res) => {
 app.post('/auth/logout', (req, res) => {
   res.json({ success: true });
 });
+
+// Lets the client ask "can this user see app X" to decide nav visibility.
+// The real enforcement is requireAppAccess() on the app's own routes below.
+app.get('/api/access/:appKey', requireAuth, async (req, res) => {
+  try {
+    const hasAccess = await hasAppAccess(req.user.email, req.params.appKey);
+    res.json({ hasAccess });
+  } catch (error) {
+    console.error('Access check failed:', error.message);
+    res.status(500).json({ error: 'Access check failed' });
+  }
+});
+
+app.use('/api/cashflow', cashflowRouter);
 
 // Google Sheets API with Service Account
 const getSheets = () => {
