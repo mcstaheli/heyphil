@@ -14,6 +14,7 @@ import fs from 'fs';
 import 'dotenv/config';
 import * as boardDb from './board-db.js';
 import * as orgchartDb from './orgchart-db.js';
+import * as cashflowDb from './cashflow-db.js';
 import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
 import { JWT_SECRET, requireAuth } from './auth-middleware.js';
@@ -111,6 +112,9 @@ async function autoMigrate() {
     `INSERT INTO app_access (email, app_key) VALUES ($1, $2) ON CONFLICT (email, app_key) DO NOTHING`,
     ['chad@philo.ventures', 'cashflow']
   ));
+
+  await runMigrationStep('cashflow tables', () => cashflowDb.createTables());
+  await runMigrationStep('cashflow divisions seed', () => cashflowDb.seedDivisions());
 }
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
