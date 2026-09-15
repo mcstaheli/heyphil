@@ -54,14 +54,19 @@ function Cashflow() {
   const weeksKey = weeks.join(',');
 
   const [divisions, setDivisions] = useState([]);
+  const [sections, setSections] = useState([]);
   const [lineItems, setLineItems] = useState([]);
   const [entries, setEntries] = useState({});
   const [lenders, setLenders] = useState([]);
   const [debtEntries, setDebtEntries] = useState({});
   const [summary, setSummary] = useState([]);
   const [anchorDrafts, setAnchorDrafts] = useState({});
-  const [newLineItem, setNewLineItem] = useState({});
+
+  const [newDivisionName, setNewDivisionName] = useState('');
+  const [newSectionName, setNewSectionName] = useState({}); // divisionId -> string
+  const [newItemName, setNewItemName] = useState({}); // sectionId -> string
   const [newLenderName, setNewLenderName] = useState('');
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -99,21 +104,23 @@ function Cashflow() {
     try {
       const startWeek = weeks[0];
       const endWeek = weeks[weeks.length - 1];
-      const [divRes, liRes, entRes, lenRes, debtRes, sumRes] = await Promise.all([
+      const [divRes, secRes, liRes, entRes, lenRes, debtRes, sumRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/cashflow/divisions`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/api/cashflow/line-items?status=active`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE_URL}/api/cashflow/sections`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE_URL}/api/cashflow/line-items`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/api/cashflow/entries?startWeek=${startWeek}&endWeek=${endWeek}`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/api/cashflow/lenders`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/api/cashflow/debt-entries?startWeek=${startWeek}&endWeek=${endWeek}`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/api/cashflow/summary?weeks=${weeksKey}`, { headers: getAuthHeaders() }),
       ]);
-      if (![divRes, liRes, entRes, lenRes, debtRes, sumRes].every((r) => r.ok)) {
+      if (![divRes, secRes, liRes, entRes, lenRes, debtRes, sumRes].every((r) => r.ok)) {
         throw new Error('Failed to load cashflow data');
       }
-      const [divData, liData, entData, lenData, debtData, sumData] = await Promise.all([
-        divRes.json(), liRes.json(), entRes.json(), lenRes.json(), debtRes.json(), sumRes.json(),
+      const [divData, secData, liData, entData, lenData, debtData, sumData] = await Promise.all([
+        divRes.json(), secRes.json(), liRes.json(), entRes.json(), lenRes.json(), debtRes.json(), sumRes.json(),
       ]);
       setDivisions(divData);
+      setSections(secData);
       setLineItems(liData);
       setEntries(Object.fromEntries(entData.map((e) => [`${e.line_item_id}_${toISODate(new Date(e.week_ending))}`, Number(e.amount)])));
       setLenders(lenData);
@@ -130,6 +137,8 @@ function Cashflow() {
   useEffect(() => {
     if (hasAccess) loadAll();
   }, [hasAccess, loadAll]);
+
+  // ---------- entries / debt / anchor ----------
 
   const saveEntry = async (lineItemId, week, amount) => {
     try {
@@ -170,38 +179,156 @@ function Cashflow() {
     }
   };
 
-  const addLineItem = async (divisionId) => {
-    const draft = newLineItem[divisionId] || {};
-    const name = (draft.name || '').trim();
+  // ---------- departments ----------
+
+  const addDivision = async () => {
+    const name = newDivisionName.trim();
+    if (!name) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/cashflow/divisions`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return setError(body.error || 'Failed to add department');
+      }
+      const division = await res.json();
+      setDivisions((prev) => [...prev, division]);
+      setNewDivisionName('');
+    } catch {
+      setError('Failed to add department');
+    }
+  };
+
+  const renameDivision = (id, name) => setDivisions((prev) => prev.map((d) => (d.id === id ? { ...d, name } : d)));
+
+  const saveDivisionName = async (id, name) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/cashflow/divisions/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || 'Failed to rename department');
+        loadAll(); // resync: local name is now out of sync with the DB
+      }
+    } catch {
+      setError('Failed to rename department');
+    }
+  };
+
+  const setDivisionStatus = async (id, status) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/cashflow/divisions/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) return setError('Failed to update department');
+      setDivisions((prev) => prev.map((d) => (d.id === id ? { ...d, status } : d)));
+    } catch {
+      setError('Failed to update department');
+    }
+  };
+
+  // ---------- sections ----------
+
+  const addSection = async (divisionId) => {
+    const name = (newSectionName[divisionId] || '').trim();
+    if (!name) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/cashflow/sections`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ divisionId, name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return setError(body.error || 'Failed to add section');
+      }
+      const section = await res.json();
+      setSections((prev) => [...prev, section]);
+      setNewSectionName((prev) => ({ ...prev, [divisionId]: '' }));
+    } catch {
+      setError('Failed to add section');
+    }
+  };
+
+  const renameSection = (id, name) => setSections((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
+
+  const saveSectionName = async (id, name) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/cashflow/sections/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || 'Failed to rename section');
+        loadAll(); // resync: local name is now out of sync with the DB
+      }
+    } catch {
+      setError('Failed to rename section');
+    }
+  };
+
+  const setSectionStatus = async (id, status) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/cashflow/sections/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) return setError('Failed to update section');
+      setSections((prev) => prev.map((s) => (s.id === id ? { ...s, status } : s)));
+    } catch {
+      setError('Failed to update section');
+    }
+  };
+
+  // ---------- line items ----------
+
+  const addLineItem = async (sectionId) => {
+    const name = (newItemName[sectionId] || '').trim();
     if (!name) return;
     try {
       const res = await fetch(`${API_BASE_URL}/api/cashflow/line-items`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ divisionId, name, category: draft.category || 'operations' }),
+        body: JSON.stringify({ sectionId, name }),
       });
-      if (res.ok) {
-        const item = await res.json();
-        setLineItems((prev) => [...prev, item]);
-        setNewLineItem((prev) => ({ ...prev, [divisionId]: { name: '', category: 'operations' } }));
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return setError(body.error || 'Failed to add line item');
       }
+      const item = await res.json();
+      setLineItems((prev) => [...prev, item]);
+      setNewItemName((prev) => ({ ...prev, [sectionId]: '' }));
     } catch {
       setError('Failed to add line item');
     }
   };
 
-  const retireLineItem = async (id) => {
+  const setLineItemStatus = async (id, status) => {
     try {
-      await fetch(`${API_BASE_URL}/api/cashflow/line-items/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/cashflow/line-items/${id}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ status: 'retired' }),
+        body: JSON.stringify({ status }),
       });
-      setLineItems((prev) => prev.filter((li) => li.id !== id));
+      if (!res.ok) return setError('Failed to update line item');
+      setLineItems((prev) => prev.map((li) => (li.id === id ? { ...li, status } : li)));
     } catch {
-      setError('Failed to retire line item');
+      setError('Failed to update line item');
     }
   };
+
+  // ---------- lenders ----------
 
   const addLender = async () => {
     const name = newLenderName.trim();
@@ -212,26 +339,29 @@ function Cashflow() {
         headers: getAuthHeaders(),
         body: JSON.stringify({ name }),
       });
-      if (res.ok) {
-        const lender = await res.json();
-        setLenders((prev) => [...prev, lender]);
-        setNewLenderName('');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return setError(body.error || 'Failed to add lender');
       }
+      const lender = await res.json();
+      setLenders((prev) => [...prev, lender]);
+      setNewLenderName('');
     } catch {
       setError('Failed to add lender');
     }
   };
 
-  const retireLender = async (id) => {
+  const setLenderStatus = async (id, status) => {
     try {
-      await fetch(`${API_BASE_URL}/api/cashflow/lenders/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/cashflow/lenders/${id}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ status: 'retired' }),
+        body: JSON.stringify({ status }),
       });
-      setLenders((prev) => prev.filter((l) => l.id !== id));
+      if (!res.ok) return setError('Failed to update lender');
+      setLenders((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)));
     } catch {
-      setError('Failed to retire lender');
+      setError('Failed to update lender');
     }
   };
 
@@ -254,8 +384,28 @@ function Cashflow() {
     );
   }
 
-  const activeLenders = lenders.filter((l) => l.status === 'active');
   const summaryByWeek = Object.fromEntries(summary.map((s) => [s.weekEnding, s]));
+
+  // Retired rows stay visible (grayed, restorable) rather than disappearing:
+  // their historical entries still count toward every total shown (matching
+  // the server-computed Contribution/Ending cash rollup below), so hiding
+  // the row would make a total no longer match what's visibly summed.
+  const retiredClass = (item) => (item.status === 'retired' ? ' cashflow-retired' : '');
+  const statusToggle = (item, onToggle) => (
+    <button
+      className="cashflow-retire-btn"
+      title={item.status === 'active' ? 'Retire' : 'Restore'}
+      onClick={() => onToggle(item.id, item.status === 'active' ? 'retired' : 'active')}
+    >
+      {item.status === 'active' ? '×' : '↺'}
+    </button>
+  );
+
+  const itemTotal = (itemId, week) => entries[`${itemId}_${week}`] || 0;
+  const sectionTotal = (sectionId, week) =>
+    lineItems.filter((li) => li.section_id === sectionId).reduce((sum, li) => sum + itemTotal(li.id, week), 0);
+  const divisionTotal = (divisionId, week) =>
+    sections.filter((s) => s.division_id === divisionId).reduce((sum, s) => sum + sectionTotal(s.id, week), 0);
 
   return (
     <div className="app-container">
@@ -269,6 +419,17 @@ function Cashflow() {
       </header>
 
       {error && <div className="cashflow-error">{error}</div>}
+
+      <div className="cashflow-add-department">
+        <input
+          className="cashflow-add-input"
+          placeholder="+ Add Department"
+          value={newDivisionName}
+          onChange={(e) => setNewDivisionName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') addDivision(); }}
+        />
+        <button className="btn-secondary" onClick={addDivision}>Add Department</button>
+      </div>
 
       {loading ? (
         <div className="cashflow-loading">Loading…</div>
@@ -285,55 +446,102 @@ function Cashflow() {
             </thead>
             <tbody>
               {divisions.map((division) => {
-                const items = lineItems.filter((li) => li.division_id === division.id);
-                const draft = newLineItem[division.id] || { name: '', category: 'operations' };
+                const divisionSections = sections.filter((s) => s.division_id === division.id);
                 return (
                   <React.Fragment key={division.id}>
-                    <tr className="cashflow-division-row">
-                      <td colSpan={weeks.length + 1}>{division.name}</td>
-                    </tr>
-                    {items.map((item) => (
-                      <tr key={item.id}>
-                        <td className="cashflow-row-label">
-                          {item.name}
-                          <button className="cashflow-retire-btn" title="Retire" onClick={() => retireLineItem(item.id)}>×</button>
-                        </td>
-                        {weeks.map((w) => {
-                          const key = `${item.id}_${w}`;
-                          return (
-                            <td key={w}>
-                              <input
-                                type="number"
-                                className="cashflow-cell-input"
-                                value={entries[key] ?? ''}
-                                onChange={(e) => setEntries((prev) => ({ ...prev, [key]: e.target.value }))}
-                                onBlur={(e) => saveEntry(item.id, w, Number(e.target.value) || 0)}
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                    <tr className="cashflow-add-row">
-                      <td colSpan={weeks.length + 1}>
+                    <tr className={`cashflow-division-row${retiredClass(division)}`}>
+                      <td className="cashflow-row-label">
                         <input
-                          className="cashflow-add-input"
-                          placeholder={`+ Add ${division.name} line item`}
-                          value={draft.name}
-                          onChange={(e) => setNewLineItem((prev) => ({ ...prev, [division.id]: { ...draft, name: e.target.value } }))}
-                          onKeyDown={(e) => { if (e.key === 'Enter') addLineItem(division.id); }}
+                          className="cashflow-header-input cashflow-division-input"
+                          value={division.name}
+                          disabled={division.status !== 'active'}
+                          onChange={(e) => renameDivision(division.id, e.target.value)}
+                          onBlur={(e) => saveDivisionName(division.id, e.target.value)}
                         />
-                        <select
-                          className="cashflow-category-select"
-                          value={draft.category}
-                          onChange={(e) => setNewLineItem((prev) => ({ ...prev, [division.id]: { ...draft, category: e.target.value } }))}
-                        >
-                          <option value="operations">Operations</option>
-                          <option value="investment">Investment</option>
-                        </select>
-                        <button className="btn-secondary" onClick={() => addLineItem(division.id)}>Add</button>
+                        {statusToggle(division, setDivisionStatus)}
                       </td>
+                      {weeks.map((w) => (
+                        <td key={w}>{formatMoney(divisionTotal(division.id, w))}</td>
+                      ))}
                     </tr>
+
+                    {divisionSections.map((section) => {
+                      const sectionItems = lineItems.filter((li) => li.section_id === section.id);
+                      const sectionActive = section.status === 'active' && division.status === 'active';
+                      return (
+                        <React.Fragment key={section.id}>
+                          <tr className={`cashflow-section-row${retiredClass(section)}`}>
+                            <td className="cashflow-row-label">
+                              <input
+                                className="cashflow-header-input cashflow-section-input"
+                                value={section.name}
+                                disabled={section.status !== 'active'}
+                                onChange={(e) => renameSection(section.id, e.target.value)}
+                                onBlur={(e) => saveSectionName(section.id, e.target.value)}
+                              />
+                              {statusToggle(section, setSectionStatus)}
+                            </td>
+                            {weeks.map((w) => (
+                              <td key={w}>{formatMoney(sectionTotal(section.id, w))}</td>
+                            ))}
+                          </tr>
+
+                          {sectionItems.map((item) => (
+                            <tr key={item.id} className={retiredClass(item).trim()}>
+                              <td className="cashflow-row-label cashflow-item-label">
+                                {item.name}
+                                {statusToggle(item, setLineItemStatus)}
+                              </td>
+                              {weeks.map((w) => {
+                                const key = `${item.id}_${w}`;
+                                return (
+                                  <td key={w}>
+                                    <input
+                                      type="number"
+                                      className="cashflow-cell-input"
+                                      value={entries[key] ?? ''}
+                                      disabled={item.status !== 'active' || !sectionActive}
+                                      onChange={(e) => setEntries((prev) => ({ ...prev, [key]: e.target.value }))}
+                                      onBlur={(e) => saveEntry(item.id, w, Number(e.target.value) || 0)}
+                                    />
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+
+                          {sectionActive && (
+                            <tr className="cashflow-add-row cashflow-add-item-row">
+                              <td colSpan={weeks.length + 1}>
+                                <input
+                                  className="cashflow-add-input"
+                                  placeholder={`+ Add item to ${section.name}`}
+                                  value={newItemName[section.id] || ''}
+                                  onChange={(e) => setNewItemName((prev) => ({ ...prev, [section.id]: e.target.value }))}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') addLineItem(section.id); }}
+                                />
+                                <button className="btn-secondary" onClick={() => addLineItem(section.id)}>Add Item</button>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {division.status === 'active' && (
+                      <tr className="cashflow-add-row cashflow-add-section-row">
+                        <td colSpan={weeks.length + 1}>
+                          <input
+                            className="cashflow-add-input"
+                            placeholder={`+ Add section to ${division.name}`}
+                            value={newSectionName[division.id] || ''}
+                            onChange={(e) => setNewSectionName((prev) => ({ ...prev, [division.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addSection(division.id); }}
+                          />
+                          <button className="btn-secondary" onClick={() => addSection(division.id)}>Add Section</button>
+                        </td>
+                      </tr>
+                    )}
                   </React.Fragment>
                 );
               })}
@@ -341,11 +549,11 @@ function Cashflow() {
               <tr className="cashflow-division-row">
                 <td colSpan={weeks.length + 1}>Debt</td>
               </tr>
-              {activeLenders.map((lender) => (
-                <tr key={lender.id}>
-                  <td className="cashflow-row-label">
+              {lenders.map((lender) => (
+                <tr key={lender.id} className={retiredClass(lender).trim()}>
+                  <td className="cashflow-row-label cashflow-item-label">
                     {lender.name}
-                    <button className="cashflow-retire-btn" title="Retire" onClick={() => retireLender(lender.id)}>×</button>
+                    {statusToggle(lender, setLenderStatus)}
                   </td>
                   {weeks.map((w) => {
                     const key = `${lender.id}_${w}`;
@@ -355,6 +563,7 @@ function Cashflow() {
                           type="number"
                           className="cashflow-cell-input"
                           value={debtEntries[key] ?? ''}
+                          disabled={lender.status !== 'active'}
                           onChange={(e) => setDebtEntries((prev) => ({ ...prev, [key]: e.target.value }))}
                           onBlur={(e) => saveDebtEntry(lender.id, w, Number(e.target.value) || 0)}
                         />
