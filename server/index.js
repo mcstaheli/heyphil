@@ -126,13 +126,25 @@ async function autoMigrate() {
 // instance dropping a legacy column while another is still mid-backfill
 // against it.
 const MIGRATION_LOCK_KEY = 823450219;
-const migrationLockClient = await pool.connect();
 try {
-  await migrationLockClient.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
-  await autoMigrate();
-} finally {
-  await migrationLockClient.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
-  migrationLockClient.release();
+  const migrationLockClient = await pool.connect();
+  try {
+    await migrationLockClient.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
+    await autoMigrate();
+  } finally {
+    try {
+      await migrationLockClient.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
+    } catch (unlockError) {
+      console.error('⚠️  Failed to release migration advisory lock:', unlockError.message);
+    }
+    migrationLockClient.release();
+  }
+} catch (error) {
+  // Matches autoMigrate()'s own per-step degrade-and-continue behavior: a
+  // bad/missing DATABASE_URL should still let the server boot (see
+  // CLAUDE.md), not crash it just because this connection attempt is
+  // outside that per-step try/catch.
+  console.error('⚠️  Migration lock unavailable - server will boot without running migrations this cycle:', error.message);
 }
 
 // Allowed users

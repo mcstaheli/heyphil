@@ -47,6 +47,41 @@ function validateWeekRange(res, startWeek, endWeek) {
   return true;
 }
 
+// Shared "is this writable" checks - used everywhere a write needs the
+// full ancestor chain active (creating a child, restoring a retired row
+// to active, or writing an entry), so the invariant can't drift between
+// routes the way it did when each one re-derived it ad hoc.
+async function checkDivisionActive(divisionId) {
+  const division = await cashflowDb.getDivisionById(divisionId);
+  if (!division) return 'Referenced record does not exist';
+  if (division.status !== 'active') return 'Department is retired';
+  return null;
+}
+
+async function checkSectionActive(sectionId) {
+  const section = await cashflowDb.getSectionById(sectionId);
+  if (!section) return 'Referenced record does not exist';
+  if (section.status !== 'active') return 'Section is retired';
+  return checkDivisionActive(section.division_id);
+}
+
+async function checkLineItemsActive(ids) {
+  const items = await cashflowDb.getLineItemsByIds(ids);
+  const itemsById = new Map(items.map((i) => [i.id, i]));
+  const sectionIds = new Set();
+  for (const id of ids) {
+    const item = itemsById.get(id);
+    if (!item) return `Line item ${id} does not exist`;
+    if (item.status !== 'active') return `Line item ${id} is retired`;
+    sectionIds.add(item.section_id);
+  }
+  for (const sectionId of sectionIds) {
+    const err = await checkSectionActive(sectionId);
+    if (err) return err;
+  }
+  return null;
+}
+
 const CLIENT_ERROR_MESSAGES = {
   '23503': 'Referenced record does not exist', // foreign_key_violation
   '23514': 'Invalid value', // check_violation
@@ -124,11 +159,8 @@ router.post('/sections', async (req, res) => {
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
-    const division = await cashflowDb.getDivisionById(divisionId);
-    if (!division) return res.status(400).json({ error: 'Referenced record does not exist' });
-    if (division.status !== 'active') {
-      return res.status(400).json({ error: 'Cannot add a section to a retired department' });
-    }
+    const divisionError = await checkDivisionActive(divisionId);
+    if (divisionError) return res.status(400).json({ error: divisionError });
     const section = await cashflowDb.createSection({
       divisionId,
       name: name.trim(),
@@ -144,6 +176,12 @@ router.put('/sections/:id', async (req, res) => {
   try {
     const fields = validatePatchFields(res, req.body);
     if (!fields) return;
+    if (fields.status === 'active') {
+      const existing = await cashflowDb.getSectionById(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Not found' });
+      const divisionError = await checkDivisionActive(existing.division_id);
+      if (divisionError) return res.status(400).json({ error: `Cannot restore: ${divisionError.toLowerCase()}` });
+    }
     const section = await cashflowDb.updateSection(req.params.id, fields);
     if (!section) return res.status(404).json({ error: 'Not found' });
     res.json(section);
@@ -172,15 +210,8 @@ router.post('/line-items', async (req, res) => {
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
-    const section = await cashflowDb.getSectionById(sectionId);
-    if (!section) return res.status(400).json({ error: 'Referenced record does not exist' });
-    if (section.status !== 'active') {
-      return res.status(400).json({ error: 'Cannot add an item to a retired section' });
-    }
-    const division = await cashflowDb.getDivisionById(section.division_id);
-    if (!division || division.status !== 'active') {
-      return res.status(400).json({ error: 'Cannot add an item to a section under a retired department' });
-    }
+    const sectionError = await checkSectionActive(sectionId);
+    if (sectionError) return res.status(400).json({ error: sectionError });
     const item = await cashflowDb.createLineItem({
       sectionId,
       name: name.trim(),
@@ -196,6 +227,12 @@ router.put('/line-items/:id', async (req, res) => {
   try {
     const fields = validatePatchFields(res, req.body);
     if (!fields) return;
+    if (fields.status === 'active') {
+      const existing = await cashflowDb.getLineItemsByIds([Number(req.params.id)]);
+      if (!existing[0]) return res.status(404).json({ error: 'Not found' });
+      const sectionError = await checkSectionActive(existing[0].section_id);
+      if (sectionError) return res.status(400).json({ error: `Cannot restore: ${sectionError.toLowerCase()}` });
+    }
     const item = await cashflowDb.updateLineItem(req.params.id, fields);
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json(item);
@@ -233,16 +270,12 @@ router.put('/entries', async (req, res) => {
         return res.status(400).json({ error: 'each entry needs a numeric amount' });
       }
     }
-    // Defense-in-depth: the UI disables inputs for retired items, but a
-    // stale tab or direct API call could otherwise still write to one.
+    // Defense-in-depth: the UI disables inputs for a retired item or any
+    // retired ancestor, but a stale tab or direct API call could otherwise
+    // still write to one.
     const lineItemIds = [...new Set(entries.map((e) => e.lineItemId))];
-    const items = await cashflowDb.getLineItemsByIds(lineItemIds);
-    const itemsById = new Map(items.map((i) => [i.id, i]));
-    for (const id of lineItemIds) {
-      const item = itemsById.get(id);
-      if (!item) return res.status(400).json({ error: `Line item ${id} does not exist` });
-      if (item.status !== 'active') return res.status(400).json({ error: `Line item ${id} is retired` });
-    }
+    const itemsError = await checkLineItemsActive(lineItemIds);
+    if (itemsError) return res.status(400).json({ error: itemsError });
     res.json(await cashflowDb.upsertEntries(entries));
   } catch (error) {
     handleDbError(res, error);

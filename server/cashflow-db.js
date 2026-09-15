@@ -100,10 +100,21 @@ export async function createTables() {
       ALTER TABLE cashflow_line_items ALTER COLUMN section_id SET NOT NULL
     `));
 
-    await step('cashflow_line_items drop legacy columns', async () => {
-      await pool.query(`ALTER TABLE cashflow_line_items DROP COLUMN IF EXISTS division_id`);
-      await pool.query(`ALTER TABLE cashflow_line_items DROP COLUMN IF EXISTS category`);
-    });
+    // step() swallows errors, so the NOT NULL ALTER above could have failed
+    // silently - re-check directly rather than assuming it worked before
+    // running the irreversible column drop.
+    const notNullConfirmed = await pool.query(`
+      SELECT is_nullable FROM information_schema.columns
+      WHERE table_name = 'cashflow_line_items' AND column_name = 'section_id'
+    `);
+    if (notNullConfirmed.rows[0]?.is_nullable === 'NO') {
+      await step('cashflow_line_items drop legacy columns', async () => {
+        await pool.query(`ALTER TABLE cashflow_line_items DROP COLUMN IF EXISTS division_id`);
+        await pool.query(`ALTER TABLE cashflow_line_items DROP COLUMN IF EXISTS category`);
+      });
+    } else {
+      console.error('⚠️  Cashflow migration: section_id NOT NULL constraint not confirmed - skipping column drop this boot to avoid data loss');
+    }
   } else {
     console.error(`⚠️  Cashflow migration: ${stillOrphaned.rows[0].n} line item(s) still missing section_id - skipping NOT NULL/column drop this boot to avoid data loss`);
   }
