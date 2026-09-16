@@ -65,6 +65,8 @@ function Cashflow() {
   const [newItemName, setNewItemName] = useState({}); // sectionId -> string
   const [addingSectionFor, setAddingSectionFor] = useState(null); // divisionId whose compact "+" is expanded
   const [addingItemFor, setAddingItemFor] = useState(null); // sectionId whose compact "+" is expanded
+  const [collapsedDivisions, setCollapsedDivisions] = useState(() => new Set());
+  const [collapsedSections, setCollapsedSections] = useState(() => new Set());
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -365,6 +367,28 @@ function Cashflow() {
     <button className="cashflow-inline-add" onClick={onOpen} title={title}>+</button>
   );
 
+  const collapseToggle = (collapsed, onToggle) => (
+    <button
+      className="cashflow-collapse-toggle"
+      onClick={onToggle}
+      title={collapsed ? 'Expand' : 'Collapse'}
+    >
+      {collapsed ? '▸' : '▾'}
+    </button>
+  );
+
+  const toggleDivisionCollapsed = (id) => setCollapsedDivisions((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const toggleSectionCollapsed = (id) => setCollapsedSections((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
   const compactAddRow = ({ value, onChange, onSubmit, onClose, placeholder, colSpan, indent }) => (
     <tr className="cashflow-add-row-compact">
       <td colSpan={colSpan} className={indent ? 'cashflow-item-label' : undefined}>
@@ -439,6 +463,7 @@ function Cashflow() {
                   <React.Fragment key={division.id}>
                     <tr className="cashflow-division-row">
                       <td className="cashflow-row-label">
+                        {collapseToggle(collapsedDivisions.has(division.id), () => toggleDivisionCollapsed(division.id))}
                         {inlineAddTrigger(() => setAddingSectionFor(division.id), `Add section to ${division.name}`)}
                         <input
                           className="cashflow-header-input cashflow-division-input"
@@ -454,12 +479,13 @@ function Cashflow() {
                       ))}
                     </tr>
 
-                    {divisionSections.map((section) => {
+                    {!collapsedDivisions.has(division.id) && divisionSections.map((section) => {
                       const sectionItems = lineItems.filter((li) => li.section_id === section.id && li.status === 'active');
                       return (
                         <React.Fragment key={section.id}>
                           <tr className="cashflow-section-row">
                             <td className="cashflow-row-label">
+                              {collapseToggle(collapsedSections.has(section.id), () => toggleSectionCollapsed(section.id))}
                               {inlineAddTrigger(() => setAddingItemFor(section.id), `Add item to ${section.name}`)}
                               <input
                                 className="cashflow-header-input cashflow-section-input"
@@ -475,7 +501,7 @@ function Cashflow() {
                             ))}
                           </tr>
 
-                          {sectionItems.map((item) => (
+                          {!collapsedSections.has(section.id) && sectionItems.map((item) => (
                             <tr key={item.id}>
                               <td className="cashflow-row-label cashflow-item-label">
                                 {item.name}
@@ -498,7 +524,7 @@ function Cashflow() {
                             </tr>
                           ))}
 
-                          {addingItemFor === section.id && compactAddRow({
+                          {!collapsedSections.has(section.id) && addingItemFor === section.id && compactAddRow({
                             value: newItemName[section.id] || '',
                             onChange: (e) => setNewItemName((prev) => ({ ...prev, [section.id]: e.target.value })),
                             onSubmit: () => addLineItem(section.id),
@@ -511,7 +537,7 @@ function Cashflow() {
                       );
                     })}
 
-                    {addingSectionFor === division.id && compactAddRow({
+                    {!collapsedDivisions.has(division.id) && addingSectionFor === division.id && compactAddRow({
                       value: newSectionName[division.id] || '',
                       onChange: (e) => setNewSectionName((prev) => ({ ...prev, [division.id]: e.target.value })),
                       onSubmit: () => addSection(division.id),
