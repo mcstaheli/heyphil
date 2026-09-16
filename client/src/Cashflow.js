@@ -575,7 +575,7 @@ function Cashflow() {
     const children = itemChildren(item.id);
     const isParent = children.length > 0;
     const collapsed = collapsedItems.has(item.id);
-    const indentPx = 36 + depth * 16;
+    const indentPx = 36 + depth * 28;
     return (
       <React.Fragment key={item.id}>
         <tr className={isParent ? 'cashflow-item-parent-row' : undefined}>
@@ -615,7 +615,7 @@ function Cashflow() {
           onClose: () => setAddingChildFor(null),
           placeholder: `Add item to ${item.name}`,
           colSpan: periods.length + 1,
-          indentPx: 36 + (depth + 1) * 16,
+          indentPx: 36 + (depth + 1) * 28,
         })}
       </React.Fragment>
     );
