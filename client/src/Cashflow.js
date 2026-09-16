@@ -365,7 +365,31 @@ function Cashflow() {
         headers: getAuthHeaders(),
       });
       if (!res.ok) return setError('Failed to remove line item');
-      setLineItems((prev) => prev.filter((li) => li.id !== id));
+      // The server cascades the delete through the whole nested subtree,
+      // not just this one row - local state has to match, or a deleted
+      // descendant's stale cached entry keeps silently counting toward
+      // section/division totals until the next full reload.
+      setLineItems((prev) => {
+        const removedIds = new Set([id]);
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const li of prev) {
+            if (!removedIds.has(li.id) && removedIds.has(li.parent_item_id)) {
+              removedIds.add(li.id);
+              grew = true;
+            }
+          }
+        }
+        setEntries((prevEntries) => {
+          const next = { ...prevEntries };
+          for (const key of Object.keys(next)) {
+            if (removedIds.has(Number(key.split('_')[0]))) delete next[key];
+          }
+          return next;
+        });
+        return prev.filter((li) => !removedIds.has(li.id));
+      });
       loadSummaryOnly();
     } catch {
       setError('Failed to remove line item');

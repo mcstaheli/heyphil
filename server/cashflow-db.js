@@ -376,12 +376,15 @@ export async function getLineItemsByIds(ids) {
 }
 
 // Given a set of item ids, returns which of them currently have at least
-// one child - a parent item is a computed total, never a direct-entry
-// target, mirroring how sections/divisions already work.
+// one ACTIVE child - a parent item is a computed total, never a
+// direct-entry target, mirroring how sections/divisions already work.
+// Must agree with the client's itemChildren (which also filters to active
+// children) on what counts as a "leaf" - an item whose only child was
+// retired needs to be writable again, on both sides alike.
 export async function getItemsWithChildren(ids) {
   if (ids.length === 0) return [];
   const result = await pool.query(
-    `SELECT DISTINCT parent_item_id FROM cashflow_line_items WHERE parent_item_id = ANY($1)`,
+    `SELECT DISTINCT parent_item_id FROM cashflow_line_items WHERE parent_item_id = ANY($1) AND status = 'active'`,
     [ids]
   );
   return result.rows.map((r) => r.parent_item_id);
@@ -422,6 +425,12 @@ export async function createLineItem({ sectionId, parentItemId = null, name, sor
          RETURNING *`,
         [parentItemId, name, sortOrder]
       );
+      // The route validates the parent exists just before calling this,
+      // but if it was deleted in between (or ever passed in bad), the
+      // SELECT matches zero rows and the INSERT silently inserts nothing -
+      // surface that as a real error rather than returning an undefined
+      // "item" the caller would otherwise push straight into state.
+      if (!result.rows[0]) throw new Error(`Parent line item ${parentItemId} no longer exists`);
       return result.rows[0];
     });
   }
