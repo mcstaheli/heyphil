@@ -48,7 +48,7 @@ function formatPeriod(d) {
 function formatMoney(n) {
   const v = Number(n) || 0;
   const sign = v < 0 ? '-' : '';
-  return `${sign}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `${sign}${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
 function formatMonthLabel(iso) {
@@ -654,7 +654,7 @@ function Cashflow() {
               <tr>
                 <th className="cashflow-row-label">Month</th>
                 {periods.map((p) => (
-                  <th key={p}>{formatMonthLabel(p)}</th>
+                  <th key={p} className="cashflow-month-header">{formatMonthLabel(p)}</th>
                 ))}
               </tr>
             </thead>

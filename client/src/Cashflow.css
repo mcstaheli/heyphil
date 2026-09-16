@@ -44,6 +44,10 @@
   z-index: 1;
 }
 
+.cashflow-month-header {
+  text-align: center;
+}
+
 .cashflow-row-label {
   text-align: left;
   min-width: 280px;
@@ -183,6 +187,16 @@
   font-size: 13px;
   padding: 2px 4px;
   background: transparent;
+  -moz-appearance: textfield;
+}
+
+/* Hides the native spinner, which otherwise reserves space on the right
+   and makes typed values sit visibly less far right than the computed
+   (plain-text) cells next to them. */
+.cashflow-cell-input::-webkit-outer-spin-button,
+.cashflow-cell-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .cashflow-cell-input:focus {
