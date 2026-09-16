@@ -129,23 +129,13 @@ export async function createTables() {
     )
   `));
 
-  await step('cashflow_lenders table', () => pool.query(`
-    CREATE TABLE IF NOT EXISTS cashflow_lenders (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'retired')),
-      sort_order INT NOT NULL DEFAULT 0
-    )
-  `));
-
-  await step('cashflow_debt_entries table', () => pool.query(`
-    CREATE TABLE IF NOT EXISTS cashflow_debt_entries (
-      lender_id INT NOT NULL REFERENCES cashflow_lenders(id) ON DELETE CASCADE,
-      week_ending DATE NOT NULL,
-      amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
-      PRIMARY KEY (lender_id, week_ending)
-    )
-  `));
+  // Debt/lenders was a separate parallel system (a lender wasn't a normal
+  // department/section/item, just a flat list with its own entries table).
+  // Folded away: debt now lives as a normal department like anything else,
+  // through the same divisions/sections/line-items/entries tables. Dropped
+  // outright rather than left dormant since it never held any real rows.
+  await step('cashflow_debt_entries drop', () => pool.query(`DROP TABLE IF EXISTS cashflow_debt_entries`));
+  await step('cashflow_lenders drop', () => pool.query(`DROP TABLE IF EXISTS cashflow_lenders`));
 
   await step('cashflow_weekly_anchor table', () => pool.query(`
     CREATE TABLE IF NOT EXISTS cashflow_weekly_anchor (
@@ -155,7 +145,6 @@ export async function createTables() {
   `));
 
   await step('cashflow_entries week index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_entries_week ON cashflow_entries(week_ending)`));
-  await step('cashflow_debt_entries week index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_debt_entries_week ON cashflow_debt_entries(week_ending)`));
   await step('cashflow_line_items section index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_line_items_section ON cashflow_line_items(section_id)`));
   await step('cashflow_sections division index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_sections_division ON cashflow_sections(division_id)`));
 }
@@ -215,7 +204,12 @@ const DEFAULT_DIVISIONS = [
   { id: 'management', name: 'Management', sort_order: 6 },
 ];
 
+// Only seeds a genuinely-empty table (a fresh database). Per-row
+// ON CONFLICT DO NOTHING would otherwise resurrect a starter division on
+// the next boot after a user deletes it - deleted must stay deleted.
 export async function seedDivisions() {
+  const existing = await pool.query(`SELECT 1 FROM cashflow_divisions LIMIT 1`);
+  if (existing.rows.length > 0) return;
   for (const d of DEFAULT_DIVISIONS) {
     await pool.query(
       `INSERT INTO cashflow_divisions (id, name, sort_order) VALUES ($1, $2, $3)
@@ -263,6 +257,15 @@ export async function updateDivision(id, { name, status, sortOrder }) {
   return result.rows[0];
 }
 
+// Hard delete, cascading to sections -> line items -> entries via the
+// existing ON DELETE CASCADE foreign keys. Deliberately not a status flip:
+// removed data must actually be gone, not silently keep counting toward
+// totals from a hidden row (that was a real bug, not the intended design).
+export async function deleteDivision(id) {
+  const result = await pool.query(`DELETE FROM cashflow_divisions WHERE id = $1 RETURNING id`, [id]);
+  return result.rows[0];
+}
+
 // ========== SECTIONS ==========
 
 export async function getSections({ divisionId, status } = {}) {
@@ -307,6 +310,11 @@ export async function updateSection(id, { name, status, sortOrder }) {
      RETURNING *`,
     [id, name ?? null, status ?? null, sortOrder ?? null]
   );
+  return result.rows[0];
+}
+
+export async function deleteSection(id) {
+  const result = await pool.query(`DELETE FROM cashflow_sections WHERE id = $1 RETURNING id`, [id]);
   return result.rows[0];
 }
 
@@ -359,6 +367,11 @@ export async function updateLineItem(id, { name, status, sortOrder }) {
   return result.rows[0];
 }
 
+export async function deleteLineItem(id) {
+  const result = await pool.query(`DELETE FROM cashflow_line_items WHERE id = $1 RETURNING id`, [id]);
+  return result.rows[0];
+}
+
 // ========== ENTRIES ==========
 
 export async function getEntries({ startWeek, endWeek }) {
@@ -391,63 +404,6 @@ export async function upsertEntries(entries) {
   });
 }
 
-// ========== LENDERS ==========
-
-export async function getLenders() {
-  const result = await pool.query(`SELECT * FROM cashflow_lenders ORDER BY sort_order, id`);
-  return result.rows;
-}
-
-export async function getLenderById(id) {
-  const result = await pool.query(`SELECT * FROM cashflow_lenders WHERE id = $1`, [id]);
-  return result.rows[0];
-}
-
-export async function createLender({ name, sortOrder = 0 }) {
-  const result = await pool.query(
-    `INSERT INTO cashflow_lenders (name, sort_order) VALUES ($1, $2) RETURNING *`,
-    [name, sortOrder]
-  );
-  return result.rows[0];
-}
-
-export async function updateLender(id, { name, status, sortOrder }) {
-  const result = await pool.query(
-    `UPDATE cashflow_lenders
-     SET name = COALESCE($2, name),
-         status = COALESCE($3, status),
-         sort_order = COALESCE($4, sort_order)
-     WHERE id = $1
-     RETURNING *`,
-    [id, name ?? null, status ?? null, sortOrder ?? null]
-  );
-  return result.rows[0];
-}
-
-// ========== DEBT ENTRIES ==========
-
-export async function getDebtEntries({ startWeek, endWeek }) {
-  const result = await pool.query(
-    `SELECT lender_id, week_ending, amount
-     FROM cashflow_debt_entries
-     WHERE week_ending BETWEEN $1 AND $2`,
-    [startWeek, endWeek]
-  );
-  return result.rows;
-}
-
-export async function upsertDebtEntry({ lenderId, weekEnding, amount }) {
-  const result = await pool.query(
-    `INSERT INTO cashflow_debt_entries (lender_id, week_ending, amount)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (lender_id, week_ending)
-     DO UPDATE SET amount = EXCLUDED.amount
-     RETURNING *`,
-    [lenderId, weekEnding, amount]
-  );
-  return result.rows[0];
-}
-
 // ========== WEEKLY ANCHOR (manual starting-cash override) ==========
 
 export async function setAnchor(weekEnding, startingCash) {
@@ -473,18 +429,17 @@ export async function getAnchors({ startWeek, endWeek }) {
 // ========== SUMMARY ==========
 
 // Computes, for each week in `weekEndings` (chronological order), the
-// division contribution totals, debt shift, starting cash and ending cash.
-// Starting cash chains from the previous week's ending cash unless a manual
-// anchor override exists for that week.
+// division contribution totals, starting cash and ending cash. Starting
+// cash chains from the previous week's ending cash unless a manual anchor
+// override exists for that week.
 export async function getWeeklySummary(weekEndings) {
   if (weekEndings.length === 0) return [];
   const sorted = [...weekEndings].sort();
   const startWeek = sorted[0];
   const endWeek = sorted[sorted.length - 1];
 
-  const [entries, debtEntries, anchors, divisions] = await Promise.all([
+  const [entries, anchors, divisions] = await Promise.all([
     getEntries({ startWeek, endWeek }),
-    getDebtEntries({ startWeek, endWeek }),
     getAnchors({ startWeek, endWeek }),
     getDivisions(),
   ]);
@@ -499,12 +454,6 @@ export async function getWeeklySummary(weekEndings) {
     totals[e.division_id] = (totals[e.division_id] || 0) + Number(e.amount);
   }
 
-  const debtShiftByWeek = new Map();
-  for (const d of debtEntries) {
-    const weekKey = toDateKey(d.week_ending);
-    debtShiftByWeek.set(weekKey, (debtShiftByWeek.get(weekKey) || 0) + Number(d.amount));
-  }
-
   let runningCash = 0;
   const summary = [];
   for (const weekEnding of sorted) {
@@ -512,15 +461,13 @@ export async function getWeeklySummary(weekEndings) {
     const startingCash = anchorByWeek.has(weekKey) ? anchorByWeek.get(weekKey) : runningCash;
     const divisionTotals = divisionTotalsByWeek.get(weekKey) || {};
     const contribution = divisions.reduce((sum, d) => sum + (divisionTotals[d.id] || 0), 0);
-    const debtShift = debtShiftByWeek.get(weekKey) || 0;
-    const endingCash = startingCash + contribution + debtShift;
+    const endingCash = startingCash + contribution;
 
     summary.push({
       weekEnding: weekKey,
       startingCash,
       divisionTotals,
       contribution,
-      debtShift,
       endingCash,
     });
 

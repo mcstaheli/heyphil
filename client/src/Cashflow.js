@@ -57,15 +57,12 @@ function Cashflow() {
   const [sections, setSections] = useState([]);
   const [lineItems, setLineItems] = useState([]);
   const [entries, setEntries] = useState({});
-  const [lenders, setLenders] = useState([]);
-  const [debtEntries, setDebtEntries] = useState({});
   const [summary, setSummary] = useState([]);
   const [anchorDrafts, setAnchorDrafts] = useState({});
 
   const [newDivisionName, setNewDivisionName] = useState('');
   const [newSectionName, setNewSectionName] = useState({}); // divisionId -> string
   const [newItemName, setNewItemName] = useState({}); // sectionId -> string
-  const [newLenderName, setNewLenderName] = useState('');
   const [addingSectionFor, setAddingSectionFor] = useState(null); // divisionId whose compact "+" is expanded
   const [addingItemFor, setAddingItemFor] = useState(null); // sectionId whose compact "+" is expanded
 
@@ -110,27 +107,23 @@ function Cashflow() {
     try {
       const startWeek = weeks[0];
       const endWeek = weeks[weeks.length - 1];
-      const [divRes, secRes, liRes, entRes, lenRes, debtRes, sumRes] = await Promise.all([
+      const [divRes, secRes, liRes, entRes, sumRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/cashflow/divisions`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/api/cashflow/sections`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/api/cashflow/line-items`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/api/cashflow/entries?startWeek=${startWeek}&endWeek=${endWeek}`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/api/cashflow/lenders`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/api/cashflow/debt-entries?startWeek=${startWeek}&endWeek=${endWeek}`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/api/cashflow/summary?weeks=${weeksKey}`, { headers: getAuthHeaders() }),
       ]);
-      if (![divRes, secRes, liRes, entRes, lenRes, debtRes, sumRes].every((r) => r.ok)) {
+      if (![divRes, secRes, liRes, entRes, sumRes].every((r) => r.ok)) {
         throw new Error('Failed to load cashflow data');
       }
-      const [divData, secData, liData, entData, lenData, debtData, sumData] = await Promise.all([
-        divRes.json(), secRes.json(), liRes.json(), entRes.json(), lenRes.json(), debtRes.json(), sumRes.json(),
+      const [divData, secData, liData, entData, sumData] = await Promise.all([
+        divRes.json(), secRes.json(), liRes.json(), entRes.json(), sumRes.json(),
       ]);
       setDivisions(divData);
       setSections(secData);
       setLineItems(liData);
       setEntries(Object.fromEntries(entData.map((e) => [`${e.line_item_id}_${toISODate(new Date(e.week_ending))}`, Number(e.amount)])));
-      setLenders(lenData);
-      setDebtEntries(Object.fromEntries(debtData.map((d) => [`${d.lender_id}_${toISODate(new Date(d.week_ending))}`, Number(d.amount)])));
       applySummary(sumData);
     } catch (err) {
       setError(err.message);
@@ -144,7 +137,7 @@ function Cashflow() {
     if (hasAccess) loadAll();
   }, [hasAccess, loadAll]);
 
-  // ---------- entries / debt / anchor ----------
+  // ---------- entries / anchor ----------
 
   const saveEntry = async (lineItemId, week, amount) => {
     try {
@@ -156,19 +149,6 @@ function Cashflow() {
       loadSummaryOnly();
     } catch {
       setError('Failed to save entry');
-    }
-  };
-
-  const saveDebtEntry = async (lenderId, week, amount) => {
-    try {
-      await fetch(`${API_BASE_URL}/api/cashflow/debt-entries`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ lenderId, weekEnding: week, amount }),
-      });
-      loadSummaryOnly();
-    } catch {
-      setError('Failed to save debt entry');
     }
   };
 
@@ -233,17 +213,18 @@ function Cashflow() {
     }
   };
 
-  const setDivisionStatus = async (id, status) => {
+  const deleteDivision = async (id) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/cashflow/divisions/${id}`, {
-        method: 'PUT',
+        method: 'DELETE',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ status }),
       });
-      if (!res.ok) return setError('Failed to update department');
-      setDivisions((prev) => prev.map((d) => (d.id === id ? { ...d, status } : d)));
+      if (!res.ok) return setError('Failed to remove department');
+      setDivisions((prev) => prev.filter((d) => d.id !== id));
+      setSections((prev) => prev.filter((s) => s.division_id !== id));
+      loadSummaryOnly();
     } catch {
-      setError('Failed to update department');
+      setError('Failed to remove department');
     }
   };
 
@@ -295,17 +276,18 @@ function Cashflow() {
     }
   };
 
-  const setSectionStatus = async (id, status) => {
+  const deleteSection = async (id) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/cashflow/sections/${id}`, {
-        method: 'PUT',
+        method: 'DELETE',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ status }),
       });
-      if (!res.ok) return setError('Failed to update section');
-      setSections((prev) => prev.map((s) => (s.id === id ? { ...s, status } : s)));
+      if (!res.ok) return setError('Failed to remove section');
+      setSections((prev) => prev.filter((s) => s.id !== id));
+      setLineItems((prev) => prev.filter((li) => li.section_id !== id));
+      loadSummaryOnly();
     } catch {
-      setError('Failed to update section');
+      setError('Failed to remove section');
     }
   };
 
@@ -332,54 +314,17 @@ function Cashflow() {
     }
   };
 
-  const setLineItemStatus = async (id, status) => {
+  const deleteLineItem = async (id) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/cashflow/line-items/${id}`, {
-        method: 'PUT',
+        method: 'DELETE',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ status }),
       });
-      if (!res.ok) return setError('Failed to update line item');
-      setLineItems((prev) => prev.map((li) => (li.id === id ? { ...li, status } : li)));
+      if (!res.ok) return setError('Failed to remove line item');
+      setLineItems((prev) => prev.filter((li) => li.id !== id));
+      loadSummaryOnly();
     } catch {
-      setError('Failed to update line item');
-    }
-  };
-
-  // ---------- lenders ----------
-
-  const addLender = async () => {
-    const name = newLenderName.trim();
-    if (!name) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/cashflow/lenders`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        return setError(body.error || 'Failed to add lender');
-      }
-      const lender = await res.json();
-      setLenders((prev) => [...prev, lender]);
-      setNewLenderName('');
-    } catch {
-      setError('Failed to add lender');
-    }
-  };
-
-  const setLenderStatus = async (id, status) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/cashflow/lenders/${id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) return setError('Failed to update lender');
-      setLenders((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)));
-    } catch {
-      setError('Failed to update lender');
+      setError('Failed to remove line item');
     }
   };
 
@@ -404,38 +349,47 @@ function Cashflow() {
 
   const summaryByWeek = Object.fromEntries(summary.map((s) => [s.weekEnding, s]));
 
-  // Removing a department/section/item/lender retires it server-side (so its
-  // historical entries keep counting toward Contribution/Ending cash below,
-  // same as real accounting - closing a department doesn't erase what it
-  // already spent) but it's filtered out of the active view entirely below,
-  // so from here it just looks removed.
+  // A real delete, cascading to children and their entries server-side -
+  // not a status flip. A hidden-but-still-counted row was a real bug (a
+  // total that no longer matches anything visible, or anything real);
+  // removed means gone, with no lingering effect on any total.
   const removeButton = (entity, onRemove) => (
-    <button className="cashflow-retire-btn" title="Remove" onClick={() => onRemove(entity.id, 'retired')}>×</button>
+    <button className="cashflow-retire-btn" title="Remove" onClick={() => onRemove(entity.id)}>×</button>
   );
 
-  // Compact "+"-to-expand control used for Add Section / Add Item, which
-  // are repeated per row and were previously a full input+button each -
-  // this keeps the sheet's footprint small until you actually want to add
-  // something.
-  const compactAdd = ({ isOpen, onOpen, onClose, placeholder, value, onChange, onSubmit }) =>
-    isOpen ? (
-      <input
-        autoFocus
-        className="cashflow-add-input-compact"
-        placeholder={placeholder}
-        value={value}
-        onChange={onChange}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { onSubmit(); onClose(); }
-          if (e.key === 'Escape') onClose();
-        }}
-        onBlur={onClose}
-      />
-    ) : (
-      <button className="cashflow-add-plus" onClick={onOpen} title={placeholder}>+</button>
-    );
+  // Inline "+" trigger sits to the left of the parent's own name (Studio,
+  // General) instead of a separate always-visible row - clicking it opens
+  // a compact input, in the row right after the parent's children, only
+  // while adding.
+  const inlineAddTrigger = (onOpen, title) => (
+    <button className="cashflow-inline-add" onClick={onOpen} title={title}>+</button>
+  );
 
-  const itemTotal = (itemId, week) => entries[`${itemId}_${week}`] || 0;
+  const compactAddRow = ({ value, onChange, onSubmit, onClose, placeholder, colSpan, indent }) => (
+    <tr className="cashflow-add-row-compact">
+      <td colSpan={colSpan} className={indent ? 'cashflow-item-label' : undefined}>
+        <input
+          autoFocus
+          className="cashflow-add-input-compact"
+          placeholder={placeholder}
+          value={value}
+          onChange={onChange}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { onSubmit(); onClose(); }
+            if (e.key === 'Escape') onClose();
+          }}
+          onBlur={onClose}
+        />
+      </td>
+    </tr>
+  );
+
+  // Number(...) matters here: entries[key] holds a raw string right after
+  // typing (input onChange stores e.target.value verbatim, only converted
+  // to a number on blur/save) - without this coercion, `sum + itemTotal(...)`
+  // silently falls back to string concatenation the moment one operand is a
+  // string, corrupting every section/division total downstream.
+  const itemTotal = (itemId, week) => Number(entries[`${itemId}_${week}`]) || 0;
   const sectionTotal = (sectionId, week) =>
     lineItems.filter((li) => li.section_id === sectionId).reduce((sum, li) => sum + itemTotal(li.id, week), 0);
   const divisionTotal = (divisionId, week) =>
@@ -485,6 +439,7 @@ function Cashflow() {
                   <React.Fragment key={division.id}>
                     <tr className="cashflow-division-row">
                       <td className="cashflow-row-label">
+                        {inlineAddTrigger(() => setAddingSectionFor(division.id), `Add section to ${division.name}`)}
                         <input
                           className="cashflow-header-input cashflow-division-input"
                           value={division.name}
@@ -492,7 +447,7 @@ function Cashflow() {
                           onChange={(e) => renameDivision(division.id, e.target.value)}
                           onBlur={(e) => saveDivisionName(division.id, e.target.value)}
                         />
-                        {removeButton(division, setDivisionStatus)}
+                        {removeButton(division, deleteDivision)}
                       </td>
                       {weeks.map((w) => (
                         <td key={w}>{formatMoney(divisionTotal(division.id, w))}</td>
@@ -505,6 +460,7 @@ function Cashflow() {
                         <React.Fragment key={section.id}>
                           <tr className="cashflow-section-row">
                             <td className="cashflow-row-label">
+                              {inlineAddTrigger(() => setAddingItemFor(section.id), `Add item to ${section.name}`)}
                               <input
                                 className="cashflow-header-input cashflow-section-input"
                                 value={section.name}
@@ -512,7 +468,7 @@ function Cashflow() {
                                 onChange={(e) => renameSection(section.id, e.target.value)}
                                 onBlur={(e) => saveSectionName(section.id, e.target.value)}
                               />
-                              {removeButton(section, setSectionStatus)}
+                              {removeButton(section, deleteSection)}
                             </td>
                             {weeks.map((w) => (
                               <td key={w}>{formatMoney(sectionTotal(section.id, w))}</td>
@@ -523,7 +479,7 @@ function Cashflow() {
                             <tr key={item.id}>
                               <td className="cashflow-row-label cashflow-item-label">
                                 {item.name}
-                                {removeButton(item, setLineItemStatus)}
+                                {removeButton(item, deleteLineItem)}
                               </td>
                               {weeks.map((w) => {
                                 const key = `${item.id}_${w}`;
@@ -542,77 +498,30 @@ function Cashflow() {
                             </tr>
                           ))}
 
-                          <tr className="cashflow-add-row-compact">
-                            <td className="cashflow-item-label" colSpan={weeks.length + 1}>
-                              {compactAdd({
-                                isOpen: addingItemFor === section.id,
-                                onOpen: () => setAddingItemFor(section.id),
-                                onClose: () => setAddingItemFor(null),
-                                placeholder: `Add item to ${section.name}`,
-                                value: newItemName[section.id] || '',
-                                onChange: (e) => setNewItemName((prev) => ({ ...prev, [section.id]: e.target.value })),
-                                onSubmit: () => addLineItem(section.id),
-                              })}
-                            </td>
-                          </tr>
+                          {addingItemFor === section.id && compactAddRow({
+                            value: newItemName[section.id] || '',
+                            onChange: (e) => setNewItemName((prev) => ({ ...prev, [section.id]: e.target.value })),
+                            onSubmit: () => addLineItem(section.id),
+                            onClose: () => setAddingItemFor(null),
+                            placeholder: `Add item to ${section.name}`,
+                            colSpan: weeks.length + 1,
+                            indent: true,
+                          })}
                         </React.Fragment>
                       );
                     })}
 
-                    <tr className="cashflow-add-row-compact">
-                      <td colSpan={weeks.length + 1}>
-                        {compactAdd({
-                          isOpen: addingSectionFor === division.id,
-                          onOpen: () => setAddingSectionFor(division.id),
-                          onClose: () => setAddingSectionFor(null),
-                          placeholder: `Add section to ${division.name}`,
-                          value: newSectionName[division.id] || '',
-                          onChange: (e) => setNewSectionName((prev) => ({ ...prev, [division.id]: e.target.value })),
-                          onSubmit: () => addSection(division.id),
-                        })}
-                      </td>
-                    </tr>
+                    {addingSectionFor === division.id && compactAddRow({
+                      value: newSectionName[division.id] || '',
+                      onChange: (e) => setNewSectionName((prev) => ({ ...prev, [division.id]: e.target.value })),
+                      onSubmit: () => addSection(division.id),
+                      onClose: () => setAddingSectionFor(null),
+                      placeholder: `Add section to ${division.name}`,
+                      colSpan: weeks.length + 1,
+                    })}
                   </React.Fragment>
                 );
               })}
-
-              <tr className="cashflow-division-row">
-                <td colSpan={weeks.length + 1}>Debt</td>
-              </tr>
-              {lenders.filter((l) => l.status === 'active').map((lender) => (
-                <tr key={lender.id}>
-                  <td className="cashflow-row-label cashflow-item-label">
-                    {lender.name}
-                    {removeButton(lender, setLenderStatus)}
-                  </td>
-                  {weeks.map((w) => {
-                    const key = `${lender.id}_${w}`;
-                    return (
-                      <td key={w}>
-                        <input
-                          type="number"
-                          className="cashflow-cell-input"
-                          value={debtEntries[key] ?? ''}
-                          onChange={(e) => setDebtEntries((prev) => ({ ...prev, [key]: e.target.value }))}
-                          onBlur={(e) => saveDebtEntry(lender.id, w, Number(e.target.value) || 0)}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-              <tr className="cashflow-add-row">
-                <td colSpan={weeks.length + 1}>
-                  <input
-                    className="cashflow-add-input"
-                    placeholder="+ Add lender"
-                    value={newLenderName}
-                    onChange={(e) => setNewLenderName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') addLender(); }}
-                  />
-                  <button className="btn-secondary" onClick={addLender}>Add</button>
-                </td>
-              </tr>
 
               <tr className="cashflow-summary-row">
                 <td className="cashflow-row-label">Starting cash</td>
@@ -633,12 +542,6 @@ function Cashflow() {
                 <td className="cashflow-row-label">Contribution</td>
                 {weeks.map((w) => (
                   <td key={w}>{formatMoney(summaryByWeek[w]?.contribution)}</td>
-                ))}
-              </tr>
-              <tr className="cashflow-summary-row">
-                <td className="cashflow-row-label">Debt shift</td>
-                {weeks.map((w) => (
-                  <td key={w}>{formatMoney(summaryByWeek[w]?.debtShift)}</td>
                 ))}
               </tr>
               <tr className="cashflow-summary-row cashflow-ending-row">

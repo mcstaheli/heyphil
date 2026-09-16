@@ -139,6 +139,16 @@ router.put('/divisions/:id', async (req, res) => {
   }
 });
 
+router.delete('/divisions/:id', async (req, res) => {
+  try {
+    const deleted = await cashflowDb.deleteDivision(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.status(204).end();
+  } catch (error) {
+    handleDbError(res, error);
+  }
+});
+
 // ========== SECTIONS ==========
 
 router.get('/sections', async (req, res) => {
@@ -185,6 +195,16 @@ router.put('/sections/:id', async (req, res) => {
     const section = await cashflowDb.updateSection(req.params.id, fields);
     if (!section) return res.status(404).json({ error: 'Not found' });
     res.json(section);
+  } catch (error) {
+    handleDbError(res, error);
+  }
+});
+
+router.delete('/sections/:id', async (req, res) => {
+  try {
+    const deleted = await cashflowDb.deleteSection(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.status(204).end();
   } catch (error) {
     handleDbError(res, error);
   }
@@ -241,6 +261,16 @@ router.put('/line-items/:id', async (req, res) => {
   }
 });
 
+router.delete('/line-items/:id', async (req, res) => {
+  try {
+    const deleted = await cashflowDb.deleteLineItem(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.status(204).end();
+  } catch (error) {
+    handleDbError(res, error);
+  }
+});
+
 // ========== ENTRIES ==========
 
 router.get('/entries', async (req, res) => {
@@ -277,76 +307,6 @@ router.put('/entries', async (req, res) => {
     const itemsError = await checkLineItemsActive(lineItemIds);
     if (itemsError) return res.status(400).json({ error: itemsError });
     res.json(await cashflowDb.upsertEntries(entries));
-  } catch (error) {
-    handleDbError(res, error);
-  }
-});
-
-// ========== LENDERS ==========
-
-router.get('/lenders', async (req, res) => {
-  try {
-    res.json(await cashflowDb.getLenders());
-  } catch (error) {
-    handleDbError(res, error);
-  }
-});
-
-router.post('/lenders', async (req, res) => {
-  try {
-    const { name, sortOrder } = req.body;
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ error: 'name is required' });
-    }
-    const lender = await cashflowDb.createLender({ name: name.trim(), sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0 });
-    res.status(201).json(lender);
-  } catch (error) {
-    handleDbError(res, error);
-  }
-});
-
-router.put('/lenders/:id', async (req, res) => {
-  try {
-    const fields = validatePatchFields(res, req.body);
-    if (!fields) return;
-    const lender = await cashflowDb.updateLender(req.params.id, fields);
-    if (!lender) return res.status(404).json({ error: 'Not found' });
-    res.json(lender);
-  } catch (error) {
-    handleDbError(res, error);
-  }
-});
-
-// ========== DEBT ENTRIES ==========
-
-router.get('/debt-entries', async (req, res) => {
-  try {
-    const { startWeek, endWeek } = req.query;
-    if (!validateWeekRange(res, startWeek, endWeek)) return;
-    res.json(await cashflowDb.getDebtEntries({ startWeek, endWeek }));
-  } catch (error) {
-    handleDbError(res, error);
-  }
-});
-
-router.put('/debt-entries', async (req, res) => {
-  try {
-    const { lenderId, weekEnding, amount } = req.body;
-    if (!Number.isInteger(lenderId)) {
-      return res.status(400).json({ error: 'lenderId must be an integer' });
-    }
-    if (!isValidWeek(weekEnding)) {
-      return res.status(400).json({ error: 'weekEnding must be YYYY-MM-DD' });
-    }
-    if (!isFiniteAmount(amount)) {
-      return res.status(400).json({ error: 'amount must be numeric' });
-    }
-    const lender = await cashflowDb.getLenderById(lenderId);
-    if (!lender) return res.status(400).json({ error: 'Referenced record does not exist' });
-    if (lender.status !== 'active') {
-      return res.status(400).json({ error: 'Cannot record an entry for a retired lender' });
-    }
-    res.json(await cashflowDb.upsertDebtEntry({ lenderId, weekEnding, amount }));
   } catch (error) {
     handleDbError(res, error);
   }
