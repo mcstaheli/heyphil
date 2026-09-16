@@ -119,13 +119,36 @@ export async function createTables() {
     console.error(`⚠️  Cashflow migration: ${stillOrphaned.rows[0].n} line item(s) still missing section_id - skipping NOT NULL/column drop this boot to avoid data loss`);
   }
 
+  // Lets a line item itself hold nested items (unlimited depth) - NULL
+  // means top-level within its section. Self-referencing FK, so deleting a
+  // parent item cascades to its whole nested subtree automatically.
+  await step('cashflow_line_items parent_item_id column', () => pool.query(`
+    ALTER TABLE cashflow_line_items ADD COLUMN IF NOT EXISTS parent_item_id INT REFERENCES cashflow_line_items(id) ON DELETE CASCADE
+  `));
+  await step('cashflow_line_items parent index', () => pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cashflow_line_items_parent ON cashflow_line_items(parent_item_id)
+  `));
+
+  // Granularity moved from weekly to monthly - period_start always holds
+  // the 1st of the month. No real entries existed under the old weekly
+  // column, so this is a straight rename rather than a data migration.
+  await step('cashflow_entries rename week_ending to period_start', async () => {
+    const col = await pool.query(`
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'cashflow_entries' AND column_name = 'week_ending'
+    `);
+    if (col.rows.length > 0) {
+      await pool.query(`ALTER TABLE cashflow_entries RENAME COLUMN week_ending TO period_start`);
+    }
+  });
+
   await step('cashflow_entries table', () => pool.query(`
     CREATE TABLE IF NOT EXISTS cashflow_entries (
       line_item_id INT NOT NULL REFERENCES cashflow_line_items(id) ON DELETE CASCADE,
-      week_ending DATE NOT NULL,
+      period_start DATE NOT NULL,
       amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
       updated_at TIMESTAMP DEFAULT NOW(),
-      PRIMARY KEY (line_item_id, week_ending)
+      PRIMARY KEY (line_item_id, period_start)
     )
   `));
 
@@ -137,14 +160,21 @@ export async function createTables() {
   await step('cashflow_debt_entries drop', () => pool.query(`DROP TABLE IF EXISTS cashflow_debt_entries`));
   await step('cashflow_lenders drop', () => pool.query(`DROP TABLE IF EXISTS cashflow_lenders`));
 
-  await step('cashflow_weekly_anchor table', () => pool.query(`
-    CREATE TABLE IF NOT EXISTS cashflow_weekly_anchor (
-      week_ending DATE PRIMARY KEY,
+  // The old weekly anchor table only ever held one leftover row from manual
+  // testing (a week-ending date, not aligned to any month boundary) - not
+  // real user data, so dropped outright rather than carried forward under a
+  // new column that would misrepresent it as a monthly anchor.
+  await step('cashflow_weekly_anchor drop', () => pool.query(`DROP TABLE IF EXISTS cashflow_weekly_anchor`));
+
+  await step('cashflow_anchor table', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS cashflow_anchor (
+      period_start DATE PRIMARY KEY,
       starting_cash NUMERIC(14, 2) NOT NULL
     )
   `));
 
-  await step('cashflow_entries week index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_entries_week ON cashflow_entries(week_ending)`));
+  await step('cashflow_entries drop old week index', () => pool.query(`DROP INDEX IF EXISTS idx_cashflow_entries_week`));
+  await step('cashflow_entries period index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_entries_period ON cashflow_entries(period_start)`));
   await step('cashflow_line_items section index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_line_items_section ON cashflow_line_items(section_id)`));
   await step('cashflow_sections division index', () => pool.query(`CREATE INDEX IF NOT EXISTS idx_cashflow_sections_division ON cashflow_sections(division_id)`));
 }
@@ -345,7 +375,56 @@ export async function getLineItemsByIds(ids) {
   return result.rows;
 }
 
-export async function createLineItem({ sectionId, name, sortOrder = 0 }) {
+// Given a set of item ids, returns which of them currently have at least
+// one child - a parent item is a computed total, never a direct-entry
+// target, mirroring how sections/divisions already work.
+export async function getItemsWithChildren(ids) {
+  if (ids.length === 0) return [];
+  const result = await pool.query(
+    `SELECT DISTINCT parent_item_id FROM cashflow_line_items WHERE parent_item_id = ANY($1)`,
+    [ids]
+  );
+  return result.rows.map((r) => r.parent_item_id);
+}
+
+// Walks the parent_item_id chain from `itemId` up to its top-level
+// ancestor (the base row in the CTE is the item itself), so a write can be
+// rejected if ANY ancestor - not just the immediate parent - is retired.
+// Includes section_id since every item in a nested chain shares the same
+// section as its top-level ancestor.
+export async function getItemAncestors(itemId) {
+  const result = await pool.query(`
+    WITH RECURSIVE ancestors AS (
+      SELECT id, parent_item_id, status, section_id FROM cashflow_line_items WHERE id = $1
+      UNION ALL
+      SELECT li.id, li.parent_item_id, li.status, li.section_id
+      FROM cashflow_line_items li
+      JOIN ancestors a ON li.id = a.parent_item_id
+    )
+    SELECT * FROM ancestors
+  `, [itemId]);
+  return result.rows;
+}
+
+// A top-level item takes an explicit sectionId. A nested item instead
+// takes parentItemId and inherits its section from the parent - passing a
+// mismatched sectionId for a nested item isn't possible by construction.
+// Creating a nested item auto-clears the parent's own entries in the same
+// transaction: once an item has a child it becomes a computed total, never
+// also a manual value (the user was warned client-side before this call).
+export async function createLineItem({ sectionId, parentItemId = null, name, sortOrder = 0 }) {
+  if (parentItemId) {
+    return transaction(async (client) => {
+      await client.query(`DELETE FROM cashflow_entries WHERE line_item_id = $1`, [parentItemId]);
+      const result = await client.query(
+        `INSERT INTO cashflow_line_items (section_id, parent_item_id, name, sort_order)
+         SELECT section_id, $1, $2, $3 FROM cashflow_line_items WHERE id = $1
+         RETURNING *`,
+        [parentItemId, name, sortOrder]
+      );
+      return result.rows[0];
+    });
+  }
   const result = await pool.query(
     `INSERT INTO cashflow_line_items (section_id, name, sort_order)
      VALUES ($1, $2, $3) RETURNING *`,
@@ -374,14 +453,14 @@ export async function deleteLineItem(id) {
 
 // ========== ENTRIES ==========
 
-export async function getEntries({ startWeek, endWeek }) {
+export async function getEntries({ startPeriod, endPeriod }) {
   const result = await pool.query(
-    `SELECT e.line_item_id, e.week_ending, e.amount, li.section_id, s.division_id
+    `SELECT e.line_item_id, e.period_start, e.amount, li.section_id, s.division_id
      FROM cashflow_entries e
      JOIN cashflow_line_items li ON li.id = e.line_item_id
      JOIN cashflow_sections s ON s.id = li.section_id
-     WHERE e.week_ending BETWEEN $1 AND $2`,
-    [startWeek, endWeek]
+     WHERE e.period_start BETWEEN $1 AND $2`,
+    [startPeriod, endPeriod]
   );
   return result.rows;
 }
@@ -389,14 +468,14 @@ export async function getEntries({ startWeek, endWeek }) {
 export async function upsertEntries(entries) {
   return transaction(async (client) => {
     const results = [];
-    for (const { lineItemId, weekEnding, amount } of entries) {
+    for (const { lineItemId, periodStart, amount } of entries) {
       const result = await client.query(
-        `INSERT INTO cashflow_entries (line_item_id, week_ending, amount)
+        `INSERT INTO cashflow_entries (line_item_id, period_start, amount)
          VALUES ($1, $2, $3)
-         ON CONFLICT (line_item_id, week_ending)
+         ON CONFLICT (line_item_id, period_start)
          DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
          RETURNING *`,
-        [lineItemId, weekEnding, amount]
+        [lineItemId, periodStart, amount]
       );
       results.push(result.rows[0]);
     }
@@ -404,67 +483,67 @@ export async function upsertEntries(entries) {
   });
 }
 
-// ========== WEEKLY ANCHOR (manual starting-cash override) ==========
+// ========== ANCHOR (manual starting-cash override) ==========
 
-export async function setAnchor(weekEnding, startingCash) {
+export async function setAnchor(periodStart, startingCash) {
   const result = await pool.query(
-    `INSERT INTO cashflow_weekly_anchor (week_ending, starting_cash)
+    `INSERT INTO cashflow_anchor (period_start, starting_cash)
      VALUES ($1, $2)
-     ON CONFLICT (week_ending) DO UPDATE SET starting_cash = EXCLUDED.starting_cash
+     ON CONFLICT (period_start) DO UPDATE SET starting_cash = EXCLUDED.starting_cash
      RETURNING *`,
-    [weekEnding, startingCash]
+    [periodStart, startingCash]
   );
   return result.rows[0];
 }
 
-export async function getAnchors({ startWeek, endWeek }) {
+export async function getAnchors({ startPeriod, endPeriod }) {
   const result = await pool.query(
-    `SELECT week_ending, starting_cash FROM cashflow_weekly_anchor
-     WHERE week_ending BETWEEN $1 AND $2`,
-    [startWeek, endWeek]
+    `SELECT period_start, starting_cash FROM cashflow_anchor
+     WHERE period_start BETWEEN $1 AND $2`,
+    [startPeriod, endPeriod]
   );
   return result.rows;
 }
 
 // ========== SUMMARY ==========
 
-// Computes, for each week in `weekEndings` (chronological order), the
+// Computes, for each month in `periodStarts` (chronological order), the
 // division contribution totals, starting cash and ending cash. Starting
-// cash chains from the previous week's ending cash unless a manual anchor
-// override exists for that week.
-export async function getWeeklySummary(weekEndings) {
-  if (weekEndings.length === 0) return [];
-  const sorted = [...weekEndings].sort();
-  const startWeek = sorted[0];
-  const endWeek = sorted[sorted.length - 1];
+// cash chains from the previous month's ending cash unless a manual anchor
+// override exists for that month.
+export async function getMonthlySummary(periodStarts) {
+  if (periodStarts.length === 0) return [];
+  const sorted = [...periodStarts].sort();
+  const startPeriod = sorted[0];
+  const endPeriod = sorted[sorted.length - 1];
 
   const [entries, anchors, divisions] = await Promise.all([
-    getEntries({ startWeek, endWeek }),
-    getAnchors({ startWeek, endWeek }),
+    getEntries({ startPeriod, endPeriod }),
+    getAnchors({ startPeriod, endPeriod }),
     getDivisions(),
   ]);
 
-  const anchorByWeek = new Map(anchors.map((a) => [toDateKey(a.week_ending), Number(a.starting_cash)]));
+  const anchorByPeriod = new Map(anchors.map((a) => [toDateKey(a.period_start), Number(a.starting_cash)]));
 
-  const divisionTotalsByWeek = new Map(); // weekKey -> { divisionId -> total }
+  const divisionTotalsByPeriod = new Map(); // periodKey -> { divisionId -> total }
   for (const e of entries) {
-    const weekKey = toDateKey(e.week_ending);
-    if (!divisionTotalsByWeek.has(weekKey)) divisionTotalsByWeek.set(weekKey, {});
-    const totals = divisionTotalsByWeek.get(weekKey);
+    const periodKey = toDateKey(e.period_start);
+    if (!divisionTotalsByPeriod.has(periodKey)) divisionTotalsByPeriod.set(periodKey, {});
+    const totals = divisionTotalsByPeriod.get(periodKey);
     totals[e.division_id] = (totals[e.division_id] || 0) + Number(e.amount);
   }
 
   let runningCash = 0;
   const summary = [];
-  for (const weekEnding of sorted) {
-    const weekKey = toDateKey(weekEnding);
-    const startingCash = anchorByWeek.has(weekKey) ? anchorByWeek.get(weekKey) : runningCash;
-    const divisionTotals = divisionTotalsByWeek.get(weekKey) || {};
+  for (const periodStart of sorted) {
+    const periodKey = toDateKey(periodStart);
+    const startingCash = anchorByPeriod.has(periodKey) ? anchorByPeriod.get(periodKey) : runningCash;
+    const divisionTotals = divisionTotalsByPeriod.get(periodKey) || {};
     const contribution = divisions.reduce((sum, d) => sum + (divisionTotals[d.id] || 0), 0);
     const endingCash = startingCash + contribution;
 
     summary.push({
-      weekEnding: weekKey,
+      periodStart: periodKey,
       startingCash,
       divisionTotals,
       contribution,

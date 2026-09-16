@@ -11,8 +11,9 @@ router.get('/ping', (req, res) => {
   res.json({ ok: true });
 });
 
-const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
-const isValidWeek = (w) => typeof w === 'string' && WEEK_RE.test(w);
+// Always the 1st of a month - a period identifies a whole month, not a day.
+const PERIOD_RE = /^\d{4}-\d{2}-01$/;
+const isValidPeriod = (p) => typeof p === 'string' && PERIOD_RE.test(p);
 const isFiniteAmount = (a) => typeof a === 'number' && Number.isFinite(a);
 
 // Shared by the four PUT .../:id routes below (divisions, sections,
@@ -35,13 +36,13 @@ function validatePatchFields(res, { name, status, sortOrder }) {
   return { name: name !== undefined ? name.trim() : undefined, status, sortOrder };
 }
 
-function validateWeekRange(res, startWeek, endWeek) {
-  if (!isValidWeek(startWeek) || !isValidWeek(endWeek)) {
-    res.status(400).json({ error: 'startWeek and endWeek must be YYYY-MM-DD' });
+function validatePeriodRange(res, startPeriod, endPeriod) {
+  if (!isValidPeriod(startPeriod) || !isValidPeriod(endPeriod)) {
+    res.status(400).json({ error: 'startPeriod and endPeriod must be YYYY-MM-01' });
     return false;
   }
-  if (startWeek > endWeek) {
-    res.status(400).json({ error: 'startWeek must not be after endWeek' });
+  if (startPeriod > endPeriod) {
+    res.status(400).json({ error: 'startPeriod must not be after endPeriod' });
     return false;
   }
   return true;
@@ -72,8 +73,19 @@ async function checkLineItemsActive(ids) {
   for (const id of ids) {
     const item = itemsById.get(id);
     if (!item) return `Line item ${id} does not exist`;
-    if (item.status !== 'active') return `Line item ${id} is retired`;
     sectionIds.add(item.section_id);
+  }
+  // A parent item (has nested items under it) is a computed total, not a
+  // direct-entry target - same rule sections/divisions already follow.
+  const withChildren = await cashflowDb.getItemsWithChildren(ids);
+  if (withChildren.length > 0) {
+    return `Line item ${withChildren[0]} has nested items and cannot hold a direct value`;
+  }
+  for (const id of ids) {
+    // Walks the item's own parent chain - a retired item three levels up
+    // must block a write here just as surely as the item's own status.
+    const ancestors = await cashflowDb.getItemAncestors(id);
+    if (ancestors.some((a) => a.status !== 'active')) return `Line item ${id} is retired`;
   }
   for (const sectionId of sectionIds) {
     const err = await checkSectionActive(sectionId);
@@ -223,20 +235,36 @@ router.get('/line-items', async (req, res) => {
 
 router.post('/line-items', async (req, res) => {
   try {
-    const { sectionId, name, sortOrder } = req.body;
-    if (!Number.isInteger(sectionId)) {
-      return res.status(400).json({ error: 'sectionId is required' });
-    }
+    const { sectionId, parentItemId, name, sortOrder } = req.body;
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
+    const trimmedName = name.trim();
+    const sortOrderValue = Number.isFinite(sortOrder) ? sortOrder : 0;
+
+    if (parentItemId !== undefined && parentItemId !== null) {
+      if (!Number.isInteger(parentItemId)) {
+        return res.status(400).json({ error: 'parentItemId must be an integer' });
+      }
+      const ancestors = await cashflowDb.getItemAncestors(parentItemId);
+      if (ancestors.length === 0) {
+        return res.status(400).json({ error: 'Referenced record does not exist' });
+      }
+      if (ancestors.some((a) => a.status !== 'active')) {
+        return res.status(400).json({ error: 'Cannot nest under a retired item' });
+      }
+      const sectionError = await checkSectionActive(ancestors[0].section_id);
+      if (sectionError) return res.status(400).json({ error: sectionError });
+      const item = await cashflowDb.createLineItem({ parentItemId, name: trimmedName, sortOrder: sortOrderValue });
+      return res.status(201).json(item);
+    }
+
+    if (!Number.isInteger(sectionId)) {
+      return res.status(400).json({ error: 'sectionId is required' });
+    }
     const sectionError = await checkSectionActive(sectionId);
     if (sectionError) return res.status(400).json({ error: sectionError });
-    const item = await cashflowDb.createLineItem({
-      sectionId,
-      name: name.trim(),
-      sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
-    });
+    const item = await cashflowDb.createLineItem({ sectionId, name: trimmedName, sortOrder: sortOrderValue });
     res.status(201).json(item);
   } catch (error) {
     handleDbError(res, error);
@@ -275,9 +303,9 @@ router.delete('/line-items/:id', async (req, res) => {
 
 router.get('/entries', async (req, res) => {
   try {
-    const { startWeek, endWeek } = req.query;
-    if (!validateWeekRange(res, startWeek, endWeek)) return;
-    res.json(await cashflowDb.getEntries({ startWeek, endWeek }));
+    const { startPeriod, endPeriod } = req.query;
+    if (!validatePeriodRange(res, startPeriod, endPeriod)) return;
+    res.json(await cashflowDb.getEntries({ startPeriod, endPeriod }));
   } catch (error) {
     handleDbError(res, error);
   }
@@ -293,8 +321,8 @@ router.put('/entries', async (req, res) => {
       if (!Number.isInteger(e.lineItemId)) {
         return res.status(400).json({ error: 'each entry needs an integer lineItemId' });
       }
-      if (!isValidWeek(e.weekEnding)) {
-        return res.status(400).json({ error: 'each entry needs weekEnding as YYYY-MM-DD' });
+      if (!isValidPeriod(e.periodStart)) {
+        return res.status(400).json({ error: 'each entry needs periodStart as YYYY-MM-01' });
       }
       if (!isFiniteAmount(e.amount)) {
         return res.status(400).json({ error: 'each entry needs a numeric amount' });
@@ -316,14 +344,14 @@ router.put('/entries', async (req, res) => {
 
 router.put('/anchor', async (req, res) => {
   try {
-    const { weekEnding, startingCash } = req.body;
-    if (!isValidWeek(weekEnding)) {
-      return res.status(400).json({ error: 'weekEnding must be YYYY-MM-DD' });
+    const { periodStart, startingCash } = req.body;
+    if (!isValidPeriod(periodStart)) {
+      return res.status(400).json({ error: 'periodStart must be YYYY-MM-01' });
     }
     if (!isFiniteAmount(startingCash)) {
       return res.status(400).json({ error: 'startingCash must be numeric' });
     }
-    res.json(await cashflowDb.setAnchor(weekEnding, startingCash));
+    res.json(await cashflowDb.setAnchor(periodStart, startingCash));
   } catch (error) {
     handleDbError(res, error);
   }
@@ -333,15 +361,15 @@ router.put('/anchor', async (req, res) => {
 
 router.get('/summary', async (req, res) => {
   try {
-    const weeksParam = req.query.weeks;
-    if (!weeksParam || typeof weeksParam !== 'string') {
-      return res.status(400).json({ error: 'weeks is required (comma-separated YYYY-MM-DD list)' });
+    const periodsParam = req.query.periods;
+    if (!periodsParam || typeof periodsParam !== 'string') {
+      return res.status(400).json({ error: 'periods is required (comma-separated YYYY-MM-01 list)' });
     }
-    const weeks = weeksParam.split(',');
-    if (weeks.length === 0 || !weeks.every(isValidWeek)) {
-      return res.status(400).json({ error: 'weeks must be a comma-separated list of YYYY-MM-DD dates' });
+    const periods = periodsParam.split(',');
+    if (periods.length === 0 || !periods.every(isValidPeriod)) {
+      return res.status(400).json({ error: 'periods must be a comma-separated list of YYYY-MM-01 dates' });
     }
-    res.json(await cashflowDb.getWeeklySummary(weeks));
+    res.json(await cashflowDb.getMonthlySummary(periods));
   } catch (error) {
     handleDbError(res, error);
   }
