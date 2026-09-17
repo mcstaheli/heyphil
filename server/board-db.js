@@ -5,10 +5,10 @@ import pool from './db.js';
 
 export async function getAllProjects() {
   const result = await pool.query(`
-    SELECT 
+    SELECT
       id, title, description, status, owner, notes, project_type,
       deal_value, target_close, date_created, deleted_at,
-      budget, timeline, team, files, tasks, links,
+      budget, timeline, team, files, tasks, links, needs_ic,
       created_at, updated_at
     FROM projects
     WHERE deleted_at IS NULL
@@ -19,12 +19,12 @@ export async function getAllProjects() {
 
 export async function getProjectById(id) {
   const result = await pool.query(`
-    SELECT 
+    SELECT
       id, title, description, status, owner, notes, project_type,
       deal_value, target_close, date_created, deleted_at,
-      budget, timeline, team, files, tasks, links,
+      budget, timeline, team, files, tasks, links, needs_ic,
       created_at, updated_at
-    FROM projects 
+    FROM projects
     WHERE id = $1
   `, [id]);
   return result.rows[0];
@@ -123,6 +123,10 @@ export async function updateProject(id, updates) {
   if (updates.links !== undefined) {
     fields.push(`links = $${paramCount++}`);
     values.push(JSON.stringify(updates.links));
+  }
+  if (updates.needsIc !== undefined) {
+    fields.push(`needs_ic = $${paramCount++}`);
+    values.push(!!updates.needsIc);
   }
 
   if (fields.length === 0) {
@@ -407,6 +411,7 @@ export async function getBoardData() {
     dealValue: parseFloat(project.deal_value) || 0,
     dateCreated: project.date_created,
     projectType: project.project_type,
+    needsIc: project.needs_ic || false,
     project_id: project.id,  // Self-reference (every card IS a project now)
     // Tasks are stored in the projects.tasks JSONB column without a cardId of
     // their own (see addTask) - inject it here so the client's toggle/rename/

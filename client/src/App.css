@@ -249,6 +249,7 @@ body {
   padding: 16px;
   cursor: pointer;
   transition: all 0.2s;
+  position: relative;
 }
 
 .kanban-card:hover {
@@ -737,7 +738,7 @@ body {
   display: flex;
   gap: 12px;
   gap: 12px;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .card-photo {
@@ -1024,6 +1025,43 @@ body {
 .card-quick-add-btn:hover {
   border-color: #2196f3;
   color: #2196f3;
+}
+
+.card-ic-btn {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px dashed #ddd;
+  background: #fafafa;
+  color: #bbb;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 1;
+}
+
+.card-ic-btn:hover {
+  border-color: #d4a017;
+  color: #d4a017;
+}
+
+.card-ic-btn.active {
+  border: 1px solid #d4a017;
+  background: #fff8e1;
+  color: #7a5c00;
+}
+
+.kanban-card.card-needs-ic {
+  box-shadow: 0 0 0 2px #ffd54f;
+  background: #fffdf5;
 }
 
 .card-quick-add-row {

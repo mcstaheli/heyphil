@@ -227,6 +227,7 @@ function OriginationBoard({ user, studioMode = false }) {
   const [editingCard, setEditingCard] = useState(null);
   const [quickAddTaskFor, setQuickAddTaskFor] = useState(null); // card id whose inline "+" quick-add input is open
   const [quickAddTaskText, setQuickAddTaskText] = useState({}); // card id -> draft text
+  const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // action ids mid-"just checked off" flash
   const [draggedCard, setDraggedCard] = useState(null);
   const [filterOwner, setFilterOwner] = useState('');
   const [filterProjectType, setFilterProjectType] = useState('');
@@ -477,6 +478,7 @@ function OriginationBoard({ user, studioMode = false }) {
       dealValue: parseFloat(project.deal_value) || 0,
       dateCreated: project.date_created || new Date(),
       projectType: project.project_type || '',
+      needsIc: project.needs_ic || false,
       project_id: project.id, // Self-reference, same as getBoardData - the card modal's "View Project" button and debug check both key off this.
       // Tasks/links from the raw project row carry no cardId (see addTask/
       // addLink) - inject it the same way getBoardData does, or a
@@ -832,6 +834,25 @@ function OriginationBoard({ user, studioMode = false }) {
       // State will be updated via the action:starred Socket.io event
     } catch (error) {
       console.error('Failed to star action:', error);
+    }
+  };
+
+  const toggleCardIc = async (cardId, needsIc) => {
+    // Optimistic - this is a quick one-click toggle from the board face,
+    // not a full editingCard save flow.
+    setCards(prevCards => prevCards.map(c => c.id === cardId ? { ...c, needsIc } : c));
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/card/${cardId}/ic`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ needsIc })
+      });
+      if (!response.ok) {
+        setCards(prevCards => prevCards.map(c => c.id === cardId ? { ...c, needsIc: !needsIc } : c));
+      }
+    } catch (error) {
+      console.error('Failed to flag card for IC:', error);
+      setCards(prevCards => prevCards.map(c => c.id === cardId ? { ...c, needsIc: !needsIc } : c));
     }
   };
 
@@ -1219,7 +1240,7 @@ function OriginationBoard({ user, studioMode = false }) {
                 return (
                   <div
                     key={card.id}
-                    className={`kanban-card ${isPrePost ? 'card-prepost' : ''} ${card.daysInStage > 30 ? 'stale-deal' : ''}`}
+                    className={`kanban-card ${isPrePost ? 'card-prepost' : ''} ${card.daysInStage > 30 ? 'stale-deal' : ''} ${card.needsIc ? 'card-needs-ic' : ''}`}
                     style={{
                       borderLeft: card.projectType && projectTypeColors[card.projectType] 
                         ? `4px solid ${projectTypeColors[card.projectType]}` 
@@ -1231,6 +1252,17 @@ function OriginationBoard({ user, studioMode = false }) {
                     onClick={() => setEditingCard(card)}
                   >
                     {!isPrePost && card.daysInStage > 30 && <div className="stale-indicator" title={`${card.daysInStage} days in stage`}>⚠️</div>}
+                    {!isPrePost && (
+                      <button
+                        type="button"
+                        className={`card-ic-btn ${card.needsIc ? 'active' : ''}`}
+                        title={card.needsIc ? 'Remove IC flag' : 'Flag for Investment Committee discussion'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleCardIc(card.id, !card.needsIc);
+                        }}
+                      >IC</button>
+                    )}
                     <div className="card-main">
                       {card.owner && (
                         <div className="card-photo">
@@ -1265,26 +1297,25 @@ function OriginationBoard({ user, studioMode = false }) {
                         </div>
                       )}
                       <div className="card-content">
-                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px' }}>
-                          <h4>{card.title}</h4>
-                          {!isPrePost && (
-                            <button
-                              type="button"
-                              className="card-quick-add-btn"
-                              title="Add a task"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setQuickAddTaskFor(quickAddTaskFor === card.id ? null : card.id);
-                              }}
-                            >+</button>
-                          )}
-                        </div>
+                        <h4>{card.title}</h4>
                         {!isPrePost && card.dealValue > 0 && (
                           <div className="card-deal-value">${card.dealValue.toLocaleString()}</div>
                         )}
-                        {!isPrePost && card.description && <p>{card.description}</p>}
                       </div>
                     </div>
+                    {!isPrePost && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          className="card-quick-add-btn"
+                          title="Add a task"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setQuickAddTaskFor(quickAddTaskFor === card.id ? null : card.id);
+                          }}
+                        >+</button>
+                      </div>
+                    )}
                     {quickAddTaskFor === card.id && (
                       <div className="card-quick-add-row" onClick={(e) => e.stopPropagation()}>
                         <input
@@ -1310,14 +1341,29 @@ function OriginationBoard({ user, studioMode = false }) {
                         />
                       </div>
                     )}
-                    {!isPrePost && card.actions && card.actions.filter(a => !a.completedOn).length > 0 && (
+                    {!isPrePost && card.actions && card.actions.filter(a => !a.completedOn || pendingCompleteIds.has(a.id)).length > 0 && (
                       <div className="card-actions-section">
-                        {sortByStarred(card.actions.filter(a => !a.completedOn)).slice(0, 3).map((action) => (
+                        {sortByStarred(card.actions.filter(a => !a.completedOn || pendingCompleteIds.has(a.id))).slice(0, 3).map((action) => (
                           <div key={action.id} className={`card-action-item ${action.starred ? 'starred' : ''}`} onClick={(e) => {
                             e.stopPropagation();
+                            if (pendingCompleteIds.has(action.id)) return;
+                            // Show the checkmark for a beat before the item
+                            // actually disappears from this "pending" list -
+                            // toggleAction alone updates real state (via the
+                            // action:toggled socket event) almost instantly,
+                            // which filtered the row out before the user
+                            // ever saw it checked.
+                            setPendingCompleteIds(prev => new Set(prev).add(action.id));
                             toggleAction(action.id, true, action.cardId, action.cardTitle);
+                            setTimeout(() => {
+                              setPendingCompleteIds(prev => {
+                                const next = new Set(prev);
+                                next.delete(action.id);
+                                return next;
+                              });
+                            }, 600);
                           }}>
-                            <input type="checkbox" checked={false} readOnly />
+                            <input type="checkbox" checked={pendingCompleteIds.has(action.id)} readOnly />
                             <span
                               className="star-toggle"
                               title={action.starred ? 'Unstar' : 'Mark as do-or-die'}

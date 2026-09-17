@@ -115,6 +115,10 @@ async function autoMigrate() {
 
   await runMigrationStep('cashflow tables', () => cashflowDb.createTables());
   await runMigrationStep('cashflow divisions seed', () => cashflowDb.seedDivisions());
+
+  await runMigrationStep('projects needs_ic column', () => pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS needs_ic BOOLEAN NOT NULL DEFAULT false
+  `));
 }
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
@@ -907,6 +911,26 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to update card:', error);
     res.status(500).json({ error: 'Failed to update card' });
+  }
+});
+
+// Flag/unflag a card as needing Investment Committee discussion
+app.put('/api/origination/card/:id/ic', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { needsIc } = req.body;
+
+    const updated = await boardDb.updateProject(id, { needsIc: !!needsIc });
+    if (!updated) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    broadcastChange('card:updated', { id, needsIc: !!needsIc });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to flag card for IC:', error);
+    res.status(500).json({ error: 'Failed to flag card for IC' });
   }
 });
 
