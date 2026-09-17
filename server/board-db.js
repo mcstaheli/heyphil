@@ -180,16 +180,27 @@ export async function addTask(projectId, text) {
 }
 
 export async function toggleTask(projectId, taskId, completed, userName) {
+  // Two things were wrong here, both silent until a real (non-undefined)
+  // cardId actually reached this query for the first time:
+  // - `$5` had no cast at all inside jsonb_build_object's variadic "any"
+  //   args, so Postgres couldn't determine its type ("could not determine
+  //   data type of parameter $5").
+  // - `$4::text::jsonb` casts a bare ISO date string straight to jsonb,
+  //   but an unquoted string isn't valid JSON on its own ("invalid input
+  //   syntax for type json"). And when $4 is SQL NULL (unchecking a task),
+  //   jsonb_set is strict on its replacement-value argument - a NULL there
+  //   makes the WHOLE jsonb_set call return NULL, which jsonb_agg then
+  //   stores as a bare `null` in place of the task, destroying it.
   await pool.query(`
     UPDATE projects
     SET tasks = (
       SELECT jsonb_agg(
-        CASE 
+        CASE
           WHEN (task->>'id')::int = $2
           THEN jsonb_set(
-            jsonb_set(task, '{completed}', $3::text::jsonb),
-            '{completedOn}', $4::text::jsonb
-          ) || jsonb_build_object('completedBy', $5)
+            jsonb_set(task, '{completed}', to_jsonb($3::boolean)),
+            '{completedOn}', COALESCE(to_jsonb($4::text), 'null'::jsonb)
+          ) || jsonb_build_object('completedBy', $5::text)
           ELSE task
         END
       )
@@ -363,7 +374,10 @@ export async function getBoardData() {
     dateCreated: project.date_created,
     projectType: project.project_type,
     project_id: project.id,  // Self-reference (every card IS a project now)
-    actions: project.tasks || [],  // Map tasks -> actions for compatibility
+    // Tasks are stored in the projects.tasks JSONB column without a cardId of
+    // their own (see addTask) - inject it here so the client's toggle/rename/
+    // delete-action calls (which all key off action.cardId) have it to send.
+    actions: (project.tasks || []).map(task => ({ ...task, cardId: project.id })),
     links: project.links || [],
     log: logsByProject[project.id] || []
   }));

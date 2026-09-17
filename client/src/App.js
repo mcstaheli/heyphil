@@ -426,19 +426,26 @@ function OriginationBoard({ user, studioMode = false }) {
     // Listen for card changes
     socketRef.current.on('card:created', (card) => {
       console.log('📨 Card created:', card.id);
-      setCards(prevCards => [...prevCards, {
-        id: card.id,
-        title: card.title || 'Untitled',
-        description: card.description || '',
-        column: card.column || 'backlog',
-        owner: card.owner || '',
-        notes: card.notes || '',
-        dealValue: card.dealValue || 0,
-        dateCreated: card.dateCreated || new Date(),
-        projectType: card.projectType || '',
-        actions: [],
-        log: []
-      }]);
+      // The tab that created/restored this card already added it optimistically
+      // (with the same server-issued id) before this broadcast round-trips back
+      // to it - skip re-adding, or every create/restore duplicates on screen for
+      // the initiating user.
+      setCards(prevCards => {
+        if (prevCards.some(c => c.id === card.id)) return prevCards;
+        return [...prevCards, {
+          id: card.id,
+          title: card.title || 'Untitled',
+          description: card.description || '',
+          column: card.column || 'backlog',
+          owner: card.owner || '',
+          notes: card.notes || '',
+          dealValue: card.dealValue || 0,
+          dateCreated: card.dateCreated || new Date(),
+          projectType: card.projectType || '',
+          actions: [],
+          log: []
+        }];
+      });
     });
     
     socketRef.current.on('card:updated', (update) => {
@@ -584,7 +591,14 @@ function OriginationBoard({ user, studioMode = false }) {
         daysInStage: 0,
         dateCreated: new Date().toISOString()
       };
-      setCards(prevCards => [...prevCards, newCard]);
+      // The server broadcasts 'card:created' over the socket BEFORE sending
+      // this HTTP response, so that broadcast can (and often does) arrive
+      // and get added by the socket handler first - guard here too, not
+      // just there, or whichever one loses the race double-adds the card.
+      setCards(prevCards => {
+        if (prevCards.some(c => c.id === serverCardId)) return prevCards;
+        return [...prevCards, newCard];
+      });
       setShowNewCard(false);
       
       // Add pending actions if any (now using correct server ID)
@@ -856,21 +870,27 @@ function OriginationBoard({ user, studioMode = false }) {
         // Remove from deleted cards list
         setDeletedCards(prev => prev.filter(c => c.id !== cardId));
         
-        // Immediately add card back to board (optimistic update)
-        setCards(prevCards => [...prevCards, {
-          id: restoredCard.id,
-          title: restoredCard.title,
-          description: restoredCard.description || '',
-          column: restoredCard.column_name || restoredCard.column,
-          owner: restoredCard.owner || '',
-          notes: restoredCard.notes || '',
-          dealValue: restoredCard.deal_value || 0,
-          dateCreated: restoredCard.date_created,
-          projectType: restoredCard.project_type || '',
-          actions: [],
-          links: [],
-          log: []
-        }]);
+        // Immediately add card back to board (optimistic update). Same race
+        // as createCard: the server broadcasts 'card:created' before this
+        // HTTP response is sent, so guard against it having already been
+        // added by the socket handler.
+        setCards(prevCards => {
+          if (prevCards.some(c => c.id === restoredCard.id)) return prevCards;
+          return [...prevCards, {
+            id: restoredCard.id,
+            title: restoredCard.title,
+            description: restoredCard.description || '',
+            column: restoredCard.column_name || restoredCard.column,
+            owner: restoredCard.owner || '',
+            notes: restoredCard.notes || '',
+            dealValue: restoredCard.deal_value || 0,
+            dateCreated: restoredCard.date_created,
+            projectType: restoredCard.project_type || '',
+            actions: [],
+            links: [],
+            log: []
+          }];
+        });
       }
     } catch (error) {
       console.error('Failed to restore card:', error);
