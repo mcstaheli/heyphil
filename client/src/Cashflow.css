@@ -32,7 +32,7 @@
 .cashflow-grid th,
 .cashflow-grid td {
   border: 1px solid #e5e7eb;
-  padding: 4px 8px;
+  padding: 4px 16px 4px 8px;
   text-align: right;
   white-space: nowrap;
 }
