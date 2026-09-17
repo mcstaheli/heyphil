@@ -439,34 +439,11 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
     
-    // Phase 4: Sync project changes to linked card(s)
-    try {
-      const syncUpdates = {};
-      if (updates.title !== undefined) syncUpdates.title = updates.title;
-      if (updates.description !== undefined) syncUpdates.description = updates.description;
-      if (updates.dealValue !== undefined) syncUpdates.dealValue = updates.dealValue;
-      if (updates.status !== undefined) syncUpdates.column = updates.status; // status → column_name
-      
-      if (Object.keys(syncUpdates).length > 0) {
-        // Find cards linked to this project
-        const allCards = await boardDb.getAllCards();
-        const linkedCards = allCards.filter(c => c.project_id === id);
-        
-        for (const card of linkedCards) {
-          await boardDb.updateCard(card.id, syncUpdates);
-          // Broadcast card update to all clients
-          broadcastChange('card:updated', {
-            id: card.id,
-            ...syncUpdates
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Failed to sync project to cards:', error);
-      // Don't fail the request if sync fails
-    }
-    
-    // Broadcast to all clients
+    // A project IS a card now (they were merged into one table) - there's
+    // no separate "linked card" to sync to. This used to call three
+    // board-db functions that no longer exist (getAllCards/updateCard),
+    // so it silently failed every single time and never actually notified
+    // anyone. The client listens for 'project:updated' directly instead.
     broadcastChange('project:updated', { project });
     
     res.json({ project });
@@ -1248,33 +1225,35 @@ app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
   try {
     const { cardIds, updates } = req.body; // updates: { column?, owner? }
     const user = req.user.name || req.user.email;
-    
-    // Update each card
+
+    // Update each card. getCardById()/updateCard() don't exist on board-db -
+    // a card and a project are the same row now, so this uses the project
+    // equivalents (updateProject already treats 'column' as an alias for
+    // 'status').
     for (const cardId of cardIds) {
-      const oldCard = await boardDb.getCardById(cardId);
-      if (!oldCard) continue;
-      
-      await boardDb.updateCard(cardId, updates);
-      
+      const oldProject = await boardDb.getProjectById(cardId);
+      if (!oldProject) continue;
+
+      await boardDb.updateProject(cardId, updates);
+
       // Log bulk update
       const changes = [];
-      if (updates.column && oldCard.column_name !== updates.column) {
-        changes.push(`Bulk moved: ${oldCard.column_name} → ${updates.column}`);
+      if (updates.column && oldProject.status !== updates.column) {
+        changes.push(`Bulk moved: ${oldProject.status} → ${updates.column}`);
       }
-      if (updates.owner && oldCard.owner !== updates.owner) {
+      if (updates.owner && oldProject.owner !== updates.owner) {
         changes.push(`Bulk assigned: ${updates.owner}`);
       }
-      
+
       if (changes.length > 0) {
         await boardDb.addLog(
           cardId,
-          oldCard.title,
           'Bulk Update',
           user,
           changes.join(', ')
         );
       }
-      
+
       // Broadcast each update
       broadcastChange('card:updated', {
         id: cardId,
@@ -1292,19 +1271,23 @@ app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
 // Export to CSV
 app.get('/api/origination/export', requireAuth, async (req, res) => {
   try {
-    const cards = await boardDb.getAllCards();
-    
+    // getAllCards()/getCardById()/updateCard() don't exist on board-db - the
+    // old "cards" table was folded into "projects" and this route was never
+    // updated to match. getBoardData() is the same camelCase shape the main
+    // board endpoint already uses.
+    const { cards } = await boardDb.getBoardData();
+
     const escapeCsv = (val) => {
       if (!val) return '';
       const str = String(val).replace(/"/g, '""');
       return str.includes(',') || str.includes('"') ? `"${str}"` : str;
     };
-    
+
     // CSV header
     const csv = [
       'Title,Description,Stage,Owner,Notes,Card ID,Deal Value,Date Created,Project Type'
     ];
-    
+
     // Add data rows
     cards.forEach(card => {
       csv.push([
@@ -1314,9 +1297,9 @@ app.get('/api/origination/export', requireAuth, async (req, res) => {
         escapeCsv(card.owner),
         escapeCsv(card.notes),
         escapeCsv(card.id),
-        escapeCsv(card.deal_value),
-        escapeCsv(card.date_created),
-        escapeCsv(card.project_type)
+        escapeCsv(card.dealValue),
+        escapeCsv(card.dateCreated),
+        escapeCsv(card.projectType)
       ].join(','));
     });
     

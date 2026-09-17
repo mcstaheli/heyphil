@@ -459,7 +459,47 @@ function OriginationBoard({ user, studioMode = false }) {
       console.log('📨 Card deleted:', id);
       setCards(prevCards => prevCards.filter(c => c.id !== id));
     });
-    
+
+    // A project IS a card (they're the same row) - these mirror the
+    // card:* handlers above but carry the raw project shape (snake_case
+    // fields, e.g. from CustomTimeline's PUT /api/projects/:id), which
+    // /api/projects/* broadcasts but nothing used to listen for, so a
+    // second person viewing the same project's timeline never saw the
+    // other's edits without a manual reload.
+    const mapProjectToCard = (project) => ({
+      id: project.id,
+      title: project.title || 'Untitled',
+      description: project.description || '',
+      column: project.status || 'backlog',
+      owner: project.owner || '',
+      notes: project.notes || '',
+      dealValue: parseFloat(project.deal_value) || 0,
+      dateCreated: project.date_created || new Date(),
+      projectType: project.project_type || '',
+      actions: project.tasks || [],
+      links: project.links || []
+    });
+
+    socketRef.current.on('project:created', ({ project }) => {
+      console.log('📨 Project created:', project.id);
+      setCards(prevCards => {
+        if (prevCards.some(c => c.id === project.id)) return prevCards;
+        return [...prevCards, mapProjectToCard(project)];
+      });
+    });
+
+    socketRef.current.on('project:updated', ({ project }) => {
+      console.log('📨 Project updated:', project.id);
+      setCards(prevCards => prevCards.map(c =>
+        c.id === project.id ? { ...c, ...mapProjectToCard(project) } : c
+      ));
+    });
+
+    socketRef.current.on('project:deleted', ({ projectId }) => {
+      console.log('📨 Project deleted:', projectId);
+      setCards(prevCards => prevCards.filter(c => c.id !== projectId));
+    });
+
     // Listen for action changes
     socketRef.current.on('action:created', ({ actionId, cardId, text }) => {
       console.log('📨 Action created:', actionId, 'for card:', cardId);
@@ -617,19 +657,29 @@ function OriginationBoard({ user, studioMode = false }) {
 
   const updateCard = async (cardId, cardData) => {
     try {
-      await apiFetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(cardData)
       });
-      
+      // apiFetch only throws on a 401 or network failure - a 404/500 (e.g.
+      // someone else already deleted this card) resolves normally with
+      // ok: false, and the card would otherwise still show the edit as
+      // applied client-side even though the server rejected it.
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        alert(`Failed to update card:\n\n${result.error || 'Unknown error'}`);
+        return;
+      }
+
       // Update locally without loading screen
-      setCards(prevCards => prevCards.map(c => 
+      setCards(prevCards => prevCards.map(c =>
         c.id === cardId ? { ...c, ...cardData } : c
       ));
       setEditingCard(null);
     } catch (error) {
       console.error('Failed to update card:', error);
+      alert('Failed to update card - check console for details');
     }
   };
 
@@ -638,19 +688,26 @@ function OriginationBoard({ user, studioMode = false }) {
     if (!card || card.column === newColumn) return;
 
     // Optimistic update - update UI immediately
-    setCards(prevCards => 
-      prevCards.map(c => 
+    setCards(prevCards =>
+      prevCards.map(c =>
         c.id === cardId ? { ...c, column: newColumn } : c
       )
     );
 
     // Update backend in background
     try {
-      await apiFetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/card/${cardId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({ ...card, column: newColumn })
       });
+      // See updateCard - apiFetch resolves normally (ok: false) on a
+      // rejected write instead of throwing, so this needs its own check
+      // to trigger the same revert-on-failure the catch block below does.
+      if (!response.ok) {
+        console.error('Failed to move card: server rejected the request');
+        await loadBoard();
+      }
     } catch (error) {
       console.error('Failed to move card:', error);
       // Revert on error
@@ -1231,16 +1288,21 @@ function OriginationBoard({ user, studioMode = false }) {
           onDelete={async (id) => {
             if (window.confirm('Are you sure you want to delete this deal? This cannot be undone.')) {
               try {
-                await apiFetch(`${API_BASE_URL}/api/origination/card/${id}`, {
+                const response = await apiFetch(`${API_BASE_URL}/api/origination/card/${id}`, {
                   method: 'DELETE',
                   headers: getAuthHeaders()
                 });
-                
+                if (!response.ok) {
+                  alert('Failed to delete card - it may have already been removed.');
+                  return;
+                }
+
                 // Remove card locally without loading screen
                 setCards(prevCards => prevCards.filter(c => c.id !== id));
                 setEditingCard(null);
               } catch (error) {
                 console.error('Failed to delete:', error);
+                alert('Failed to delete card - check console for details');
               }
             }
           }}
@@ -1670,7 +1732,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
                         className="btn-remove-action"
                         onClick={() => {
                           if (window.confirm('Delete this link?')) {
-                            onDeleteLink(link.id);
+                            onDeleteLink(link.id, link.cardId);
                           }
                         }}
                         title="Delete link"
@@ -1744,7 +1806,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
                         onChange={(e) => setEditingActionText(e.target.value)}
                         onBlur={() => {
                           if (editingActionText.trim() && editingActionText !== action.text) {
-                            onUpdateAction(action.id, editingActionText.trim());
+                            onUpdateAction(action.id, editingActionText.trim(), action.cardId);
                           }
                           setEditingActionId(null);
                           setEditingActionText('');
@@ -1786,7 +1848,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
                         className="btn-remove-action"
                         onClick={() => {
                           if (window.confirm('Delete this action?')) {
-                            onDeleteAction(action.id);
+                            onDeleteAction(action.id, action.cardId);
                           }
                         }}
                         title="Delete action"

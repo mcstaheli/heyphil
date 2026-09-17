@@ -162,12 +162,17 @@ export async function restoreProject(id) {
 // ========== TASKS (JSONB in projects.tasks) ==========
 
 export async function addTask(projectId, text) {
+  // Same bare-parameter bug as toggleTask/updateTask: jsonb_build_object's
+  // variadic "any" args can't resolve $2's type without a cast. This broke
+  // adding ANY new checklist item to ANY card - not a latent/edge-case bug,
+  // a fully broken feature, verified directly against the DB before this
+  // fix (every call raised "could not determine data type of parameter $2").
   const result = await pool.query(`
     UPDATE projects
     SET tasks = tasks || jsonb_build_array(
       jsonb_build_object(
         'id', (SELECT COALESCE(MAX((task->>'id')::int), 0) + 1 FROM projects, jsonb_array_elements(tasks) task WHERE id = $1),
-        'text', $2,
+        'text', $2::text,
         'completed', false,
         'completedOn', null,
         'completedBy', null
@@ -211,13 +216,15 @@ export async function toggleTask(projectId, taskId, completed, userName) {
 }
 
 export async function updateTask(projectId, taskId, text) {
+  // Same bug as toggleTask: to_jsonb($3) with no cast leaves Postgres
+  // unable to resolve the polymorphic function's argument type.
   await pool.query(`
     UPDATE projects
     SET tasks = (
       SELECT jsonb_agg(
-        CASE 
+        CASE
           WHEN (task->>'id')::int = $2
-          THEN jsonb_set(task, '{text}', to_jsonb($3))
+          THEN jsonb_set(task, '{text}', to_jsonb($3::text))
           ELSE task
         END
       )
@@ -228,13 +235,19 @@ export async function updateTask(projectId, taskId, text) {
 }
 
 export async function deleteTask(projectId, taskId) {
+  // jsonb_agg over zero rows (deleting the last remaining task) returns SQL
+  // NULL, not an empty array. That NULL then poisons every future addTask
+  // for this project - `tasks || jsonb_build_array(...)` is itself NULL
+  // the moment either side is NULL, so the "add" silently no-ops forever
+  // after the "delete" of the last item. Verified directly: reproduced,
+  // then confirmed the COALESCE below fixes it.
   await pool.query(`
     UPDATE projects
-    SET tasks = (
+    SET tasks = COALESCE((
       SELECT jsonb_agg(task)
       FROM jsonb_array_elements(tasks) task
       WHERE (task->>'id')::int != $2
-    )
+    ), '[]'::jsonb)
     WHERE id = $1
   `, [projectId, taskId]);
 }
@@ -242,13 +255,15 @@ export async function deleteTask(projectId, taskId) {
 // ========== LINKS (JSONB in projects.links) ==========
 
 export async function addLink(projectId, title, url) {
+  // Same bare-parameter bug as addTask - broke adding ANY new link to ANY
+  // card (verified directly before this fix).
   const result = await pool.query(`
     UPDATE projects
     SET links = links || jsonb_build_array(
       jsonb_build_object(
         'id', (SELECT COALESCE(MAX((link->>'id')::int), 0) + 1 FROM projects, jsonb_array_elements(links) link WHERE id = $1),
-        'title', $2,
-        'url', $3
+        'title', $2::text,
+        'url', $3::text
       )
     )
     WHERE id = $1
@@ -258,13 +273,14 @@ export async function addLink(projectId, title, url) {
 }
 
 export async function deleteLink(projectId, linkId) {
+  // Same NULL-poisoning bug as deleteTask - see its comment.
   await pool.query(`
     UPDATE projects
-    SET links = (
+    SET links = COALESCE((
       SELECT jsonb_agg(link)
       FROM jsonb_array_elements(links) link
       WHERE (link->>'id')::int != $2
-    )
+    ), '[]'::jsonb)
     WHERE id = $1
   `, [projectId, linkId]);
 }
@@ -378,7 +394,9 @@ export async function getBoardData() {
     // their own (see addTask) - inject it here so the client's toggle/rename/
     // delete-action calls (which all key off action.cardId) have it to send.
     actions: (project.tasks || []).map(task => ({ ...task, cardId: project.id })),
-    links: project.links || [],
+    // Same gap as tasks: links carry no cardId of their own (see addLink),
+    // but the client's deleteLink call needs one.
+    links: (project.links || []).map(link => ({ ...link, cardId: project.id })),
     log: logsByProject[project.id] || []
   }));
   
