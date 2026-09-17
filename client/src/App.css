@@ -975,6 +975,11 @@ body {
 
 .card-action-item.starred {
   color: #7a5c00;
+  font-weight: 600;
+  background: #fff8e1;
+  border-radius: 4px;
+  margin: 0 -6px;
+  padding: 6px;
 }
 
 .star-toggle {
@@ -1062,6 +1067,16 @@ body {
 .modal-action-item:hover {
   border-color: #2196f3;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.modal-action-item.starred {
+  background: #fff8e1;
+  border-color: #f0d264;
+}
+
+.modal-action-item.starred .action-text {
+  font-weight: 600;
+  color: #7a5c00;
 }
 
 .modal-action-item input[type="checkbox"] {
