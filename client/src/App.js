@@ -15,6 +15,12 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 
 // Helper function to generate consistent colors for initials
+// Starred ("do or die") items float to the top; Array.prototype.sort is
+// stable, so equal-starred items keep whatever order they arrived in.
+function sortByStarred(actions) {
+  return [...actions].sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
+}
+
 function getInitialsColor(name) {
   const colors = [
     '#4285F4', // Blue
@@ -219,6 +225,8 @@ function OriginationBoard({ user, studioMode = false }) {
   const [showNewCard, setShowNewCard] = useState(false);
   const [newCardColumn, setNewCardColumn] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
+  const [quickAddTaskFor, setQuickAddTaskFor] = useState(null); // card id whose inline "+" quick-add input is open
+  const [quickAddTaskText, setQuickAddTaskText] = useState({}); // card id -> draft text
   const [draggedCard, setDraggedCard] = useState(null);
   const [filterOwner, setFilterOwner] = useState('');
   const [filterProjectType, setFilterProjectType] = useState('');
@@ -476,8 +484,13 @@ function OriginationBoard({ user, studioMode = false }) {
       dealValue: parseFloat(project.deal_value) || 0,
       dateCreated: project.date_created || new Date(),
       projectType: project.project_type || '',
-      actions: project.tasks || [],
-      links: project.links || []
+      project_id: project.id, // Self-reference, same as getBoardData - the card modal's "View Project" button and debug check both key off this.
+      // Tasks/links from the raw project row carry no cardId (see addTask/
+      // addLink) - inject it the same way getBoardData does, or a
+      // project:updated broadcast (e.g. from the Timeline editor) silently
+      // strips cardId back off every action/link on this card until reload.
+      actions: (project.tasks || []).map(task => ({ ...task, cardId: project.id })),
+      links: (project.links || []).map(link => ({ ...link, cardId: project.id }))
     });
 
     socketRef.current.on('project:created', ({ project }) => {
@@ -512,7 +525,8 @@ function OriginationBoard({ user, studioMode = false }) {
               cardId,
               text,
               completedOn: null,
-              completedBy: null
+              completedBy: null,
+              starred: false
             }]
           };
         }
@@ -526,7 +540,7 @@ function OriginationBoard({ user, studioMode = false }) {
         if (c.id === cardId) {
           return {
             ...c,
-            actions: (c.actions || []).map(a => 
+            actions: (c.actions || []).map(a =>
               a.id === actionId ? { ...a, completedOn, completedBy } : a
             )
           };
@@ -534,7 +548,22 @@ function OriginationBoard({ user, studioMode = false }) {
         return c;
       }));
     });
-    
+
+    socketRef.current.on('action:starred', ({ actionId, cardId, starred }) => {
+      console.log('📨 Action starred:', actionId, 'starred:', starred);
+      setCards(prevCards => prevCards.map(c => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            actions: (c.actions || []).map(a =>
+              a.id === actionId ? { ...a, starred } : a
+            )
+          };
+        }
+        return c;
+      }));
+    });
+
     socketRef.current.on('action:updated', ({ actionId, cardId, text }) => {
       console.log('📨 Action updated:', actionId);
       setCards(prevCards => prevCards.map(c => {
@@ -790,7 +819,7 @@ function OriginationBoard({ user, studioMode = false }) {
         headers: getAuthHeaders(),
         body: JSON.stringify({ actionId, completed, cardId, cardTitle })
       });
-      
+
       if (response.ok) {
         // State will be updated via Socket.io event
         // No need to manually update here anymore
@@ -799,7 +828,20 @@ function OriginationBoard({ user, studioMode = false }) {
       console.error('Failed to toggle action:', error);
     }
   };
-  
+
+  const toggleActionStar = async (actionId, starred, cardId) => {
+    try {
+      await apiFetch(`${API_BASE_URL}/api/origination/action/star`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ actionId, starred, cardId })
+      });
+      // State will be updated via the action:starred Socket.io event
+    } catch (error) {
+      console.error('Failed to star action:', error);
+    }
+  };
+
   const exportToCSV = async () => {
     try {
       const response = await apiFetch(`${API_BASE_URL}/api/origination/export`, {
@@ -1230,21 +1272,67 @@ function OriginationBoard({ user, studioMode = false }) {
                         </div>
                       )}
                       <div className="card-content">
-                        <h4>{card.title}</h4>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px' }}>
+                          <h4>{card.title}</h4>
+                          {!isPrePost && (
+                            <button
+                              type="button"
+                              className="card-quick-add-btn"
+                              title="Add a task"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setQuickAddTaskFor(quickAddTaskFor === card.id ? null : card.id);
+                              }}
+                            >+</button>
+                          )}
+                        </div>
                         {!isPrePost && card.dealValue > 0 && (
                           <div className="card-deal-value">${card.dealValue.toLocaleString()}</div>
                         )}
                         {!isPrePost && card.description && <p>{card.description}</p>}
                       </div>
                     </div>
+                    {quickAddTaskFor === card.id && (
+                      <div className="card-quick-add-row" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          autoFocus
+                          className="card-quick-add-input"
+                          placeholder="Add a task..."
+                          value={quickAddTaskText[card.id] || ''}
+                          onChange={(e) => setQuickAddTaskText(prev => ({ ...prev, [card.id]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const text = (quickAddTaskText[card.id] || '').trim();
+                              if (text) {
+                                addAction(card.id, card.title, text);
+                                setQuickAddTaskText(prev => ({ ...prev, [card.id]: '' }));
+                              }
+                            }
+                            if (e.key === 'Escape') {
+                              setQuickAddTaskFor(null);
+                            }
+                          }}
+                          onBlur={() => setQuickAddTaskFor(null)}
+                        />
+                      </div>
+                    )}
                     {!isPrePost && card.actions && card.actions.filter(a => !a.completedOn).length > 0 && (
                       <div className="card-actions-section">
-                        {card.actions.filter(a => !a.completedOn).slice(0, 3).map((action) => (
-                          <div key={action.id} className="card-action-item" onClick={(e) => {
+                        {sortByStarred(card.actions.filter(a => !a.completedOn)).slice(0, 3).map((action) => (
+                          <div key={action.id} className={`card-action-item ${action.starred ? 'starred' : ''}`} onClick={(e) => {
                             e.stopPropagation();
                             toggleAction(action.id, true, action.cardId, action.cardTitle);
                           }}>
                             <input type="checkbox" checked={false} readOnly />
+                            <span
+                              className="star-toggle"
+                              title={action.starred ? 'Unstar' : 'Mark as do-or-die'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleActionStar(action.id, !action.starred, action.cardId);
+                              }}
+                            >{action.starred ? '★' : '☆'}</span>
                             <span>{action.text}</span>
                           </div>
                         ))}
@@ -1269,6 +1357,7 @@ function OriginationBoard({ user, studioMode = false }) {
           columns={columns}
           initialColumn={newCardColumn}
           toggleAction={toggleAction}
+          onToggleActionStar={toggleActionStar}
           onAddAction={addAction}
           onUpdateAction={updateAction}
           onAddLink={addLink}
@@ -1313,6 +1402,7 @@ function OriginationBoard({ user, studioMode = false }) {
           }}
           columns={columns}
           toggleAction={toggleAction}
+          onToggleActionStar={toggleActionStar}
           onAddAction={addAction}
           onUpdateAction={updateAction}
           onDeleteAction={deleteAction}
@@ -1469,7 +1559,7 @@ function TrashModal({ deletedCards, onClose, onRestore, people, projectTypeColor
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, initialColumn, toggleAction, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode, onViewProject, currentUser }) {
+function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode, onViewProject, currentUser }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -1786,8 +1876,8 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
           <div className="action-items-section">
             {card && card.actions && card.actions.length > 0 && (
               <div className="modal-actions-list">
-                {[...card.actions].reverse().map((action, idx) => (
-                  <div key={action.id || idx} className={`modal-action-item ${action.completedOn ? 'completed' : ''}`}>
+                {sortByStarred([...card.actions].reverse()).map((action, idx) => (
+                  <div key={action.id || idx} className={`modal-action-item ${action.completedOn ? 'completed' : ''} ${action.starred ? 'starred' : ''}`}>
                     <input
                       type="checkbox"
                       checked={!!action.completedOn}
@@ -1799,6 +1889,16 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
                       }}
                       onClick={(e) => e.stopPropagation()}
                     />
+                    <span
+                      className="star-toggle"
+                      title={action.starred ? 'Unstar' : 'Mark as do-or-die'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onToggleActionStar) {
+                          onToggleActionStar(action.id, !action.starred, action.cardId);
+                        }
+                      }}
+                    >{action.starred ? '★' : '☆'}</span>
                     {editingActionId === action.id ? (
                       <input
                         type="text"

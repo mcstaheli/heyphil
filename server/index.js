@@ -1053,6 +1053,29 @@ app.post('/api/origination/action/toggle', requireAuth, async (req, res) => {
   }
 });
 
+// Star/unstar a "do or die" action item
+app.post('/api/origination/action/star', requireAuth, async (req, res) => {
+  try {
+    const { actionId, starred, cardId } = req.body;
+    if (!cardId) {
+      return res.status(400).json({ error: 'Project ID is required' });
+    }
+
+    await boardDb.toggleTaskStar(cardId, actionId, !!starred);
+
+    broadcastChange('action:starred', {
+      actionId,
+      cardId,
+      starred: !!starred
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to star action:', error);
+    res.status(500).json({ error: 'Failed to star action' });
+  }
+});
+
 // Add new action item (now adds to JSONB tasks)
 app.post('/api/origination/action', requireAuth, async (req, res) => {
   try {

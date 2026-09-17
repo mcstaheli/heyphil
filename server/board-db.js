@@ -175,7 +175,8 @@ export async function addTask(projectId, text) {
         'text', $2::text,
         'completed', false,
         'completedOn', null,
-        'completedBy', null
+        'completedBy', null,
+        'starred', false
       )
     )
     WHERE id = $1
@@ -213,6 +214,23 @@ export async function toggleTask(projectId, taskId, completed, userName) {
     )
     WHERE id = $1
   `, [projectId, taskId, completed, completed ? new Date().toISOString() : null, completed ? userName : null]);
+}
+
+export async function toggleTaskStar(projectId, taskId, starred) {
+  await pool.query(`
+    UPDATE projects
+    SET tasks = (
+      SELECT jsonb_agg(
+        CASE
+          WHEN (task->>'id')::int = $2
+          THEN jsonb_set(task, '{starred}', to_jsonb($3::boolean))
+          ELSE task
+        END
+      )
+      FROM jsonb_array_elements(tasks) task
+    )
+    WHERE id = $1
+  `, [projectId, taskId, starred]);
 }
 
 export async function updateTask(projectId, taskId, text) {

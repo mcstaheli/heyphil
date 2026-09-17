@@ -973,6 +973,69 @@ body {
   text-decoration: line-through;
 }
 
+.card-action-item.starred {
+  color: #7a5c00;
+}
+
+.star-toggle {
+  flex: 0 0 auto !important;
+  cursor: pointer;
+  font-size: 15px;
+  color: #ccc;
+  line-height: 1;
+}
+
+.star-toggle:hover {
+  color: #d4a017;
+}
+
+.card-action-item .star-toggle,
+.modal-action-item .star-toggle {
+  color: #ccc;
+}
+
+.card-action-item.starred .star-toggle,
+.modal-action-item.starred .star-toggle {
+  color: #d4a017;
+}
+
+.card-quick-add-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px dashed #bbb;
+  background: transparent;
+  color: #888;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.card-quick-add-btn:hover {
+  border-color: #2196f3;
+  color: #2196f3;
+}
+
+.card-quick-add-row {
+  padding: 6px 16px;
+  background: rgba(33, 150, 243, 0.05);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.card-quick-add-input {
+  width: 100%;
+  border: 1px solid #2196f3;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
 /* Modal actions list */
 .modal-actions-list {
   display: flex;
