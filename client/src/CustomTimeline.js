@@ -658,44 +658,39 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     saveTasks(updatedTasks);
   };
   
-  // Calculate what would change if we tighten all dependencies (0 day gaps)
+  // Calculate what would change if we tighten all dependencies (1 day gap,
+  // same "day after" rule enforced everywhere else - getMinStartDate is the
+  // single source of truth for it, reused here instead of recomputing it
+  // with a separate, stale copy of the logic that previously allowed a
+  // 0-day gap and let a tightened item land ON its dependency's last day).
   const calculateTightenChanges = () => {
     const changes = [];
-    
+
     tasks.forEach(task => {
       if (!task.dependencies || task.dependencies.length === 0) return;
       if (task.type === 'phase') return; // Skip phases
-      
-      // Calculate minimum start date (latest dependency end + 1 day)
-      const latestEndDate = task.dependencies.reduce((latest, depId) => {
-        const depTask = tasks.find(t => t.id === depId);
-        if (!depTask) return latest;
-        
-        const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') 
-          ? new Date(depTask.date) 
-          : new Date(depTask.end);
-        return depEnd > latest ? depEnd : latest;
-      }, new Date(0));
-      
-      // Allow tasks to start on the same day dependency ends (no buffer)
-      
+
+      const minDateStr = getMinStartDate(task);
+      if (!minDateStr) return;
+      const minDate = parseLocalDate(minDateStr);
+
       const currentStart = (task.type === 'milestone' || task.type === 'event')
-        ? new Date(task.date)
-        : new Date(task.start);
-      
+        ? parseLocalDate(task.date)
+        : parseLocalDate(task.start);
+
       // If there's a gap, this task can be tightened
-      if (currentStart > latestEndDate) {
-        const gapDays = getDaysBetween(latestEndDate, currentStart);
-        
+      if (currentStart > minDate) {
+        const gapDays = getDaysBetween(minDate, currentStart);
+
         const newDates = {};
         if (task.type === 'milestone' || task.type === 'event') {
-          newDates.date = latestEndDate.toISOString().split('T')[0];
+          newDates.date = minDateStr;
         } else {
-          const duration = getDaysBetween(new Date(task.start), new Date(task.end)) + 1;
-          const newEnd = new Date(latestEndDate);
+          const duration = getDaysBetween(parseLocalDate(task.start), parseLocalDate(task.end)) + 1;
+          const newEnd = new Date(minDate);
           newEnd.setDate(newEnd.getDate() + duration - 1);
-          
-          newDates.start = latestEndDate.toISOString().split('T')[0];
+
+          newDates.start = minDateStr;
           newDates.end = newEnd.toISOString().split('T')[0];
         }
         
@@ -2305,15 +2300,15 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                                 {' • '}
                                 {change.taskType === 'milestone' || change.taskType === 'event' ? (
                                   <>
-                                    {new Date(change.currentDates.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    {parseLocalDate(change.currentDates.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                     {' → '}
-                                    {new Date(change.newDates.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    {parseLocalDate(change.newDates.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                   </>
                                 ) : (
                                   <>
-                                    {new Date(change.currentDates.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    {parseLocalDate(change.currentDates.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                     {' → '}
-                                    {new Date(change.newDates.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    {parseLocalDate(change.newDates.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                   </>
                                 )}
                               </div>
