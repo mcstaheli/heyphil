@@ -378,9 +378,9 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const calculateTimelineRange = () => {
     const dates = tasks.flatMap(task => {
       if (task.type === 'milestone' || task.type === 'event') {
-        return [new Date(task.date)];
+        return [parseLocalDate(task.date)];
       }
-      return [new Date(task.start), new Date(task.end)];
+      return [parseLocalDate(task.start), parseLocalDate(task.end)];
     });
 
     const minDate = new Date(Math.min(...dates));
@@ -441,11 +441,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     
     let startDate, endDate;
     if (task.type === 'milestone' || task.type === 'event') {
-      startDate = new Date(task.date);
-      endDate = new Date(task.date);
+      startDate = parseLocalDate(task.date);
+      endDate = parseLocalDate(task.date);
     } else {
-      startDate = new Date(task.start);
-      endDate = new Date(task.end);
+      startDate = parseLocalDate(task.start);
+      endDate = parseLocalDate(task.end);
     }
     
     // Normalize to start of day
@@ -455,7 +455,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     const startOffset = getDaysBetween(timelineRange.start, startDate);
     const duration = (task.type === 'milestone' || task.type === 'event') ? 1 : getDaysBetween(startDate, endDate) + 1;
 
-    const leftPercent = (startOffset / totalDays) * 100;
+    // Milestones/events are a single point rendered as a marker centered on
+    // their own day column. `startOffset` is the column's LEFT edge - which
+    // is exactly where a same-day dependency's bar-end boundary lands - so
+    // without the +0.5 day, the marker's own width visually overlaps into
+    // the dependency's last day even though the underlying date is correct.
+    const isPoint = task.type === 'milestone' || task.type === 'event';
+    const leftPercent = ((isPoint ? startOffset + 0.5 : startOffset) / totalDays) * 100;
     const widthPercent = (duration / totalDays) * 100;
 
     return { left: leftPercent, width: widthPercent };
@@ -463,17 +469,32 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
   const formatDate = (date, prevDate = null, format = 'short') => {
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const weekdayLetters = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
     const isMonthStart = !prevDate || date.getMonth() !== prevDate.getMonth();
-    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isToday = date.getTime() === today.getTime();
+
     if (format === 'short') {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
-          {isMonthStart && (
+          {isMonthStart ? (
             <div style={{ fontSize: '10px', color: '#667eea', fontWeight: '700', marginBottom: '2px' }}>
               {monthNames[date.getMonth()]}
             </div>
+          ) : (
+            <div style={{ fontSize: '9px', color: '#adb5bd', fontWeight: '600', marginBottom: '2px' }}>
+              {weekdayLetters[date.getDay()]}
+            </div>
           )}
-          <div style={{ fontSize: '13px', fontWeight: '600' }}>{date.getDate()}</div>
+          <div style={{
+            fontSize: '13px',
+            fontWeight: isToday ? '700' : '600',
+            color: isToday ? '#667eea' : 'inherit',
+            ...(isToday ? { background: '#e0e7ff', borderRadius: '9px', padding: '0 6px' } : {})
+          }}>
+            {date.getDate()}
+          </div>
         </div>
       );
     }
@@ -1063,7 +1084,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               <span title="Zoom">🔍</span>
               <input
                 type="range"
-                min="14"
+                min="24"
                 max="80"
                 step="2"
                 value={dayWidth}
@@ -1212,6 +1233,15 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     return { backgroundColor: '#f9fafb' };
                   }
                   
+                  // Milestone rows get a light orange tint to set them apart -
+                  // checked before the phase/child-task CSS classes below,
+                  // since a milestone nested in a section is also a
+                  // "child-task" and that class's background would otherwise
+                  // win the cascade and silently hide this highlight.
+                  if (task.type === 'milestone') {
+                    return { backgroundColor: '#ffedd5' };
+                  }
+
                   // Otherwise, phase rows get their tinted background
                   if (task.type === 'phase' && task.color) {
                     const hex = task.color.replace('#', '');
