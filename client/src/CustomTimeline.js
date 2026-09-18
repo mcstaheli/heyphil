@@ -969,25 +969,32 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
 
         const fromPos = getTaskPosition(depTask);
         const toPos = getTaskPosition(task);
+        // A milestone/event's `left` is the CENTER of its day column (it's
+        // rendered as a diamond centered on a point, not a bar spanning a
+        // range - see getTaskPosition), unlike a task/phase bar's `left`,
+        // which is its actual left edge. Anchoring an arrow to a point
+        // task needs a fixed pixel nudge off that center to reach the
+        // diamond's actual rendered edge (applied in pixel space below,
+        // after the percent->pixel conversion, since the diamond's size is
+        // fixed regardless of zoom); anchoring to a bar just uses its edge
+        // directly, same as before.
+        const fromIsPoint = depTask.type === 'milestone' || depTask.type === 'event';
+        const toIsPoint = task.type === 'milestone' || task.type === 'event';
 
         // Calculate row positions (50px per row)
         const fromY = depIndex * 50 + 25;
         const toY = taskIndex * 50 + 25;
 
         arrows.push({
-          fromX: fromPos.left + fromPos.width,
+          fromX: fromIsPoint ? fromPos.left : fromPos.left + fromPos.width,
           fromY: fromY,
           toX: toPos.left,
           toY: toY,
           fromTask: depTask.name,
           toTask: task.name,
           color: getArrowColor(depTask),
-          // A dependency spanning many rows crosses over a lot of
-          // unrelated content on its way (including other sections' wide
-          // outline bars) - dashing it signals "long-range" and keeps it
-          // visually quieter than the short, solid, easy-to-trace lines
-          // between adjacent rows.
-          longRange: Math.abs(taskIndex - depIndex) > 3
+          fromIsPoint,
+          toIsPoint
         });
       });
     });
@@ -1816,8 +1823,16 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                   ))}
                 </defs>
                 {dependencyArrows.map((arrow, i) => {
-                const x1 = (arrow.fromX / 100) * gridWidth;
-                const x2 = (arrow.toX / 100) * gridWidth;
+                // Fixed pixel half-width of the 26px rotated-square diamond
+                // (26 * sqrt(2) / 2 ~= 18.4px), independent of zoom - the
+                // percent-based from/to X only gets us to the diamond's
+                // CENTER, so a point endpoint needs this nudged onto its
+                // actual rendered edge before building the path.
+                const DIAMOND_EDGE = 18;
+                let x1 = (arrow.fromX / 100) * gridWidth;
+                let x2 = (arrow.toX / 100) * gridWidth;
+                if (arrow.fromIsPoint) x1 += DIAMOND_EDGE;
+                if (arrow.toIsPoint) x2 -= DIAMOND_EDGE;
                 const y1 = arrow.fromY + 40; // offset for header
                 const y2 = arrow.toY + 40;
                 const pathData = buildDependencyPath(x1, y1, x2, y2);
@@ -1827,10 +1842,9 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                     <path
                       d={pathData}
                       stroke={arrow.color}
-                      strokeWidth={arrow.longRange ? '1.5' : '2'}
-                      strokeDasharray={arrow.longRange ? '5 4' : undefined}
+                      strokeWidth="2"
                       fill="none"
-                      opacity={arrow.longRange ? 0.4 : 0.6}
+                      opacity="0.6"
                       markerEnd={`url(#dep-arrowhead-${i})`}
                     />
                   </g>
@@ -1919,7 +1933,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                           const r = parseInt(hex.substring(0, 2), 16);
                           const g = parseInt(hex.substring(2, 4), 16);
                           const b = parseInt(hex.substring(4, 6), 16);
-                          return `rgba(${r}, ${g}, ${b}, 0.15)`;
+                          return `rgba(${r}, ${g}, ${b}, 0.08)`;
                         })() : getTaskColor(task)),
                         border: isPhase ? `1px solid ${getTaskColor(task)}` : 'none',
                         borderLeftColor: isPhase ? getTaskColor(task) : (hasDependencies && !isPhase ? 'rgba(0, 0, 0, 0.2)' : 'transparent'),
@@ -1930,20 +1944,8 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                         // The default 30px row height + overflow:hidden (below)
                         // would clip a rotated-square diamond's corners, which
                         // extend past its own 26px width/height once rotated.
-                        // Phases need it visible too, so their bracket-end legs
-                        // (below) can extend past the shrunk 10px bar height.
-                        overflow: (isMilestone || isPhase) ? 'visible' : 'hidden',
-                        boxShadow: isMilestone ? 'none' : undefined,
-                        // Sections render as a thin "summary bar" (bracket ends
-                        // added below) instead of a full-height filled block -
-                        // the old full-height fill was what made every
-                        // dependency line crossing through a section's row
-                        // look like it was cutting through solid content,
-                        // no matter how the line itself was routed. Shrinking
-                        // the shape it crosses fixes that at the source, and
-                        // matches how MS Project/Smartsheet distinguish a
-                        // summary row from an actual task bar.
-                        ...(isPhase ? { height: '6px', borderRadius: '1px' } : {})
+                        overflow: isMilestone ? 'visible' : 'hidden',
+                        boxShadow: isMilestone ? 'none' : undefined
                       }}
                       onMouseDown={handleMouseDown}
                       onClick={handleBarClick}
@@ -1959,12 +1961,6 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                         });
                       }}
                     >
-                      {isPhase && (
-                        <>
-                          <div style={{ position: 'absolute', left: 0, top: 0, width: '2px', height: '14px', backgroundColor: getTaskColor(task) }} />
-                          <div style={{ position: 'absolute', right: 0, top: 0, width: '2px', height: '14px', backgroundColor: getTaskColor(task) }} />
-                        </>
-                      )}
                       {isMilestone && (
                         <div
                           className="event-diamond"
