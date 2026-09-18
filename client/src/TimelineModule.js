@@ -143,93 +143,88 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
 
   return (
     <div className="timeline-module">
-      <div className="hero-tile-row">
-        <div className="hero-tile-wrapper">
-          <div className="hero-tile-label">Days Remaining</div>
-          <div className="hero-tile">
-            {finalLiveMilestone && (
-              <div className="hero-tile-sublabel">
-                {finalLiveMilestone.name} · {formatDate(finalLiveMilestone.date)}
+      <div className="hero-row-with-toggle">
+        <div className="hero-tile-row">
+          <div className="hero-tile-wrapper">
+            <div className="hero-tile-label">Days Remaining</div>
+            <div className="hero-tile">
+              {finalLiveMilestone && <div className="hero-tile-sublabel">{finalLiveMilestone.name}</div>}
+              <div className={`hero-tile-value ${daysRemaining !== null && daysRemaining < 0 ? 'over' : ''}`}>
+                {daysRemaining === null
+                  ? '—'
+                  : daysRemaining < 0
+                    ? `${Math.abs(daysRemaining)} day${Math.abs(daysRemaining) === 1 ? '' : 's'} overdue`
+                    : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`}
               </div>
-            )}
-            <div className={`hero-tile-value ${daysRemaining !== null && daysRemaining < 0 ? 'over' : ''}`}>
-              {daysRemaining === null
-                ? '—'
-                : daysRemaining < 0
-                  ? `${Math.abs(daysRemaining)} day${Math.abs(daysRemaining) === 1 ? '' : 's'} overdue`
-                  : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`}
+              {finalLiveMilestone && <div className="hero-tile-subdate">{formatDate(finalLiveMilestone.date)}</div>}
             </div>
           </div>
-        </div>
-        <div className="hero-tile-wrapper">
-          <div className="hero-tile-label">Slippage</div>
-          <div className="hero-tile">
-            {finalComparison && (
-              <div className="hero-tile-sublabel">
-                {finalComparison.name} · {formatDate(finalComparison.liveDate)}
+          <div className="hero-tile-wrapper">
+            <div className="hero-tile-label">Slippage</div>
+            <div className="hero-tile">
+              {finalComparison && <div className="hero-tile-sublabel">{finalComparison.name}</div>}
+              <div className={`hero-tile-value ${finalComparison ? deltaClass(finalComparison.slippageDays) : ''}`}>
+                {finalComparison
+                  ? `${finalComparison.slippageDays > 0 ? '+' : ''}${finalComparison.slippageDays} day${Math.abs(finalComparison.slippageDays) === 1 ? '' : 's'}`
+                  : '—'}
               </div>
-            )}
-            <div className={`hero-tile-value ${finalComparison ? deltaClass(finalComparison.slippageDays) : ''}`}>
-              {finalComparison
-                ? `${finalComparison.slippageDays > 0 ? '+' : ''}${finalComparison.slippageDays} day${Math.abs(finalComparison.slippageDays) === 1 ? '' : 's'}`
-                : '—'}
+              {finalComparison && <div className="hero-tile-subdate">{formatDate(finalComparison.liveDate)}</div>}
+            </div>
+          </div>
+          <div className="hero-tile-wrapper">
+            <div className="hero-tile-label">Next Milestone</div>
+            <div className="hero-tile">
+              {nextMilestone && <div className="hero-tile-sublabel">{nextMilestone.name}</div>}
+              <div className="hero-tile-value hero-tile-value-text">
+                {nextMilestone ? formatDate(nextMilestone.date) : '—'}
+              </div>
+            </div>
+          </div>
+          <div className="hero-tile-wrapper">
+            <div className="hero-tile-label">Milestones On Track</div>
+            <div className="hero-tile">
+              <div className="hero-tile-value">
+                {comparisons.length ? `${onTrackCount} of ${comparisons.length}` : '—'}
+              </div>
+            </div>
+          </div>
+          <div className="hero-tile-wrapper">
+            <div className="hero-tile-label">% Complete</div>
+            <div className="hero-tile">
+              <div className="hero-tile-value">{pctComplete !== null ? `${pctComplete}%` : '—'}</div>
             </div>
           </div>
         </div>
-        <div className="hero-tile-wrapper">
-          <div className="hero-tile-label">Next Milestone</div>
-          <div className="hero-tile">
-            {nextMilestone && <div className="hero-tile-sublabel">{nextMilestone.name}</div>}
-            <div className="hero-tile-value hero-tile-value-text">
-              {nextMilestone ? formatDate(nextMilestone.date) : '—'}
-            </div>
-          </div>
-        </div>
-        <div className="hero-tile-wrapper">
-          <div className="hero-tile-label">Milestones On Track</div>
-          <div className="hero-tile">
-            <div className="hero-tile-value">
-              {comparisons.length ? `${onTrackCount} of ${comparisons.length}` : '—'}
-            </div>
-          </div>
-        </div>
-        <div className="hero-tile-wrapper">
-          <div className="hero-tile-label">% Complete</div>
-          <div className="hero-tile">
-            <div className="hero-tile-value">{pctComplete !== null ? `${pctComplete}%` : '—'}</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="budget-module-header">
-        <div className="budget-hero-label">
-          {activeLock ? `Vs. ${lockLabel(activeLock)}` : 'No timeline locked yet'}
-        </div>
-        <div className="budget-module-actions">
-          {locks.length > 0 && (
-            <select
-              className="budget-lock-picker"
-              value={activeLock ? activeLock.id : ''}
-              onChange={(e) => setSelectedLockId(e.target.value)}
-            >
-              {locks.slice().reverse().map((lock) => (
-                <option key={lock.id} value={lock.id}>{lockLabel(lock)}</option>
-              ))}
-            </select>
-          )}
-          <button
-            type="button"
-            className="module-expand-btn"
-            onClick={onToggleExpanded}
-            title={expanded ? 'Collapse details' : 'Expand details'}
-          >
-            {expanded ? '▾' : '▸'}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="module-expand-btn"
+          onClick={onToggleExpanded}
+          title={expanded ? 'Collapse details' : 'Expand details'}
+        >
+          {expanded ? '▾' : '▸'}
+        </button>
       </div>
 
       {expanded && (
         <>
+          <div className="budget-module-header">
+            <div className="budget-hero-label">
+              {activeLock ? `Vs. ${lockLabel(activeLock)}` : 'No timeline locked yet'}
+            </div>
+            <div className="budget-module-actions">
+              {locks.length > 0 && (
+                <select
+                  className="budget-lock-picker"
+                  value={activeLock ? activeLock.id : ''}
+                  onChange={(e) => setSelectedLockId(e.target.value)}
+                >
+                  {locks.slice().reverse().map((lock) => (
+                    <option key={lock.id} value={lock.id}>{lockLabel(lock)}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
           <div className="budget-detail-actions">
             <button
               type="button"

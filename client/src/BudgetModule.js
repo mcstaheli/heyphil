@@ -262,62 +262,63 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
 
   return (
     <div className="budget-module">
-      <div className="hero-tile-row">
-        <div className="hero-tile-wrapper">
-          <div className="hero-tile-label">Total Budget</div>
-          <div className="hero-tile">
-            <div className="hero-tile-value">{formatMoney(totalBudget)}</div>
+      <div className="hero-row-with-toggle">
+        <div className="hero-tile-row">
+          <div className="hero-tile-wrapper">
+            <div className="hero-tile-label">Total Budget</div>
+            <div className="hero-tile">
+              <div className="hero-tile-value">{formatMoney(totalBudget)}</div>
+            </div>
+          </div>
+          <div className="hero-tile-wrapper">
+            <div className="hero-tile-label">Total Actual</div>
+            <div className="hero-tile">
+              <div className="hero-tile-value">{formatMoney(totalActual)}</div>
+            </div>
+          </div>
+          <div className="hero-tile-wrapper">
+            <div className="hero-tile-label">Δ $</div>
+            <div className="hero-tile">
+              <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaDollarText}</div>
+            </div>
+          </div>
+          <div className="hero-tile-wrapper">
+            <div className="hero-tile-label">Δ %</div>
+            <div className="hero-tile">
+              <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaPctText}</div>
+            </div>
           </div>
         </div>
-        <div className="hero-tile-wrapper">
-          <div className="hero-tile-label">Total Actual</div>
-          <div className="hero-tile">
-            <div className="hero-tile-value">{formatMoney(totalActual)}</div>
-          </div>
-        </div>
-        <div className="hero-tile-wrapper">
-          <div className="hero-tile-label">Δ $</div>
-          <div className="hero-tile">
-            <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaDollarText}</div>
-          </div>
-        </div>
-        <div className="hero-tile-wrapper">
-          <div className="hero-tile-label">Δ %</div>
-          <div className="hero-tile">
-            <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaPctText}</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="budget-module-header">
-        <div className="budget-hero-label">
-          {activeLock ? `Vs. ${lockLabel(activeLock)}` : 'No budget locked yet'}
-        </div>
-        <div className="budget-module-actions">
-          {locks.length > 0 && (
-            <select
-              className="budget-lock-picker"
-              value={activeLock ? activeLock.id : ''}
-              onChange={(e) => setSelectedLockId(e.target.value)}
-            >
-              {locks.slice().reverse().map((lock) => (
-                <option key={lock.id} value={lock.id}>{lockLabel(lock)}</option>
-              ))}
-            </select>
-          )}
-          <button
-            type="button"
-            className="module-expand-btn"
-            onClick={onToggleExpanded}
-            title={expanded ? 'Collapse details' : 'Expand details'}
-          >
-            {expanded ? '▾' : '▸'}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="module-expand-btn"
+          onClick={onToggleExpanded}
+          title={expanded ? 'Collapse details' : 'Expand details'}
+        >
+          {expanded ? '▾' : '▸'}
+        </button>
       </div>
 
       {expanded && (
         <>
+          <div className="budget-module-header">
+            <div className="budget-hero-label">
+              {activeLock ? `Vs. ${lockLabel(activeLock)}` : 'No budget locked yet'}
+            </div>
+            <div className="budget-module-actions">
+              {locks.length > 0 && (
+                <select
+                  className="budget-lock-picker"
+                  value={activeLock ? activeLock.id : ''}
+                  onChange={(e) => setSelectedLockId(e.target.value)}
+                >
+                  {locks.slice().reverse().map((lock) => (
+                    <option key={lock.id} value={lock.id}>{lockLabel(lock)}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
           <div className="budget-detail-actions">
             <button type="button" className="btn-secondary" onClick={() => setPasteOpen((o) => !o)}>
               📋 Paste from Excel
