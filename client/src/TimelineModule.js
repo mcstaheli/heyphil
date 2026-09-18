@@ -164,14 +164,6 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
           )}
           <button
             type="button"
-            className="btn-primary"
-            onClick={() => setLockPromptOpen((o) => !o)}
-            disabled={locking || milestoneCount === 0}
-          >
-            🔒 Lock Timeline
-          </button>
-          <button
-            type="button"
             className="module-expand-btn"
             onClick={onToggleExpanded}
             title={expanded ? 'Collapse details' : 'Expand details'}
@@ -181,33 +173,46 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
         </div>
       </div>
 
-      {lockPromptOpen && (
-        <div className="budget-paste-box">
-          <p>Name this locked baseline (optional) - helps tell it apart from other locks later. Past locks stay saved and can still be viewed.</p>
-          <input
-            type="text"
-            className="budget-lock-name-input"
-            value={lockNameDraft}
-            onChange={(e) => setLockNameDraft(e.target.value)}
-            placeholder={`e.g. "Original Schedule" (defaults to ${formatDateTime(new Date().toISOString())})`}
-            autoFocus
-            onKeyDown={(e) => { if (e.key === 'Enter') handleLock(); }}
-          />
-          <div className="budget-paste-actions">
-            <button type="button" className="btn-secondary" onClick={() => { setLockPromptOpen(false); setLockNameDraft(''); }}>
-              Cancel
-            </button>
-            <button type="button" className="btn-primary" onClick={handleLock} disabled={locking}>
+      {expanded && (
+        <>
+          <div className="budget-detail-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setLockPromptOpen((o) => !o)}
+              disabled={locking || milestoneCount === 0}
+            >
               🔒 Lock Timeline
             </button>
           </div>
-        </div>
-      )}
 
-      {expanded && (
-        <div className="timeline-full-section">
-          <CustomTimeline projectId={projectId} compact={false} people={people} />
-        </div>
+          {lockPromptOpen && (
+            <div className="budget-paste-box">
+              <p>Name this locked baseline (optional) - helps tell it apart from other locks later. Past locks stay saved and can still be viewed.</p>
+              <input
+                type="text"
+                className="budget-lock-name-input"
+                value={lockNameDraft}
+                onChange={(e) => setLockNameDraft(e.target.value)}
+                placeholder={`e.g. "Original Schedule" (defaults to ${formatDateTime(new Date().toISOString())})`}
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLock(); }}
+              />
+              <div className="budget-paste-actions">
+                <button type="button" className="btn-secondary" onClick={() => { setLockPromptOpen(false); setLockNameDraft(''); }}>
+                  Cancel
+                </button>
+                <button type="button" className="btn-primary" onClick={handleLock} disabled={locking}>
+                  🔒 Lock Timeline
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="timeline-full-section">
+            <CustomTimeline projectId={projectId} compact={false} people={people} />
+          </div>
+        </>
       )}
     </div>
   );

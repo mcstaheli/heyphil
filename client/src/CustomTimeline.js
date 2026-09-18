@@ -520,6 +520,21 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     setEditingTask({ ...newTask, isNew: true });
   };
 
+  const addMilestone = () => {
+    const newMilestone = {
+      id: String(Date.now()),
+      name: 'New Milestone',
+      type: 'milestone',
+      date: new Date().toISOString().split('T')[0],
+      dependencies: [],
+      parentId: null
+    };
+    const updatedTasks = [...tasks, newMilestone];
+    setTasks(updatedTasks);
+    saveTasks(updatedTasks);
+    setEditingTask({ ...newMilestone, isNew: true });
+  };
+
   const addPhase = (event) => {
     const newPhase = {
       id: String(Date.now()),
@@ -1039,27 +1054,67 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         </div>
       )}
 
+      {!compact && tasks.length === 0 && (
+        <div style={{ padding: '8px 16px', fontSize: '12px', color: '#64748b', fontStyle: 'italic', background: '#fffbeb', borderBottom: '1px solid #fde68a' }}>
+          Start with the milestone you're working toward, then add tasks that lead up to it
+        </div>
+      )}
+
       <div className="timeline-container">
         {/* Task List Column */}
         <div className="timeline-tasks-column">
           <div className="timeline-header-cell">
             {!compact && (
-              <button 
-                onClick={(e) => addPhase(e)} 
-                style={{
-                  padding: '4px 10px',
-                  background: '#667eea',
-                  border: 'none',
-                  borderRadius: '4px',
-                  color: 'white',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  cursor: 'pointer'
-                }}
-                title="Add new section"
-              >
-                New Section
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  onClick={() => addMilestone()}
+                  style={{
+                    padding: '4px 10px',
+                    background: '#f59e0b',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: 'white',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                  title="Add new milestone"
+                >
+                  🏁 New Milestone
+                </button>
+                <button
+                  onClick={(e) => addPhase(e)}
+                  style={{
+                    padding: '4px 10px',
+                    background: '#667eea',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: 'white',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                  title="Add new section"
+                >
+                  New Section
+                </button>
+                <button
+                  onClick={() => addTask()}
+                  style={{
+                    padding: '4px 10px',
+                    background: 'white',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '4px',
+                    color: '#475569',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                  title="Add new item"
+                >
+                  New Item
+                </button>
+              </div>
             )}
           </div>
           {displayTasks.map((task, taskIndex) => {
@@ -1710,7 +1765,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
               </label>
             )}
 
-            {editingTask.type !== 'event' && editingTask.type !== 'phase' && (
+            {editingTask.type !== 'event' && editingTask.type !== 'phase' && editingTask.type !== 'milestone' && (
               <>
                 <label>
                   Start Date:
