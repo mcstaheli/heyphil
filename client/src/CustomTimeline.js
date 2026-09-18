@@ -3,7 +3,7 @@ import './CustomTimeline.css';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
-function CustomTimeline({ projectId, compact = false, people = {} }) {
+function CustomTimeline({ projectId, compact = false, people = {}, activeLock = null }) {
   // Debug people data
   useEffect(() => {
     console.log('CustomTimeline received people prop:', people);
@@ -915,27 +915,41 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   
   const displayTasks = organizeHierarchy();
   
+  // A milestone/event always renders orange regardless of which section
+  // it belongs to (getTaskColor), so coloring an arrow by its raw source
+  // task made every dependency chained off a milestone look identical -
+  // usually the majority of cross-section arrows, since a section's final
+  // milestone is what the next section typically depends on. Coloring by
+  // the source's OWNING SECTION instead keeps that distinction visible.
+  const getArrowColor = (sourceTask) => {
+    if (sourceTask.parentId) {
+      const parent = tasks.find((t) => t.id === sourceTask.parentId);
+      if (parent && parent.type === 'phase' && parent.color) return parent.color;
+    }
+    return getTaskColor(sourceTask);
+  };
+
   // Calculate dependency arrow positions
   const getDependencyArrows = () => {
     const arrows = [];
-    
+
     displayTasks.forEach((task, taskIndex) => {
       if (!task.dependencies || task.dependencies.length === 0) return;
-      
+
       task.dependencies.forEach(depId => {
         const depTask = tasks.find(t => t.id === depId);
         if (!depTask) return;
-        
+
         const depIndex = displayTasks.findIndex(t => t.id === depId);
         if (depIndex === -1) return;
-        
+
         const fromPos = getTaskPosition(depTask);
         const toPos = getTaskPosition(task);
-        
+
         // Calculate row positions (50px per row)
         const fromY = depIndex * 50 + 25;
         const toY = taskIndex * 50 + 25;
-        
+
         arrows.push({
           fromX: fromPos.left + fromPos.width,
           fromY: fromY,
@@ -943,7 +957,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           toY: toY,
           fromTask: depTask.name,
           toTask: task.name,
-          color: getTaskColor(depTask)
+          color: getArrowColor(depTask),
+          // A dependency spanning many rows crosses over a lot of
+          // unrelated content on its way (including other sections' wide
+          // outline bars) - dashing it signals "long-range" and keeps it
+          // visually quieter than the short, solid, easy-to-trace lines
+          // between adjacent rows.
+          longRange: Math.abs(taskIndex - depIndex) > 3
         });
       });
     });
@@ -1002,6 +1022,74 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
   // Get unique owners for filter
   const uniqueOwners = [...new Set(tasks.filter(t => t.owner).map(t => t.owner))].sort();
+
+  // --- Per-row slippage (vs. whichever lock TimelineModule's picker has
+  // active) ---------------------------------------------------------------
+  // Older locks only have `.milestones`, not a full `.tasks` snapshot, so
+  // this quietly renders nothing for those rather than erroring.
+  const lockedTasksById = new Map((activeLock?.tasks || []).map((t) => [t.id, t]));
+
+  // Signed day difference between two date-only strings - positive means
+  // `toIso` is later than `fromIso`. getDaysBetween (used for durations and
+  // bar positioning elsewhere in this file) always returns an unsigned
+  // value, since direction doesn't matter there; slippage needs the sign
+  // to tell an extension (red) from a pull-in (green).
+  const signedDaysBetween = (fromIso, toIso) => {
+    const ms = parseLocalDate(toIso) - parseLocalDate(fromIso);
+    return Math.round(ms / (1000 * 60 * 60 * 24));
+  };
+
+  // A section has no date of its own - live, it's derived from its
+  // children by calculatePhaseMetrics above. Its locked baseline needs the
+  // same aggregation run against the locked children instead.
+  const getLockedPhaseEnd = (phaseId) => {
+    const lockedChildren = (activeLock?.tasks || []).filter((t) => t.parentId === phaseId);
+    if (!lockedChildren.length) return null;
+    return lockedChildren.reduce((latest, c) => {
+      const d = (c.type === 'milestone' || c.type === 'event') ? c.date : c.end;
+      return (!latest || d > latest) ? d : latest;
+    }, null);
+  };
+
+  // Small red/green dot next to a task or section name showing it slipped
+  // or pulled in versus the active lock - null (nothing rendered) if
+  // there's no lock, the row didn't exist at lock time, or it's unchanged.
+  const renderSlippageDot = (task) => {
+    if (!activeLock) return null;
+
+    let liveEnd, lockedEnd;
+    if (task.type === 'phase') {
+      liveEnd = task.end;
+      lockedEnd = getLockedPhaseEnd(task.id);
+    } else {
+      const lockedTask = lockedTasksById.get(task.id);
+      if (!lockedTask) return null;
+      liveEnd = (task.type === 'milestone' || task.type === 'event') ? task.date : task.end;
+      lockedEnd = (lockedTask.type === 'milestone' || lockedTask.type === 'event') ? lockedTask.date : lockedTask.end;
+    }
+    if (!liveEnd || !lockedEnd) return null;
+
+    const delta = signedDaysBetween(lockedEnd, liveEnd);
+    if (delta === 0) return null;
+
+    const color = delta > 0 ? '#ef4444' : '#22c55e';
+    const lockName = activeLock.name || `locked ${new Date(activeLock.lockedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    const label = `${delta > 0 ? '+' : ''}${delta} day${Math.abs(delta) === 1 ? '' : 's'} vs "${lockName}"`;
+    return (
+      <span
+        title={label}
+        style={{
+          display: 'inline-block',
+          width: '7px',
+          height: '7px',
+          borderRadius: '50%',
+          backgroundColor: color,
+          marginLeft: '6px',
+          flexShrink: 0
+        }}
+      />
+    );
+  };
 
   return (
     <div className={`custom-timeline ${compact ? 'compact' : ''}`}>
@@ -1527,6 +1615,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
                     {task.name}
+                    {renderSlippageDot(task)}
                     {task.type === 'phase' && task.start && task.end && (
                       <span style={{ 
                         marginLeft: '8px', 
@@ -1686,9 +1775,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     <path
                       d={pathData}
                       stroke={arrow.color}
-                      strokeWidth="2"
+                      strokeWidth={arrow.longRange ? '1.5' : '2'}
+                      strokeDasharray={arrow.longRange ? '5 4' : undefined}
                       fill="none"
-                      opacity="0.55"
+                      opacity={arrow.longRange ? 0.4 : 0.6}
                       markerEnd={`url(#dep-arrowhead-${i})`}
                     />
                   </g>

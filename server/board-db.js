@@ -229,8 +229,10 @@ export async function lockProjectBudget(id, lockedBy, items, name) {
 // Same shape and same concurrency handling as lockProjectBudget (see its
 // comment): FOR UPDATE serializes concurrent locks on the row, and the
 // caller's own on-screen `tasks` (not whatever's last committed) is what
-// gets locked and persisted. Only milestone-type tasks are worth
-// snapshotting - slippage is measured on those, not phases/tasks/events.
+// gets locked and persisted. Snapshots the full task list (not just
+// milestones) so slippage can be reported per task/section, not just at
+// milestones - `milestones` is kept alongside as a lighter-weight,
+// already-filtered view for the existing hero-stat comparison code.
 export async function lockProjectTimeline(id, lockedBy, tasks, name) {
   const client = await pool.connect();
   try {
@@ -253,7 +255,8 @@ export async function lockProjectTimeline(id, lockedBy, tasks, name) {
       lockedBy: lockedBy || null,
       milestones: liveTasks
         .filter((t) => t.type === 'milestone')
-        .map((t) => ({ id: t.id, name: t.name, date: t.date }))
+        .map((t) => ({ id: t.id, name: t.name, date: t.date })),
+      tasks: liveTasks
     };
 
     const result = await client.query(

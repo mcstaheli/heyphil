@@ -248,7 +248,7 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
           )}
 
           <div className="timeline-full-section">
-            <CustomTimeline projectId={projectId} compact={false} people={people} />
+            <CustomTimeline projectId={projectId} compact={false} people={people} activeLock={activeLock} />
           </div>
         </>
       )}
