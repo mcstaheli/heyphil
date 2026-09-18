@@ -55,7 +55,7 @@
 
 /* Task List Column (Left Side) */
 .timeline-tasks-column {
-  width: 350px;
+  width: 400px;
   flex-shrink: 0;
   background: #f8f9fa;
   border-right: 2px solid #e9ecef;

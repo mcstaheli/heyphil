@@ -1051,10 +1051,11 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
     }, null);
   };
 
-  // Small red/green dot next to a task or section name showing it slipped
-  // or pulled in versus the active lock - null (nothing rendered) if
-  // there's no lock, the row didn't exist at lock time, or it's unchanged.
-  const renderSlippageDot = (task) => {
+  // Small red/green numbered badge next to a task/section's duration
+  // showing how many days it slipped or pulled in versus the active lock -
+  // null (nothing rendered) if there's no lock, the row didn't exist at
+  // lock time, or it's unchanged.
+  const renderSlippageBadge = (task) => {
     if (!activeLock) return null;
 
     let liveEnd, lockedEnd;
@@ -1072,22 +1073,26 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
     const delta = signedDaysBetween(lockedEnd, liveEnd);
     if (delta === 0) return null;
 
-    const color = delta > 0 ? '#ef4444' : '#22c55e';
+    const isOver = delta > 0;
     const lockName = activeLock.name || `locked ${new Date(activeLock.lockedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-    const label = `${delta > 0 ? '+' : ''}${delta} day${Math.abs(delta) === 1 ? '' : 's'} vs "${lockName}"`;
+    const label = `${isOver ? '+' : ''}${delta} day${Math.abs(delta) === 1 ? '' : 's'} vs "${lockName}"`;
     return (
       <span
         title={label}
         style={{
-          display: 'inline-block',
-          width: '7px',
-          height: '7px',
-          borderRadius: '50%',
-          backgroundColor: color,
-          marginLeft: '6px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          padding: '1px 6px',
+          borderRadius: '10px',
+          backgroundColor: isOver ? '#fee2e2' : '#dcfce7',
+          color: isOver ? '#dc2626' : '#16a34a',
+          fontSize: '10px',
+          fontWeight: '700',
           flexShrink: 0
         }}
-      />
+      >
+        {isOver ? '+' : ''}{delta}d
+      </span>
     );
   };
 
@@ -1550,13 +1555,14 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                             <div className="task-days-badge" style={{ minWidth: '32px' }}>
                               {days}
                             </div>
-                            <span style={{ 
-                              fontSize: '11px', 
+                            <span style={{
+                              fontSize: '11px',
                               color: '#9ca3af',
                               fontWeight: '500'
                             }}>
                               {days === 1 ? 'Day' : 'Days'}
                             </span>
+                            {renderSlippageBadge(task)}
                           </div>
                         )}
                       </div>
@@ -1615,16 +1621,18 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
                     {task.name}
-                    {renderSlippageDot(task)}
                     {task.type === 'phase' && task.start && task.end && (
-                      <span style={{ 
-                        marginLeft: '8px', 
-                        color: '#6c757d', 
+                      <span style={{
+                        marginLeft: '8px',
+                        color: '#6c757d',
                         fontSize: '11px',
                         fontWeight: '500'
                       }}>
                         ({getDaysBetween(new Date(task.start), new Date(task.end)) + 1} days)
                       </span>
+                    )}
+                    {task.type === 'phase' && (
+                      <span style={{ marginLeft: '6px' }}>{renderSlippageBadge(task)}</span>
                     )}
                     {task.type === 'phase' && collapsedPhases.has(task.id) && (
                       <span style={{ marginLeft: '8px', color: '#9ca3af', fontSize: '11px', fontStyle: 'italic' }}>
