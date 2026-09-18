@@ -263,21 +263,29 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
   return (
     <div className="budget-module">
       <div className="hero-tile-row">
-        <div className="hero-tile">
+        <div className="hero-tile-wrapper">
           <div className="hero-tile-label">Total Budget</div>
-          <div className="hero-tile-value">{formatMoney(totalBudget)}</div>
+          <div className="hero-tile">
+            <div className="hero-tile-value">{formatMoney(totalBudget)}</div>
+          </div>
         </div>
-        <div className="hero-tile">
+        <div className="hero-tile-wrapper">
           <div className="hero-tile-label">Total Actual</div>
-          <div className="hero-tile-value">{formatMoney(totalActual)}</div>
+          <div className="hero-tile">
+            <div className="hero-tile-value">{formatMoney(totalActual)}</div>
+          </div>
         </div>
-        <div className="hero-tile">
+        <div className="hero-tile-wrapper">
           <div className="hero-tile-label">Δ $</div>
-          <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaDollarText}</div>
+          <div className="hero-tile">
+            <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaDollarText}</div>
+          </div>
         </div>
-        <div className="hero-tile">
+        <div className="hero-tile-wrapper">
           <div className="hero-tile-label">Δ %</div>
-          <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaPctText}</div>
+          <div className="hero-tile">
+            <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaPctText}</div>
+          </div>
         </div>
       </div>
 
