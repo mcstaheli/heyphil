@@ -991,6 +991,10 @@ body {
 }
 
 .column-minimized .column-minimize-btn {
+  position: absolute;
+  bottom: 53px;
+  left: 50%;
+  transform: translateX(-50%);
   background: none;
   border: none;
   cursor: pointer;
