@@ -119,6 +119,22 @@ async function autoMigrate() {
   await runMigrationStep('projects needs_ic column', () => pool.query(`
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS needs_ic BOOLEAN NOT NULL DEFAULT false
   `));
+
+  // Budget vs. Actual tracking: `budget` holds the live, editable line
+  // items; `budget_locks` is an append-only history of frozen snapshots
+  // ("lock the budget" never overwrites a past lock, so a prior locked
+  // state stays viewable even after the team re-locks against new reality).
+  await runMigrationStep('projects budget_locks column', () => pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS budget_locks JSONB NOT NULL DEFAULT '[]'::jsonb
+  `));
+
+  // Same idea as budget_locks, for milestone slippage: `timeline` already
+  // holds the live Gantt tasks (including milestone-type ones);
+  // `timeline_locks` is an append-only history of frozen milestone dates
+  // to measure slippage against.
+  await runMigrationStep('projects timeline_locks column', () => pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS timeline_locks JSONB NOT NULL DEFAULT '[]'::jsonb
+  `));
 }
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
@@ -454,6 +470,70 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to update project:', error);
     res.status(500).json({ error: 'Failed to update project' });
+  }
+});
+
+// Replace the live budget line items (full array, same pattern as
+// tasks/links/timeline elsewhere in this app)
+app.put('/api/projects/:id/budget', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { items } = req.body;
+
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'items must be an array' });
+    }
+
+    const project = await boardDb.updateProjectBudget(id, items);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    broadcastChange('project:updated', { project });
+    res.json({ budget: project.budget });
+  } catch (error) {
+    console.error('Failed to update budget:', error);
+    res.status(500).json({ error: 'Failed to update budget' });
+  }
+});
+
+// Freeze the current budget (as sent by the client, i.e. exactly what's
+// on screen) as a new named point in history
+app.post('/api/projects/:id/budget/lock', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { items } = req.body;
+    const project = await boardDb.lockProjectBudget(id, req.user.name || req.user.email, items);
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    broadcastChange('project:updated', { project });
+    res.json({ budgetLocks: project.budget_locks });
+  } catch (error) {
+    console.error('Failed to lock budget:', error);
+    res.status(500).json({ error: 'Failed to lock budget' });
+  }
+});
+
+// Freeze the current milestone dates (as sent by the client) as a new
+// named point in history, for slippage reporting
+app.post('/api/projects/:id/timeline/lock', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tasks } = req.body;
+    const project = await boardDb.lockProjectTimeline(id, req.user.name || req.user.email, tasks);
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    broadcastChange('project:updated', { project });
+    res.json({ timelineLocks: project.timeline_locks });
+  } catch (error) {
+    console.error('Failed to lock timeline:', error);
+    res.status(500).json({ error: 'Failed to lock timeline' });
   }
 });
 

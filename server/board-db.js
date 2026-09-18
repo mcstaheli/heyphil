@@ -1,4 +1,5 @@
 // Database queries for Project Board (unified projects table)
+import { randomUUID } from 'crypto';
 import pool from './db.js';
 
 // ========== PROJECTS (unified with board cards) ==========
@@ -8,7 +9,7 @@ export async function getAllProjects() {
     SELECT
       id, title, description, status, owner, notes, project_type,
       deal_value, target_close, date_created, deleted_at,
-      budget, timeline, team, files, tasks, links, needs_ic,
+      budget, budget_locks, timeline, timeline_locks, team, files, tasks, links, needs_ic,
       created_at, updated_at
     FROM projects
     WHERE deleted_at IS NULL
@@ -22,7 +23,7 @@ export async function getProjectById(id) {
     SELECT
       id, title, description, status, owner, notes, project_type,
       deal_value, target_close, date_created, deleted_at,
-      budget, timeline, team, files, tasks, links, needs_ic,
+      budget, budget_locks, timeline, timeline_locks, team, files, tasks, links, needs_ic,
       created_at, updated_at
     FROM projects
     WHERE id = $1
@@ -139,6 +140,132 @@ export async function updateProject(id, updates) {
     values
   );
   return result.rows[0];
+}
+
+// Sum of a heading's direct child line items, for both budget and actual.
+// Headings never carry their own amount - it's always derived from their
+// children, so this is the one place that math has to happen.
+function resolveBudgetHeadingTotals(items) {
+  const childrenByParent = {};
+  for (const item of items) {
+    if (!item.isHeading && item.parentId) {
+      (childrenByParent[item.parentId] = childrenByParent[item.parentId] || []).push(item);
+    }
+  }
+  return items.map((item) => {
+    if (!item.isHeading) return item;
+    const kids = childrenByParent[item.id] || [];
+    return {
+      ...item,
+      amount: kids.reduce((sum, k) => sum + (Number(k.amount) || 0), 0),
+      actual: kids.reduce((sum, k) => sum + (Number(k.actual) || 0), 0)
+    };
+  });
+}
+
+// Overwrites the live budget line items wholesale (matches the existing
+// tasks/links/timeline pattern - the client sends the full array back,
+// there's no partial/id-targeted update). Returns the full row (or
+// undefined if the project doesn't exist) so the caller can 404 and
+// broadcast consistently with every other project mutation.
+export async function updateProjectBudget(id, items) {
+  const result = await pool.query(
+    `UPDATE projects SET budget = $2::jsonb WHERE id = $1 RETURNING *`,
+    [id, JSON.stringify(items || [])]
+  );
+  return result.rows[0];
+}
+
+// Appends a frozen snapshot to budget_locks. Never overwrites a prior
+// lock - that history is the whole point (see the migration comment in
+// index.js): if the plan changes enough that the story needs resetting,
+// the old locked state is still there to look back on.
+//
+// Two things that make this safe to call concurrently (e.g. a double
+// click, or two teammates locking the same project seconds apart):
+// - `SELECT ... FOR UPDATE` inside a transaction serializes concurrent
+//   lock calls on the same row, so the second one appends onto the
+//   first's result instead of racing it and silently dropping a lock.
+// - `items`, when the caller passes what's currently on screen, is what
+//   actually gets locked and persisted - not whatever the DB happens to
+//   have committed, which could still be behind an in-flight edit's save.
+export async function lockProjectBudget(id, lockedBy, items) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query(
+      `SELECT budget, budget_locks FROM projects WHERE id = $1 FOR UPDATE`,
+      [id]
+    );
+    if (!current.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const liveItems = Array.isArray(items) ? items : (current.rows[0].budget || []);
+    const locks = current.rows[0].budget_locks || [];
+    const lock = {
+      id: `lock_${randomUUID()}`,
+      lockedAt: new Date().toISOString(),
+      lockedBy: lockedBy || null,
+      items: resolveBudgetHeadingTotals(liveItems)
+    };
+
+    const result = await client.query(
+      `UPDATE projects SET budget = $2::jsonb, budget_locks = $3::jsonb WHERE id = $1 RETURNING *`,
+      [id, JSON.stringify(liveItems), JSON.stringify([...locks, lock])]
+    );
+    await client.query('COMMIT');
+    return result.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Same shape and same concurrency handling as lockProjectBudget (see its
+// comment): FOR UPDATE serializes concurrent locks on the row, and the
+// caller's own on-screen `tasks` (not whatever's last committed) is what
+// gets locked and persisted. Only milestone-type tasks are worth
+// snapshotting - slippage is measured on those, not phases/tasks/events.
+export async function lockProjectTimeline(id, lockedBy, tasks) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query(
+      `SELECT timeline, timeline_locks FROM projects WHERE id = $1 FOR UPDATE`,
+      [id]
+    );
+    if (!current.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const liveTasks = Array.isArray(tasks) ? tasks : (current.rows[0].timeline || []);
+    const locks = current.rows[0].timeline_locks || [];
+    const lock = {
+      id: `lock_${randomUUID()}`,
+      lockedAt: new Date().toISOString(),
+      lockedBy: lockedBy || null,
+      milestones: liveTasks
+        .filter((t) => t.type === 'milestone')
+        .map((t) => ({ id: t.id, name: t.name, date: t.date }))
+    };
+
+    const result = await client.query(
+      `UPDATE projects SET timeline = $2::jsonb, timeline_locks = $3::jsonb WHERE id = $1 RETURNING *`,
+      [id, JSON.stringify(liveTasks), JSON.stringify([...locks, lock])]
+    );
+    await client.query('COMMIT');
+    return result.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function deleteProject(id) {

@@ -1,16 +1,66 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { io } from 'socket.io-client';
 import './ProjectDetail.css';
-import CustomTimeline from './CustomTimeline';
+import BudgetModule from './BudgetModule';
+import TimelineModule from './TimelineModule';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 
 function ProjectDetail({ projectId, onClose, currentUser }) {
   const [project, setProject] = useState(null);
   const [activeModal, setActiveModal] = useState(null);
   const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
+  const [budgetExpanded, setBudgetExpanded] = useState(false);
+  const [timelineExpanded, setTimelineExpanded] = useState(true);
+  const socketRef = useRef(null);
 
   useEffect(() => {
     // Load project data
     loadData();
+  }, [projectId]);
+
+  // Keeps this page's own `timeline` snapshot in sync with CustomTimeline's
+  // own independent save cycle, so TimelineModule's hero-stat tiles don't
+  // go stale relative to whatever the Gantt chart actually shows after a
+  // drag/edit there. Deliberately does NOT sync `budget` the same way:
+  // BudgetModule lifts every keystroke into this page's state optimistically
+  // before it's saved, and blindly overwriting that from a broadcast would
+  // clobber in-progress, unsaved edits the moment any other update to this
+  // project came in - budget doesn't need it anyway, since nothing else
+  // independently mutates it the way CustomTimeline mutates timeline.
+  useEffect(() => {
+    if (!projectId) return;
+    socketRef.current = io(WS_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 10
+    });
+
+    // Re-syncing on every connect (including reconnects after a dropped
+    // connection - a laptop sleeping, flaky wifi) closes the gap where a
+    // missed broadcast would otherwise leave the hero tiles stale forever.
+    // Scoped to timeline only, same as the broadcast handler below and for
+    // the same reason - a full fetchProject() here would clobber any
+    // in-progress Budget edit exactly like the broadcast handler would.
+    socketRef.current.on('connect', () => {
+      syncTimelineFromServer();
+    });
+
+    socketRef.current.on('project:updated', ({ project: updated }) => {
+      if (updated.id !== projectId) return;
+      setProject((prev) => (prev ? {
+        ...prev,
+        timeline: updated.timeline || [],
+        timelineLocks: updated.timeline_locks || []
+      } : prev));
+    });
+
+    return () => {
+      if (socketRef.current) socketRef.current.disconnect();
+    };
   }, [projectId]);
 
   const loadData = async () => {
@@ -21,7 +71,6 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
   const fetchProject = async () => {
     try {
-      const API_BASE_URL = process.env.REACT_APP_API_URL || '';
       const token = localStorage.getItem('authToken');
       
       // Fetch project data
@@ -63,8 +112,10 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
         stage: proj.status || 'Unknown',
         owner: owner,
         targetClose: '-',
-        budget: '-',
-        actualSpend: '-',
+        budget: proj.budget || [],
+        budgetLocks: proj.budget_locks || [],
+        timeline: proj.timeline || [],
+        timelineLocks: proj.timeline_locks || [],
         health: '-'
       });
     } catch (error) {
@@ -72,9 +123,30 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
     }
   };
 
+  // Same field scope as the project:updated broadcast handler above, and
+  // for the same reason: only timeline is safe to silently overwrite.
+  const syncTimelineFromServer = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const proj = data.project;
+      setProject((prev) => (prev ? {
+        ...prev,
+        timeline: proj.timeline || [],
+        timelineLocks: proj.timeline_locks || []
+      } : prev));
+    } catch (error) {
+      console.error('Failed to sync timeline:', error);
+    }
+  };
+
   const fetchPeople = async () => {
     try {
-      const API_BASE_URL = process.env.REACT_APP_API_URL || '';
       const token = localStorage.getItem('authToken');
       
       const response = await fetch(`${API_BASE_URL}/api/origination/board`, {
@@ -99,9 +171,9 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
   if (loading || !project) return <div className="loading">Loading project...</div>;
 
-  const modules = [
-    { id: 'timeline', name: 'Timeline', icon: '📅', description: 'Gantt chart & tasks' },
-    { id: 'budget', name: 'Budget', icon: '💰', description: 'Financial tracking' },
+  // Timeline and Budget are full sections below (like Timeline always was);
+  // everything else is still a "coming soon" stub behind quick access.
+  const quickAccessModules = [
     { id: 'team', name: 'Team', icon: '👥', description: 'People & roles' },
     { id: 'files', name: 'Files', icon: '📁', description: 'Documents' },
     { id: 'notes', name: 'Notes', icon: '📝', description: 'Project journal' },
@@ -115,11 +187,23 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
         <button className="back-button" onClick={onClose}>
           ← Back to Board
         </button>
-        <div className="project-header-info">
-          <h1>{project.name}</h1>
-          <span className={`stage-badge stage-${project.stage.toLowerCase()}`}>
-            {project.stage}
-          </span>
+        <div className="project-header-row">
+          <div className="project-header-info">
+            <h1>{project.name}</h1>
+            <span className={`stage-badge stage-${project.stage.toLowerCase()}`}>
+              {project.stage}
+            </span>
+          </div>
+          {project.owner && project.owner !== '-' && (
+            <div className="project-header-owner">
+              <span className="project-header-owner-name">{project.owner}</span>
+              {people[project.owner] ? (
+                <img src={people[project.owner]} alt={project.owner} className="project-header-owner-photo" />
+              ) : (
+                <div className="project-header-owner-initials">{project.owner.charAt(0).toUpperCase()}</div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -128,16 +212,8 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
           {/* Quick Stats */}
           <div className="stats-row">
             <div className="stat-card">
-              <div className="stat-label">Owner</div>
-              <div className="stat-value">{project.owner}</div>
-            </div>
-            <div className="stat-card">
               <div className="stat-label">Target Close</div>
               <div className="stat-value">{project.targetClose}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Budget</div>
-              <div className="stat-value">{project.budget}</div>
             </div>
             <div className="stat-card">
               <div className="stat-label">Health</div>
@@ -149,7 +225,7 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
           <div className="quick-access-section">
             <h3>Quick Access</h3>
             <div className="quick-access-grid">
-              {modules.filter(m => m.id !== 'timeline').map(module => (
+              {quickAccessModules.map(module => (
                 <div 
                   key={module.id}
                   className="quick-access-card"
@@ -165,41 +241,36 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
             </div>
           </div>
 
-          {/* Timeline - Full Width */}
-          <div className="timeline-full-section">
-            <CustomTimeline projectId={projectId} compact={false} people={people} />
+          {/* Budget - Full Width, defaults collapsed */}
+          <div className="detail-section">
+            <h3 className="section-heading">💰 Budget</h3>
+            <BudgetModule
+              projectId={projectId}
+              budget={project.budget}
+              budgetLocks={project.budgetLocks}
+              onBudgetChange={(items) => setProject(prev => ({ ...prev, budget: items }))}
+              onLocksChange={(locks) => setProject(prev => ({ ...prev, budgetLocks: locks }))}
+              expanded={budgetExpanded}
+              onToggleExpanded={() => setBudgetExpanded(e => !e)}
+            />
+          </div>
+
+          {/* Timeline - Full Width, defaults expanded */}
+          <div className="detail-section">
+            <h3 className="section-heading">📅 Timeline</h3>
+            <TimelineModule
+              projectId={projectId}
+              tasks={project.timeline}
+              timelineLocks={project.timelineLocks}
+              people={people}
+              onLocksChange={(locks) => setProject(prev => ({ ...prev, timelineLocks: locks }))}
+              expanded={timelineExpanded}
+              onToggleExpanded={() => setTimelineExpanded(e => !e)}
+            />
           </div>
         </div>
 
         {/* Modals */}
-        {activeModal === 'timeline' && (
-          <div className="project-modal-overlay" onClick={() => setActiveModal(null)}>
-            <div className="project-modal timeline-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>📅 Timeline - Advanced View</h2>
-                <button onClick={() => setActiveModal(null)}>×</button>
-              </div>
-              <div className="modal-body timeline-modal-body">
-                <CustomTimeline projectId={projectId} compact={false} people={people} />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeModal === 'budget' && (
-          <div className="project-modal-overlay" onClick={() => setActiveModal(null)}>
-            <div className="project-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>💰 Budget Tracker</h2>
-                <button onClick={() => setActiveModal(null)}>×</button>
-              </div>
-              <div className="modal-body">
-                <p className="coming-soon">Budget tracker coming soon...</p>
-              </div>
-            </div>
-          </div>
-        )}
-
         {activeModal === 'team' && (
           <div className="project-modal-overlay" onClick={() => setActiveModal(null)}>
             <div className="project-modal" onClick={(e) => e.stopPropagation()}>
