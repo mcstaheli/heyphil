@@ -24,6 +24,11 @@ function deltaClass(days) {
   return '';
 }
 
+// Naming a lock is optional - unnamed ones just fall back to their timestamp.
+function lockLabel(lock) {
+  return lock.name ? lock.name : `Locked ${formatDateTime(lock.lockedAt)}`;
+}
+
 // Every locked milestone matched against its live counterpart by id (a
 // milestone deleted since the lock has nothing to compare against, so
 // it's dropped rather than shown as infinitely slipped).
@@ -41,6 +46,8 @@ function compareMilestones(lock, tasks) {
 function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange, expanded, onToggleExpanded }) {
   const [locking, setLocking] = useState(false);
   const [selectedLockId, setSelectedLockId] = useState(null);
+  const [lockPromptOpen, setLockPromptOpen] = useState(false);
+  const [lockNameDraft, setLockNameDraft] = useState('');
 
   const liveTasks = tasks || [];
   const locks = timelineLocks || [];
@@ -81,20 +88,23 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
   // freeze a stale pre-edit snapshot if a Gantt edit's save hasn't landed
   // yet. Omitting `tasks` makes the server read straight from the DB
   // instead, which is one hop fresher (no PUT-then-broadcast-then-socket
-  // round trip to wait on).
+  // round trip to wait on). The naming prompt below is the confirmation
+  // step - no window.confirm.
   const handleLock = async () => {
-    if (!window.confirm('Lock the current milestone dates as the new baseline? Past locks stay saved and can still be viewed.')) return;
     setLocking(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/timeline/lock`, {
         method: 'POST',
         credentials: 'include',
-        headers: authHeaders()
+        headers: authHeaders(),
+        body: JSON.stringify({ name: lockNameDraft })
       });
       if (!res.ok) throw new Error(`Lock failed: ${res.status}`);
       const data = await res.json();
       onLocksChange(data.timelineLocks || []);
       setSelectedLockId(null);
+      setLockPromptOpen(false);
+      setLockNameDraft('');
     } catch (error) {
       console.error('Failed to lock timeline:', error);
       window.alert('Could not lock the timeline - please try again.');
@@ -138,7 +148,7 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
 
       <div className="budget-module-header">
         <div className="budget-hero-label">
-          {activeLock ? `Vs. locked ${formatDate(activeLock.lockedAt)}` : 'No timeline locked yet'}
+          {activeLock ? `Vs. ${lockLabel(activeLock)}` : 'No timeline locked yet'}
         </div>
         <div className="budget-module-actions">
           {locks.length > 0 && (
@@ -148,14 +158,14 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
               onChange={(e) => setSelectedLockId(e.target.value)}
             >
               {locks.slice().reverse().map((lock) => (
-                <option key={lock.id} value={lock.id}>Locked {formatDateTime(lock.lockedAt)}</option>
+                <option key={lock.id} value={lock.id}>{lockLabel(lock)}</option>
               ))}
             </select>
           )}
           <button
             type="button"
             className="btn-primary"
-            onClick={handleLock}
+            onClick={() => setLockPromptOpen((o) => !o)}
             disabled={locking || milestoneCount === 0}
           >
             🔒 Lock Timeline
@@ -170,6 +180,29 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
           </button>
         </div>
       </div>
+
+      {lockPromptOpen && (
+        <div className="budget-paste-box">
+          <p>Name this locked baseline (optional) - helps tell it apart from other locks later. Past locks stay saved and can still be viewed.</p>
+          <input
+            type="text"
+            className="budget-lock-name-input"
+            value={lockNameDraft}
+            onChange={(e) => setLockNameDraft(e.target.value)}
+            placeholder={`e.g. "Original Schedule" (defaults to ${formatDateTime(new Date().toISOString())})`}
+            autoFocus
+            onKeyDown={(e) => { if (e.key === 'Enter') handleLock(); }}
+          />
+          <div className="budget-paste-actions">
+            <button type="button" className="btn-secondary" onClick={() => { setLockPromptOpen(false); setLockNameDraft(''); }}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" onClick={handleLock} disabled={locking}>
+              🔒 Lock Timeline
+            </button>
+          </div>
+        </div>
+      )}
 
       {expanded && (
         <div className="timeline-full-section">

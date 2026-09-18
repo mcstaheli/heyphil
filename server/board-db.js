@@ -189,7 +189,7 @@ export async function updateProjectBudget(id, items) {
 // - `items`, when the caller passes what's currently on screen, is what
 //   actually gets locked and persisted - not whatever the DB happens to
 //   have committed, which could still be behind an in-flight edit's save.
-export async function lockProjectBudget(id, lockedBy, items) {
+export async function lockProjectBudget(id, lockedBy, items, name) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -206,6 +206,7 @@ export async function lockProjectBudget(id, lockedBy, items) {
     const locks = current.rows[0].budget_locks || [];
     const lock = {
       id: `lock_${randomUUID()}`,
+      name: (typeof name === 'string' && name.trim()) ? name.trim().slice(0, 200) : null,
       lockedAt: new Date().toISOString(),
       lockedBy: lockedBy || null,
       items: resolveBudgetHeadingTotals(liveItems)
@@ -230,7 +231,7 @@ export async function lockProjectBudget(id, lockedBy, items) {
 // caller's own on-screen `tasks` (not whatever's last committed) is what
 // gets locked and persisted. Only milestone-type tasks are worth
 // snapshotting - slippage is measured on those, not phases/tasks/events.
-export async function lockProjectTimeline(id, lockedBy, tasks) {
+export async function lockProjectTimeline(id, lockedBy, tasks, name) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -247,6 +248,7 @@ export async function lockProjectTimeline(id, lockedBy, tasks) {
     const locks = current.rows[0].timeline_locks || [];
     const lock = {
       id: `lock_${randomUUID()}`,
+      name: (typeof name === 'string' && name.trim()) ? name.trim().slice(0, 200) : null,
       lockedAt: new Date().toISOString(),
       lockedBy: lockedBy || null,
       milestones: liveTasks

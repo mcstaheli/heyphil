@@ -387,6 +387,15 @@
   box-sizing: border-box;
 }
 
+.budget-lock-name-input {
+  width: 100%;
+  font-size: 14px;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #ced4da;
+  box-sizing: border-box;
+}
+
 .budget-paste-actions {
   display: flex;
   justify-content: flex-end;

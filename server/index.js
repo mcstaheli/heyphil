@@ -502,8 +502,8 @@ app.put('/api/projects/:id/budget', requireAuth, async (req, res) => {
 app.post('/api/projects/:id/budget/lock', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { items } = req.body;
-    const project = await boardDb.lockProjectBudget(id, req.user.name || req.user.email, items);
+    const { items, name } = req.body;
+    const project = await boardDb.lockProjectBudget(id, req.user.name || req.user.email, items, name);
 
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
@@ -522,8 +522,8 @@ app.post('/api/projects/:id/budget/lock', requireAuth, async (req, res) => {
 app.post('/api/projects/:id/timeline/lock', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { tasks } = req.body;
-    const project = await boardDb.lockProjectTimeline(id, req.user.name || req.user.email, tasks);
+    const { tasks, name } = req.body;
+    const project = await boardDb.lockProjectTimeline(id, req.user.name || req.user.email, tasks, name);
 
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });

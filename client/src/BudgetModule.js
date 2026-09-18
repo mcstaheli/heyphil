@@ -23,16 +23,17 @@ function formatNumber(n) {
   return Number.isFinite(num) ? num.toLocaleString('en-US') : '';
 }
 
-function formatDate(iso) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
 // Includes the time - two locks made the same day (easy to do while
 // getting a budget set up) would otherwise show as identical options.
 function formatDateTime(iso) {
   return new Date(iso).toLocaleString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
   });
+}
+
+// Naming a lock is optional - unnamed ones just fall back to their timestamp.
+function lockLabel(lock) {
+  return lock.name ? lock.name : `Locked ${formatDateTime(lock.lockedAt)}`;
 }
 
 // A row with no amount starts a new heading; every line item after it,
@@ -124,6 +125,8 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
   const [pasteText, setPasteText] = useState('');
   const [selectedLockId, setSelectedLockId] = useState(null);
   const [locking, setLocking] = useState(false);
+  const [lockPromptOpen, setLockPromptOpen] = useState(false);
+  const [lockNameDraft, setLockNameDraft] = useState('');
   // Which single Budget/Actual cell is mid-edit, so it can show its raw
   // typed value while every other cell shows the comma-formatted display -
   // formatting the cell being typed into would fight the cursor.
@@ -233,20 +236,22 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
   // Sends the items currently on screen rather than relying on the
   // server's last-saved copy, so a lock always freezes exactly what the
   // user sees - not whatever a still-in-flight edit's save left behind.
+  // The naming prompt below is the confirmation step - no window.confirm.
   const handleLock = async () => {
-    if (!window.confirm('Lock the current budget as the new baseline? Past locks stay saved and can still be viewed.')) return;
     setLocking(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/budget/lock`, {
         method: 'POST',
         credentials: 'include',
         headers: authHeaders(),
-        body: JSON.stringify({ items })
+        body: JSON.stringify({ items, name: lockNameDraft })
       });
       if (!res.ok) throw new Error(`Lock failed: ${res.status}`);
       const data = await res.json();
       onLocksChange(data.budgetLocks || []);
       setSelectedLockId(null);
+      setLockPromptOpen(false);
+      setLockNameDraft('');
     } catch (error) {
       console.error('Failed to lock budget:', error);
       window.alert('Could not lock the budget - please try again.');
@@ -278,7 +283,7 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
 
       <div className="budget-module-header">
         <div className="budget-hero-label">
-          {activeLock ? `Vs. locked ${formatDate(activeLock.lockedAt)}` : 'No budget locked yet'}
+          {activeLock ? `Vs. ${lockLabel(activeLock)}` : 'No budget locked yet'}
         </div>
         <div className="budget-module-actions">
           {locks.length > 0 && (
@@ -288,7 +293,7 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
               onChange={(e) => setSelectedLockId(e.target.value)}
             >
               {locks.slice().reverse().map((lock) => (
-                <option key={lock.id} value={lock.id}>Locked {formatDateTime(lock.lockedAt)}</option>
+                <option key={lock.id} value={lock.id}>{lockLabel(lock)}</option>
               ))}
             </select>
           )}
@@ -312,12 +317,35 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
             <button
               type="button"
               className="btn-primary"
-              onClick={handleLock}
+              onClick={() => setLockPromptOpen((o) => !o)}
               disabled={locking || items.filter((i) => !i.isHeading).length === 0}
             >
               🔒 Lock Budget
             </button>
           </div>
+
+          {lockPromptOpen && (
+            <div className="budget-paste-box">
+              <p>Name this locked baseline (optional) - helps tell it apart from other locks later. Past locks stay saved and can still be viewed.</p>
+              <input
+                type="text"
+                className="budget-lock-name-input"
+                value={lockNameDraft}
+                onChange={(e) => setLockNameDraft(e.target.value)}
+                placeholder={`e.g. "Q3 Baseline" (defaults to ${formatDateTime(new Date().toISOString())})`}
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLock(); }}
+              />
+              <div className="budget-paste-actions">
+                <button type="button" className="btn-secondary" onClick={() => { setLockPromptOpen(false); setLockNameDraft(''); }}>
+                  Cancel
+                </button>
+                <button type="button" className="btn-primary" onClick={handleLock} disabled={locking}>
+                  🔒 Lock Budget
+                </button>
+              </div>
+            </div>
+          )}
 
           {pasteOpen && (
             <div className="budget-paste-box">
@@ -432,7 +460,7 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
 
           {isViewingHistory ? (
             <p className="budget-history-note">
-              Viewing a locked snapshot - read-only. Pick "{formatDateTime(latestLock.lockedAt)}" above to go back to editing.
+              Viewing a locked snapshot - read-only. Pick "{lockLabel(latestLock)}" above to go back to editing.
             </p>
           ) : (
             <div className="budget-add-row">
