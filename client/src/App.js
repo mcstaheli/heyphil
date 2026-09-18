@@ -1228,10 +1228,10 @@ function OriginationBoard({ user, studioMode = false }) {
           >
             <div className="column-header" style={{ backgroundColor: column.color }}>
               <h3>{column.title}</h3>
+              <span className="card-count">
+                {filteredCards.length}
+              </span>
               <div className="column-header-actions">
-                <span className="card-count">
-                  {filteredCards.length}
-                </span>
                 {isPrePost && (
                   <button
                     className="column-minimize-btn"

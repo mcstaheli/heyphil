@@ -211,6 +211,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
   border-bottom: 3px solid rgba(0,0,0,0.1);
 }
 
@@ -226,10 +227,16 @@ body {
 
 .card-count {
   background: rgba(0, 0, 0, 0.1);
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 14px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 50%;
+  font-size: 12px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .column-cards {
@@ -954,6 +961,7 @@ body {
 }
 
 .column-minimized .column-header h3 {
+  flex: none;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1px;
@@ -961,7 +969,7 @@ body {
 }
 
 .column-minimized .column-header-actions {
-  flex-direction: column;
+  flex-direction: row;
   gap: 8px;
   margin-top: 12px;
 }
@@ -975,7 +983,7 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 20px;
   color: inherit;
   padding: 0;
 }
@@ -994,7 +1002,7 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 16px;
   color: inherit;
   opacity: 0.7;
   padding: 0;
