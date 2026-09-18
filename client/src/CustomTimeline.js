@@ -31,6 +31,13 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [gridWidth, setGridWidth] = useState(1000);
   const [editingDaysTaskId, setEditingDaysTaskId] = useState(null);
+  // Pixels per day column - the zoom level. Day columns used to just
+  // divide whatever width was available equally (no fixed size, so more
+  // days always meant thinner columns and the grid never scrolled); this
+  // gives day columns a real pixel width instead, so zooming in actually
+  // makes each day bigger (with horizontal scroll) rather than everything
+  // just getting more cramped as a plan grows.
+  const [dayWidth, setDayWidth] = useState(36);
   const gridRef = useRef(null);
 
   useEffect(() => {
@@ -61,7 +68,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       window.removeEventListener('resize', updateGridWidth);
       clearTimeout(timeout);
     };
-  }, [tasks, draggingTask]);
+  }, [tasks, draggingTask, dayWidth]);
 
   // Handle drag events
   useEffect(() => {
@@ -1045,6 +1052,26 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           
           {/* Dependencies toggle and tools */}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '13px',
+              color: '#64748b',
+              userSelect: 'none'
+            }}>
+              <span title="Zoom">🔍</span>
+              <input
+                type="range"
+                min="14"
+                max="80"
+                step="2"
+                value={dayWidth}
+                onChange={(e) => setDayWidth(Number(e.target.value))}
+                style={{ width: '90px', cursor: 'pointer' }}
+                title={`${dayWidth}px per day`}
+              />
+            </label>
             <button
               onClick={() => {
                 const changes = calculateTightenChanges();
@@ -1458,7 +1485,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
         {/* Timeline Grid */}
         <div className="timeline-grid-wrapper">
-          <div className="timeline-grid" ref={gridRef}>
+          <div className="timeline-grid" ref={gridRef} style={{ minWidth: '100%', width: `${dateColumns.length * dayWidth}px` }}>
             {/* Column Grid Lines & Weekend Stripes */}
             <div className="grid-overlay">
               {dateColumns.map((date, i) => {
@@ -1483,6 +1510,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     key={i}
                     className="grid-column"
                     style={{
+                      flex: `0 0 ${dayWidth}px`,
+                      width: `${dayWidth}px`,
                       background: isWeekend ? weekendBg : monthBg
                     }}
                   />
@@ -1498,9 +1527,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                 const prevDate = i > 0 ? dateColumns[i - 1] : null;
                 
                 return (
-                  <div 
-                    key={i} 
+                  <div
+                    key={i}
                     className={`timeline-date-header ${isWeekend ? 'weekend' : ''}`}
+                    style={{ flex: `0 0 ${dayWidth}px`, width: `${dayWidth}px` }}
                   >
                     {formatDate(date, prevDate)}
                   </div>
