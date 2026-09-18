@@ -194,6 +194,7 @@ body {
 }
 
 .kanban-column {
+  position: relative;
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
@@ -934,6 +935,10 @@ body {
 }
 
 .column-empty .column-add-btn {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   width: 32px;
   height: 32px;
   font-size: 18px;
@@ -995,9 +1000,18 @@ body {
 }
 
 .column-minimized .column-add-btn {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   width: 32px;
   height: 32px;
   font-size: 18px;
+}
+
+.column-minimized .column-add-btn:hover,
+.column-empty .column-add-btn:hover {
+  transform: translateX(-50%) scale(1.1);
 }
 
 .column-minimized .column-cards {
