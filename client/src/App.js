@@ -1404,11 +1404,6 @@ function OriginationBoard({ user, studioMode = false }) {
               }
             }
           }}
-          onMoveToStudio={studioMode ? null : async (id) => {
-            // Move card to Studio Ideation
-            await updateCard(id, { column: 'studio-ideation' });
-            setEditingCard(null);
-          }}
           columns={columns}
           toggleAction={toggleAction}
           onToggleActionStar={toggleActionStar}
@@ -1568,7 +1563,7 @@ function TrashModal({ deletedCards, onClose, onRestore, people, projectTypeColor
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode, onViewProject, currentUser }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode, onViewProject, currentUser }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -1669,7 +1664,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
   }, [formData, pendingActions, onSave, onClose, editingTitle]);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           {editingTitle ? (
@@ -2015,13 +2010,12 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
           <div className="modal-footer">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
               <div style={{ display: 'flex', gap: '12px' }}>
-                <button type="submit" className="btn-primary">Save</button>
                 {card && currentUser?.email === 'chad@philo.ventures' && onViewProject && (
                   <>
                     {!card.project_id && <div style={{ padding: '10px', background: '#fef3c7', borderRadius: '4px', fontSize: '12px' }}>Debug: card.project_id is missing (check console)</div>}
                     {card.project_id && (
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="btn-project-detail"
                         onClick={() => {
                           console.log('Card data:', card);
@@ -2052,21 +2046,7 @@ function CardModal({ card, onClose, onSave, onDelete, onMoveToStudio, columns, i
                   </>
                 )}
               </div>
-              <div>
-                {card && onMoveToStudio && !studioMode && (
-                  <button 
-                    type="button" 
-                    className="btn-studio"
-                    onClick={() => {
-                      if (window.confirm('Move this project to Studio Ideation?')) {
-                        onMoveToStudio(card.id);
-                      }
-                    }}
-                  >
-                    Move To Studio
-                  </button>
-                )}
-              </div>
+              <button type="submit" className="btn-primary">Save</button>
             </div>
           </div>
         </form>
