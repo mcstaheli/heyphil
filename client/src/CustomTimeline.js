@@ -23,6 +23,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   const [reorderTargetIndex, setReorderTargetIndex] = useState(null);
   const [reorderDropPosition, setReorderDropPosition] = useState('before'); // 'before' or 'after'
   const [phasePopover, setPhasePopover] = useState(null);
+  const [collapsedPhases, setCollapsedPhases] = useState(new Set());
   const [ownerFilter, setOwnerFilter] = useState(null);
   const [showDependencies, setShowDependencies] = useState(true);
   const [showTightenModal, setShowTightenModal] = useState(false);
@@ -889,11 +890,16 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         hierarchy.push(task);
         processed.add(task.id);
         
-        // Immediately add all its children in array order
+        // Immediately add all its children in array order - unless the
+        // section is collapsed, in which case they're still marked
+        // processed (so they don't get picked up as orphans below) but
+        // left out of the row list entirely, which also naturally drops
+        // any dependency arrows pointing at a now-hidden row.
+        const isCollapsed = collapsedPhases.has(task.id);
         calculatedTasks.forEach(child => {
           if (child.parentId === task.id && !processed.has(child.id)) {
-            hierarchy.push(child);
             processed.add(child.id);
+            if (!isCollapsed) hierarchy.push(child);
           }
         });
       } else if (!task.parentId) {
@@ -936,7 +942,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
           toX: toPos.left,
           toY: toY,
           fromTask: depTask.name,
-          toTask: task.name
+          toTask: task.name,
+          color: getTaskColor(depTask)
         });
       });
     });
@@ -945,7 +952,35 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
   };
   
   const dependencyArrows = getDependencyArrows();
-  
+
+  // Routes a dependency line with a short fixed-length stub off each
+  // endpoint (instead of bending at the midpoint between them) so the
+  // vertical run sits close to whichever bar it's attached to. Bending at
+  // the midpoint made every line's vertical segment land wherever its own
+  // from/to X happened to average out - lines with similar time ranges but
+  // totally unrelated rows would converge on nearly the same X and run
+  // parallel through several rows, unreadable. Corners are rounded and the
+  // path stops a few px short of the target for the arrowhead marker.
+  const buildDependencyPath = (x1, y1, x2, y2) => {
+    const targetX = x2 - 6;
+    if (Math.abs(y2 - y1) < 1) return `M ${x1} ${y1} L ${targetX} ${y1}`;
+
+    const gap = Math.max(targetX - x1, 2);
+    const stub = Math.min(14, gap * 0.4);
+    const corner = Math.min(8, gap * 0.3, Math.abs(y2 - y1) / 2);
+    const turnX = x1 + stub;
+    const dir = y2 > y1 ? 1 : -1;
+
+    return [
+      `M ${x1} ${y1}`,
+      `L ${Math.max(x1, turnX - corner)} ${y1}`,
+      `Q ${turnX} ${y1} ${turnX} ${y1 + corner * dir}`,
+      `L ${turnX} ${y2 - corner * dir}`,
+      `Q ${turnX} ${y2} ${Math.min(targetX, turnX + corner)} ${y2}`,
+      `L ${targetX} ${y2}`
+    ].join(' ');
+  };
+
   // Get minimum allowed start date for a task based on dependencies
   const getMinStartDate = (task) => {
     if (!task.dependencies || task.dependencies.length === 0) return null;
@@ -1463,6 +1498,31 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     )
                   )}
                   <div className="task-name-simple">
+                    {task.type === 'phase' && !compact && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCollapsedPhases(prev => {
+                            const next = new Set(prev);
+                            if (next.has(task.id)) next.delete(task.id); else next.add(task.id);
+                            return next;
+                          });
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#6c757d',
+                          fontSize: '11px',
+                          padding: '0 4px 0 0',
+                          lineHeight: '1',
+                          verticalAlign: 'middle'
+                        }}
+                        title={collapsedPhases.has(task.id) ? 'Expand section' : 'Collapse section'}
+                      >
+                        {collapsedPhases.has(task.id) ? '▸' : '▾'}
+                      </button>
+                    )}
                     {task.type === 'phase' && '📁 '}
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
@@ -1475,6 +1535,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         fontWeight: '500'
                       }}>
                         ({getDaysBetween(new Date(task.start), new Date(task.end)) + 1} days)
+                      </span>
+                    )}
+                    {task.type === 'phase' && collapsedPhases.has(task.id) && (
+                      <span style={{ marginLeft: '8px', color: '#9ca3af', fontSize: '11px', fontStyle: 'italic' }}>
+                        {calculatedTasks.filter(t => t.parentId === task.id).length} item{calculatedTasks.filter(t => t.parentId === task.id).length === 1 ? '' : 's'} hidden
                       </span>
                     )}
                     {task.type === 'phase' && !compact && (
@@ -1584,33 +1649,47 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
 
             {/* Dependency Arrows SVG Layer */}
             {showDependencies && (
-              <svg className="dependency-arrows-layer" style={{ 
-                position: 'absolute', 
-                top: 0, 
-                left: 0, 
-                width: '100%', 
+              <svg className="dependency-arrows-layer" style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
                 height: displayTasks.length * 50 + 40,
                 pointerEvents: 'none',
                 zIndex: 1
               }}>
+                <defs>
+                  {dependencyArrows.map((arrow, i) => (
+                    <marker
+                      key={`arrowhead-${i}`}
+                      id={`dep-arrowhead-${i}`}
+                      viewBox="0 0 8 8"
+                      refX="7"
+                      refY="4"
+                      markerWidth="7"
+                      markerHeight="7"
+                      orient="auto-start-reverse"
+                    >
+                      <path d="M 0 0 L 8 4 L 0 8 z" fill={arrow.color} opacity="0.75" />
+                    </marker>
+                  ))}
+                </defs>
                 {dependencyArrows.map((arrow, i) => {
                 const x1 = (arrow.fromX / 100) * gridWidth;
                 const x2 = (arrow.toX / 100) * gridWidth;
                 const y1 = arrow.fromY + 40; // offset for header
                 const y2 = arrow.toY + 40;
-                
-                // Always use 90-degree angle path
-                const midX = x1 + (x2 - x1) * 0.5;
-                const pathData = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
-                
+                const pathData = buildDependencyPath(x1, y1, x2, y2);
+
                 return (
                   <g key={i}>
                     <path
                       d={pathData}
-                      stroke="#94a3b8"
+                      stroke={arrow.color}
                       strokeWidth="2"
                       fill="none"
-                      opacity="0.6"
+                      opacity="0.55"
+                      markerEnd={`url(#dep-arrowhead-${i})`}
                     />
                   </g>
                 );

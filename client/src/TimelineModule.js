@@ -23,6 +23,17 @@ function daysBetween(fromIso, toIso) {
   return Math.round(ms / (1000 * 60 * 60 * 24));
 }
 
+// Same UTC-midnight trap as formatDate above, for comparing a milestone's
+// date-only string against a real Date object (e.g. "is this today or
+// later") rather than another date-only string - daysBetween's own
+// string-vs-string diff cancels the shift out, but a mixed comparison
+// like `new Date(iso) >= today` doesn't, and can misclassify a milestone
+// dated today as already past.
+function parseLocalDate(dateOnlyString) {
+  const [year, month, day] = dateOnlyString.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function deltaClass(days) {
   if (days > 0) return 'over';
   if (days < 0) return 'under';
@@ -69,11 +80,21 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const nextMilestone = liveTasks
-    .filter((t) => t.type === 'milestone' && t.date && new Date(t.date) >= today)
+    .filter((t) => t.type === 'milestone' && t.date && parseLocalDate(t.date) >= today)
     .sort((a, b) => new Date(a.date) - new Date(b.date))[0] || null;
 
   const onTrackCount = comparisons.filter((m) => m.slippageDays <= 0).length;
+
+  // Days remaining counts down to the furthest-out LIVE milestone (the
+  // project's current end target), not the locked one finalComparison
+  // uses - this should move as the plan changes, even between locks.
+  const liveMilestones = liveTasks.filter((t) => t.type === 'milestone' && t.date);
+  const finalLiveMilestone = liveMilestones.length
+    ? [...liveMilestones].sort((a, b) => new Date(b.date) - new Date(a.date))[0]
+    : null;
+  const daysRemaining = finalLiveMilestone ? daysBetween(todayIso, finalLiveMilestone.date) : null;
 
   const workTasks = liveTasks.filter((t) => t.type === 'task');
   const pctComplete = workTasks.length
@@ -123,6 +144,18 @@ function TimelineModule({ projectId, tasks, timelineLocks, people, onLocksChange
   return (
     <div className="timeline-module">
       <div className="hero-tile-row">
+        <div className="hero-tile">
+          <div className="hero-tile-label">
+            {finalLiveMilestone ? `Days Remaining: ${finalLiveMilestone.name}` : 'Days Remaining'}
+          </div>
+          <div className={`hero-tile-value ${daysRemaining !== null && daysRemaining < 0 ? 'over' : ''}`}>
+            {daysRemaining === null
+              ? '—'
+              : daysRemaining < 0
+                ? `${Math.abs(daysRemaining)} day${Math.abs(daysRemaining) === 1 ? '' : 's'} overdue`
+                : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`}
+          </div>
+        </div>
         <div className="hero-tile">
           <div className="hero-tile-label">
             {finalComparison ? `Slippage: ${finalComparison.name}` : 'Slippage (Final Milestone)'}
