@@ -330,6 +330,14 @@
   flex-wrap: wrap;
 }
 
+.budget-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
 .module-expand-btn {
   background: none;
   border: 1px solid #ced4da;
@@ -483,6 +491,13 @@
   display: flex;
   gap: 10px;
   margin-top: 14px;
+}
+
+.budget-history-note {
+  margin: 14px 0 0 0;
+  font-size: 13px;
+  color: #6c757d;
+  font-style: italic;
 }
 
 /* Project Modals */

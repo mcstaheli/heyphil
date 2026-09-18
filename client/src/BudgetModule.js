@@ -16,6 +16,13 @@ function formatMoney(n) {
   });
 }
 
+// Plain comma grouping, no currency symbol - for the editable table cells,
+// where formatMoney's $ would be redundant with the Budget/Actual headers.
+function formatNumber(n) {
+  const num = Number(n);
+  return Number.isFinite(num) ? num.toLocaleString('en-US') : '';
+}
+
 function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
@@ -117,24 +124,38 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
   const [pasteText, setPasteText] = useState('');
   const [selectedLockId, setSelectedLockId] = useState(null);
   const [locking, setLocking] = useState(false);
+  // Which single Budget/Actual cell is mid-edit, so it can show its raw
+  // typed value while every other cell shows the comma-formatted display -
+  // formatting the cell being typed into would fight the cursor.
+  const [editingCell, setEditingCell] = useState(null);
 
   const items = budget || [];
   const locks = budgetLocks || [];
   const latestLock = locks.length ? locks[locks.length - 1] : null;
   const activeLock = selectedLockId ? locks.find((l) => l.id === selectedLockId) || latestLock : latestLock;
+  // Picking anything but the latest lock switches the table into a
+  // read-only "look back at history" report - editing an old snapshot
+  // makes no sense, and the default/latest view stays the live draft you
+  // actually work in day to day.
+  const isViewingHistory = !!activeLock && activeLock.id !== latestLock?.id;
 
-  const displayItems = computeHeadingTotals(items);
+  // In history mode, the row list comes from the LOCK's own items - not
+  // the live budget - so a line item deleted since that lock still shows
+  // (it existed at the time) and one added since doesn't (it didn't).
+  // Budget amounts are the frozen locked values; actuals stay live/today's,
+  // same as everywhere else, since actuals were never snapshotted - only
+  // the budget baseline is.
+  const displayItems = isViewingHistory
+    ? computeHeadingTotals(activeLock.items.map((lockedItem) => (
+      lockedItem.isHeading
+        ? { ...lockedItem, amount: null, actual: null }
+        : { ...lockedItem, actual: items.find((i) => i.id === lockedItem.id)?.actual ?? 0 }
+    )))
+    : computeHeadingTotals(items);
+
   const { totalBudget, totalActual, delta, deltaPct } = summarizeBudget(items, activeLock);
   const deltaDollarText = (totalBudget === 0 && totalActual === 0) ? '—' : `${delta > 0 ? '+' : ''}${formatMoney(delta)}`;
   const deltaPctText = totalBudget === 0 ? '—' : `${delta > 0 ? '+' : ''}${deltaPct.toFixed(1)}%`;
-
-  const handleTogglePaste = () => {
-    setPasteOpen((wasOpen) => {
-      const willOpen = !wasOpen;
-      if (willOpen && !expanded) onToggleExpanded();
-      return willOpen;
-    });
-  };
 
   const authHeaders = () => ({
     'Content-Type': 'application/json',
@@ -185,6 +206,7 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
       if (item.id !== id) return item;
       return isNumeric ? { ...item, [field]: parseAmount(item[field]) } : item;
     }));
+    setEditingCell(null);
   };
 
   const handleDelete = (item) => {
@@ -270,17 +292,6 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
               ))}
             </select>
           )}
-          <button type="button" className="btn-secondary" onClick={handleTogglePaste}>
-            📋 Paste from Excel
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={handleLock}
-            disabled={locking || items.filter((i) => !i.isHeading).length === 0}
-          >
-            🔒 Lock Budget
-          </button>
           <button
             type="button"
             className="module-expand-btn"
@@ -294,6 +305,20 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
 
       {expanded && (
         <>
+          <div className="budget-detail-actions">
+            <button type="button" className="btn-secondary" onClick={() => setPasteOpen((o) => !o)}>
+              📋 Paste from Excel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleLock}
+              disabled={locking || items.filter((i) => !i.isHeading).length === 0}
+            >
+              🔒 Lock Budget
+            </button>
+          </div>
+
           {pasteOpen && (
             <div className="budget-paste-box">
               <p>
@@ -330,7 +355,9 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
             </thead>
             <tbody>
               {displayItems.length === 0 && (
-                <tr><td colSpan={6} className="budget-empty">No budget line items yet. Paste from Excel or add a row below.</td></tr>
+                <tr><td colSpan={6} className="budget-empty">
+                  {isViewingHistory ? 'This locked snapshot has no line items.' : 'No budget line items yet. Paste from Excel or add a row below.'}
+                </td></tr>
               )}
               {displayItems.map((item) => {
                 const rowDelta = (Number(item.actual) || 0) - (Number(item.amount) || 0);
@@ -338,29 +365,41 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
                 return (
                   <tr key={item.id} className={item.isHeading ? 'budget-row-heading' : 'budget-row-item'}>
                     <td>
-                      <input
-                        type="text"
-                        value={item.name}
-                        placeholder={item.isHeading ? 'Heading' : 'Line item'}
-                        onChange={(e) => handleFieldChange(item.id, 'name', e.target.value)}
-                        onBlur={() => handleFieldBlur(item.id, 'name')}
-                      />
-                    </td>
-                    <td>
-                      {item.isHeading ? formatMoney(item.amount) : (
+                      {isViewingHistory ? item.name : (
                         <input
                           type="text"
-                          value={item.amount ?? ''}
+                          value={item.name}
+                          placeholder={item.isHeading ? 'Heading' : 'Line item'}
+                          onChange={(e) => handleFieldChange(item.id, 'name', e.target.value)}
+                          onBlur={() => handleFieldBlur(item.id, 'name')}
+                        />
+                      )}
+                    </td>
+                    <td>
+                      {isViewingHistory || item.isHeading ? formatMoney(item.amount) : (
+                        <input
+                          type="text"
+                          value={
+                            editingCell?.id === item.id && editingCell?.field === 'amount'
+                              ? item.amount ?? ''
+                              : formatNumber(item.amount)
+                          }
+                          onFocus={() => setEditingCell({ id: item.id, field: 'amount' })}
                           onChange={(e) => handleFieldChange(item.id, 'amount', e.target.value)}
                           onBlur={() => handleFieldBlur(item.id, 'amount')}
                         />
                       )}
                     </td>
                     <td>
-                      {item.isHeading ? formatMoney(item.actual) : (
+                      {isViewingHistory || item.isHeading ? formatMoney(item.actual) : (
                         <input
                           type="text"
-                          value={item.actual ?? ''}
+                          value={
+                            editingCell?.id === item.id && editingCell?.field === 'actual'
+                              ? item.actual ?? ''
+                              : formatNumber(item.actual)
+                          }
+                          onFocus={() => setEditingCell({ id: item.id, field: 'actual' })}
                           onChange={(e) => handleFieldChange(item.id, 'actual', e.target.value)}
                           onBlur={() => handleFieldBlur(item.id, 'actual')}
                         />
@@ -369,7 +408,9 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
                     <td className={deltaClass(rowDelta)}>{formatMoney(rowDelta)}</td>
                     <td className={deltaClass(rowDelta)}>{item.amount ? `${rowDeltaPct.toFixed(1)}%` : '—'}</td>
                     <td>
-                      <button type="button" className="budget-row-delete" onClick={() => handleDelete(item)} title="Delete">×</button>
+                      {!isViewingHistory && (
+                        <button type="button" className="budget-row-delete" onClick={() => handleDelete(item)} title="Delete">×</button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -389,10 +430,16 @@ function BudgetModule({ projectId, budget, budgetLocks, onBudgetChange, onLocksC
             )}
           </table>
 
-          <div className="budget-add-row">
-            <button type="button" className="btn-secondary" onClick={() => handleAddRow(false)}>+ Line Item</button>
-            <button type="button" className="btn-secondary" onClick={() => handleAddRow(true)}>+ Heading</button>
-          </div>
+          {isViewingHistory ? (
+            <p className="budget-history-note">
+              Viewing a locked snapshot - read-only. Pick "{formatDateTime(latestLock.lockedAt)}" above to go back to editing.
+            </p>
+          ) : (
+            <div className="budget-add-row">
+              <button type="button" className="btn-secondary" onClick={() => handleAddRow(false)}>+ Line Item</button>
+              <button type="button" className="btn-secondary" onClick={() => handleAddRow(true)}>+ Heading</button>
+            </div>
+          )}
         </>
       )}
     </div>
