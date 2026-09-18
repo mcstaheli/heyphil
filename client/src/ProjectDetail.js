@@ -9,7 +9,6 @@ const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 
 function ProjectDetail({ projectId, onClose, currentUser }) {
   const [project, setProject] = useState(null);
-  const [activeModal, setActiveModal] = useState(null);
   const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
   const [budgetExpanded, setBudgetExpanded] = useState(false);
@@ -111,12 +110,10 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
         name: proj.title || 'Untitled Project',
         stage: proj.status || 'Unknown',
         owner: owner,
-        targetClose: '-',
         budget: proj.budget || [],
         budgetLocks: proj.budget_locks || [],
         timeline: proj.timeline || [],
-        timelineLocks: proj.timeline_locks || [],
-        health: '-'
+        timelineLocks: proj.timeline_locks || []
       });
     } catch (error) {
       console.error('Failed to fetch project:', error);
@@ -171,15 +168,6 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
   if (loading || !project) return <div className="loading">Loading project...</div>;
 
-  // Timeline and Budget are full sections below (like Timeline always was);
-  // everything else is still a "coming soon" stub behind quick access.
-  const quickAccessModules = [
-    { id: 'team', name: 'Team', icon: '👥', description: 'People & roles' },
-    { id: 'files', name: 'Files', icon: '📁', description: 'Documents' },
-    { id: 'notes', name: 'Notes', icon: '📝', description: 'Project journal' },
-    { id: 'calendar', name: 'Calendar', icon: '🗓️', description: 'Schedule view' }
-  ];
-
   return (
     <div className="project-detail-page">
       {/* Header */}
@@ -209,38 +197,6 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
         {/* Dashboard Overview */}
         <div className="project-dashboard">
-          {/* Quick Stats */}
-          <div className="stats-row">
-            <div className="stat-card">
-              <div className="stat-label">Target Close</div>
-              <div className="stat-value">{project.targetClose}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Health</div>
-              <div className="stat-value">{project.health}</div>
-            </div>
-          </div>
-
-          {/* Quick Access Cards - Above Timeline */}
-          <div className="quick-access-section">
-            <h3>Quick Access</h3>
-            <div className="quick-access-grid">
-              {quickAccessModules.map(module => (
-                <div 
-                  key={module.id}
-                  className="quick-access-card"
-                  onClick={() => setActiveModal(module.id)}
-                >
-                  <div className="quick-access-icon">{module.icon}</div>
-                  <div className="quick-access-info">
-                    <div className="quick-access-name">{module.name}</div>
-                    <div className="quick-access-description">{module.description}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Budget - Full Width, defaults collapsed */}
           <div className="detail-section">
             <h3 className="section-heading">💰 Budget</h3>
@@ -269,63 +225,6 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
             />
           </div>
         </div>
-
-        {/* Modals */}
-        {activeModal === 'team' && (
-          <div className="project-modal-overlay" onClick={() => setActiveModal(null)}>
-            <div className="project-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>👥 Team</h2>
-                <button onClick={() => setActiveModal(null)}>×</button>
-              </div>
-              <div className="modal-body">
-                <p className="coming-soon">Team management coming soon...</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeModal === 'files' && (
-          <div className="project-modal-overlay" onClick={() => setActiveModal(null)}>
-            <div className="project-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>📁 Files</h2>
-                <button onClick={() => setActiveModal(null)}>×</button>
-              </div>
-              <div className="modal-body">
-                <p className="coming-soon">File management coming soon...</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeModal === 'notes' && (
-          <div className="project-modal-overlay" onClick={() => setActiveModal(null)}>
-            <div className="project-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>📝 Notes</h2>
-                <button onClick={() => setActiveModal(null)}>×</button>
-              </div>
-              <div className="modal-body">
-                <p className="coming-soon">Notes coming soon...</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeModal === 'calendar' && (
-          <div className="project-modal-overlay" onClick={() => setActiveModal(null)}>
-            <div className="project-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>🗓️ Calendar</h2>
-                <button onClick={() => setActiveModal(null)}>×</button>
-              </div>
-              <div className="modal-body">
-                <p className="coming-soon">Calendar view coming soon...</p>
-              </div>
-            </div>
-          </div>
-        )}
     </div>
   );
 }
