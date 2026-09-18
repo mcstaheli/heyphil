@@ -904,6 +904,7 @@ body {
   min-width: 96px;
   max-width: 96px;
   background: #f5f5f5;
+  transition: none;
 }
 
 .column-empty .column-header {
@@ -944,11 +945,16 @@ body {
 
 /* Manually-minimized column (Ideation/Abandoned/Exited) - same narrow
    vertical strip as an empty column, but the count stays visible since
-   these are usually NOT empty (that's the whole point of minimizing them). */
+   these are usually NOT empty (that's the whole point of minimizing them).
+   No transition here: writing-mode isn't animatable anyway (browsers just
+   snap it), so animating the other properties (width, background) while
+   it stays static produces a brief, inconsistent-looking mismatch between
+   two columns collapsing at the same time - snapping instantly avoids it. */
 .kanban-column.column-minimized {
   min-width: 96px;
   max-width: 96px;
   background: #f5f5f5;
+  transition: none;
 }
 
 .column-minimized .column-header {
