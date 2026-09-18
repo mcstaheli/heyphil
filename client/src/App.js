@@ -229,7 +229,11 @@ function OriginationBoard({ user, studioMode = false }) {
   const [quickAddTaskText, setQuickAddTaskText] = useState({}); // card id -> draft text
   const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // action ids mid-"just checked off" flash
   const [draggedCard, setDraggedCard] = useState(null);
-  const [minimizedColumns, setMinimizedColumns] = useState(() => new Set()); // column ids manually collapsed to the narrow vertical strip
+  // Ideation/Abandoned/Exited (and their Studio equivalents) default to
+  // minimized - these are the "isPrePost" columns elsewhere in this file.
+  const [minimizedColumns, setMinimizedColumns] = useState(() => new Set([
+    'ideation', 'closed', 'abandoned', 'studio-ideation', 'studio-exited', 'studio-abandoned'
+  ]));
 
   const toggleColumnMinimized = (columnId) => {
     setMinimizedColumns(prev => {
