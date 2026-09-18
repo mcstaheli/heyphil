@@ -1651,31 +1651,6 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                     )
                   )}
                   <div className="task-name-simple">
-                    {task.type === 'phase' && !compact && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCollapsedPhases(prev => {
-                            const next = new Set(prev);
-                            if (next.has(task.id)) next.delete(task.id); else next.add(task.id);
-                            return next;
-                          });
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          color: '#6c757d',
-                          fontSize: '11px',
-                          padding: '0 4px 0 0',
-                          lineHeight: '1',
-                          verticalAlign: 'middle'
-                        }}
-                        title={collapsedPhases.has(task.id) ? 'Expand section' : 'Collapse section'}
-                      >
-                        {collapsedPhases.has(task.id) ? '▸' : '▾'}
-                      </button>
-                    )}
                     {task.type === 'phase' && '📁 '}
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
@@ -1724,6 +1699,32 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                     )}
                   </div>
                 </div>
+                {task.type === 'phase' && !compact && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCollapsedPhases(prev => {
+                        const next = new Set(prev);
+                        if (next.has(task.id)) next.delete(task.id); else next.add(task.id);
+                        return next;
+                      });
+                    }}
+                    style={{
+                      marginLeft: 'auto',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#6c757d',
+                      fontSize: '18px',
+                      padding: '0 8px',
+                      lineHeight: '1',
+                      flexShrink: 0
+                    }}
+                    title={collapsedPhases.has(task.id) ? 'Expand section' : 'Collapse section'}
+                  >
+                    {collapsedPhases.has(task.id) ? '▸' : '▾'}
+                  </button>
+                )}
               </div>
             );
           })}

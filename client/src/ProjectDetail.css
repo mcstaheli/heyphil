@@ -195,6 +195,11 @@
   background: #f8f9fa;
   border-radius: 8px;
   padding: 14px 16px;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .hero-tile-label {
