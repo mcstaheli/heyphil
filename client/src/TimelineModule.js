@@ -3,8 +3,13 @@ import CustomTimeline from './CustomTimeline';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
+// Milestone dates are "yyyy-mm-dd" (date-only) strings. `new Date(iso)`
+// parses those as UTC midnight, which in any US timezone is already the
+// previous calendar day locally - so formatting straight off that Date
+// object would show the wrong day. Parsing as a local date first avoids it.
 function formatDate(iso) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function formatDateTime(iso) {

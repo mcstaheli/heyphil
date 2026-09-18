@@ -478,13 +478,6 @@
   border-left-style: solid !important;
 }
 
-.timeline-bar.milestone {
-  width: 4px !important;
-  height: 40px;
-  border-radius: 2px;
-  background: #f59e0b !important;
-}
-
 /* Event Diamond */
 .timeline-event {
   position: absolute;

@@ -263,18 +263,18 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         const depTask = tasksToValidate.find(t => t.id === depId);
         if (!depTask) return latest;
         
-        const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
+        const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? parseLocalDate(depTask.date) : parseLocalDate(depTask.end);
         return depEnd > latest ? depEnd : latest;
       }, new Date(0));
-      
+
       latestEndDate.setDate(latestEndDate.getDate() + 1);
-      
-      const taskStart = (task.type === 'milestone' || task.type === 'event') ? new Date(task.date) : new Date(task.start);
-      
+
+      const taskStart = (task.type === 'milestone' || task.type === 'event') ? parseLocalDate(task.date) : parseLocalDate(task.start);
+
       if (taskStart < latestEndDate) {
         fixed = true;
         console.warn(`Fixing dependency violation for task "${task.name}"`);
-        
+
         if (task.type === 'milestone' || task.type === 'event') {
           return { ...task, date: latestEndDate.toISOString().split('T')[0] };
         } else {
@@ -384,6 +384,20 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     maxDate.setDate(maxDate.getDate() + 7);
 
     setTimelineRange({ start: minDate, end: maxDate });
+  };
+
+  // Parses a "yyyy-mm-dd" date-only string as a LOCAL calendar date, not
+  // UTC midnight. `new Date("2026-10-04")` is parsed as UTC midnight,
+  // which in any timezone west of UTC (all of the US) is already the
+  // previous calendar day locally - so a later .setHours(0,0,0,0) or
+  // .getDate()/.setDate() on that object silently locks onto the wrong
+  // day. Used anywhere a dependency's date needs +1 day added and then
+  // gets turned back into a stored date string - getDaysBetween itself
+  // doesn't need this, since it only computes a difference and the same
+  // UTC-parse shift on both ends cancels out.
+  const parseLocalDate = (dateOnlyString) => {
+    const [year, month, day] = dateOnlyString.split('-').map(Number);
+    return new Date(year, month - 1, day);
   };
 
   const getDaysBetween = (start, end) => {
@@ -582,15 +596,15 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
         const depTask = updatedTasks.find(t => t.id === depId);
         if (!depTask) return latest;
         
-        const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
+        const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? parseLocalDate(depTask.date) : parseLocalDate(depTask.end);
         return depEnd > latest ? depEnd : latest;
       }, new Date(0));
-      
+
       // Add one day buffer
       latestEndDate.setDate(latestEndDate.getDate() + 1);
-      
-      const taskStart = (task.type === 'milestone' || task.type === 'event') ? new Date(task.date) : new Date(task.start);
-      
+
+      const taskStart = (task.type === 'milestone' || task.type === 'event') ? parseLocalDate(task.date) : parseLocalDate(task.start);
+
       if (taskStart < latestEndDate) {
         // Prevent the update - task would violate dependency constraint
         console.warn('Task would start before dependency ends - auto-adjusting dates');
@@ -917,11 +931,10 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
       const depTask = tasks.find(t => t.id === depId);
       if (!depTask) return latest;
       
-      const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
-      depEnd.setHours(0, 0, 0, 0);
+      const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? parseLocalDate(depTask.date) : parseLocalDate(depTask.end);
       return depEnd > latest ? depEnd : latest;
     }, new Date(0));
-    
+
     // Add one day buffer
     const minDate = new Date(latestDepEndDate);
     minDate.setDate(minDate.getDate() + 1);
@@ -1623,8 +1636,8 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     <div 
                       className={`timeline-bar ${task.type} ${draggingTask === task.id ? 'dragging' : ''} ${hasDependencies ? 'has-dependencies' : ''}`}
                       style={{
-                        left: isMilestone ? `calc(${position.left}% - 10px)` : `${position.left}%`,
-                        width: isMilestone ? '24px' : `${position.width}%`,
+                        left: isMilestone ? `calc(${position.left}% - 20px)` : `${position.left}%`,
+                        width: isMilestone ? '40px' : `${position.width}%`,
                         backgroundColor: isMilestone ? 'transparent' : (isPhase ? (() => {
                           const hex = getTaskColor(task).replace('#', '');
                           const r = parseInt(hex.substring(0, 2), 16);
@@ -1637,7 +1650,12 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                         cursor: compact || isPhase ? 'default' : 'grab',
                         display: isMilestone ? 'flex' : 'block',
                         alignItems: isMilestone ? 'center' : 'initial',
-                        justifyContent: isMilestone ? 'center' : 'initial'
+                        justifyContent: isMilestone ? 'center' : 'initial',
+                        // The default 30px row height + overflow:hidden (below)
+                        // would clip a rotated-square diamond's corners, which
+                        // extend past its own 26px width/height once rotated.
+                        overflow: isMilestone ? 'visible' : 'hidden',
+                        boxShadow: isMilestone ? 'none' : undefined
                       }}
                       onMouseDown={handleMouseDown}
                       onClick={handleBarClick}
@@ -1654,12 +1672,12 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       }}
                     >
                       {isMilestone && (
-                        <div 
+                        <div
+                          className="event-diamond"
                           style={{
-                            width: '4px',
-                            height: '40px',
-                            backgroundColor: getTaskColor(task),
-                            borderRadius: '2px'
+                            width: '26px',
+                            height: '26px',
+                            backgroundColor: getTaskColor(task)
                           }}
                         />
                       )}
@@ -1800,7 +1818,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                       📊 Auto-calculated from child tasks
                     </small>
                   )}
-                  {editingTask.dependencies && editingTask.dependencies.length > 0 && editingTask.type !== 'phase' && (
+                  {editingTask.dependencies && editingTask.dependencies.length > 0 && editingTask.type !== 'phase' && editingTask.start < getMinStartDate(editingTask) && (
                     <small style={{ display: 'block', marginTop: '4px', color: '#ef4444', fontSize: '11px' }}>
                       ⚠️ Cannot start before dependencies finish
                     </small>
@@ -1875,7 +1893,7 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                   min={getMinStartDate(editingTask)}
                   onChange={(e) => setEditingTask({ ...editingTask, date: e.target.value })}
                 />
-                {editingTask.dependencies && editingTask.dependencies.length > 0 && (
+                {editingTask.dependencies && editingTask.dependencies.length > 0 && editingTask.date < getMinStartDate(editingTask) && (
                   <small style={{ display: 'block', marginTop: '4px', color: '#ef4444', fontSize: '11px' }}>
                     ⚠️ Cannot occur before dependencies finish
                   </small>
@@ -1907,7 +1925,30 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                   value={editingTask.dependencies || []}
                   onChange={(e) => {
                     const selected = Array.from(e.target.selectedOptions, option => option.value);
-                    setEditingTask({ ...editingTask, dependencies: selected });
+                    const updated = { ...editingTask, dependencies: selected };
+
+                    // Nudge (don't force) the date forward the moment a
+                    // dependency would put it in the past - to the day
+                    // after that dependency's last day - rather than
+                    // leaving an invalid date sitting there until Save.
+                    const minDate = getMinStartDate(updated);
+                    if (minDate) {
+                      const isPoint = updated.type === 'milestone' || updated.type === 'event';
+                      const currentDate = isPoint ? updated.date : updated.start;
+                      if (!currentDate || currentDate < minDate) {
+                        if (isPoint) {
+                          updated.date = minDate;
+                        } else {
+                          const duration = getDaysBetween(new Date(updated.start), new Date(updated.end));
+                          updated.start = minDate;
+                          const newEnd = new Date(minDate);
+                          newEnd.setDate(newEnd.getDate() + duration);
+                          updated.end = newEnd.toISOString().split('T')[0];
+                        }
+                      }
+                    }
+
+                    setEditingTask(updated);
                   }}
                   style={{ height: '80px' }}
                 >
@@ -1931,11 +1972,11 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     const depTask = tasks.find(t => t.id === depId);
                     if (!depTask) return latest;
                     
-                    const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
+                    const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? parseLocalDate(depTask.date) : parseLocalDate(depTask.end);
                     return depEnd > latest ? depEnd : latest;
                   }, new Date(0));
-                  
-                  const taskStart = (editingTask.type === 'milestone' || editingTask.type === 'event') ? new Date(editingTask.date) : new Date(editingTask.start);
+
+                  const taskStart = (editingTask.type === 'milestone' || editingTask.type === 'event') ? parseLocalDate(editingTask.date) : parseLocalDate(editingTask.start);
                   
                   if (taskStart <= latestEndDate) {
                     if (!window.confirm('This task starts before its dependencies finish. Auto-adjust start date?')) {
