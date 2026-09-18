@@ -252,17 +252,6 @@ function OriginationBoard({ user, studioMode = false }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [deletedCards, setDeletedCards] = useState([]);
-  const [visibleSections, setVisibleSections] = useState(
-    studioMode 
-      ? { studio: true } 
-      : {
-          origination: true,
-          studio: false,
-          development: true,
-          operations: true,
-          other: true
-        }
-  );
 
   const allColumns = [
     { id: 'ideation', title: 'Ideation', color: '#bbdefb', section: 'origination' },
@@ -283,15 +272,9 @@ function OriginationBoard({ user, studioMode = false }) {
     { id: 'closed', title: 'Exited', color: '#2196f3', section: 'other' }
   ];
 
-  // Filter columns based on visible sections
-  const columns = allColumns.filter(col => visibleSections[col.section]);
-
-  const toggleSection = (section) => {
-    setVisibleSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
-  };
+  const columns = studioMode
+    ? allColumns.filter(col => col.section === 'studio')
+    : allColumns.filter(col => col.section !== 'studio');
 
   useEffect(() => {
     loadBoard();
@@ -1131,43 +1114,6 @@ function OriginationBoard({ user, studioMode = false }) {
             <option value="dealValue">Deal Size</option>
             <option value="daysInStage">Time in Stage</option>
           </select>
-          
-          {!studioMode && (
-            <div className="board-section-filters">
-              <label className="section-filter-checkbox">
-                <input
-                  type="checkbox"
-                  checked={visibleSections.origination}
-                  onChange={() => toggleSection('origination')}
-                />
-                <span>Origination</span>
-              </label>
-              <label className="section-filter-checkbox">
-                <input
-                  type="checkbox"
-                  checked={visibleSections.development}
-                  onChange={() => toggleSection('development')}
-                />
-                <span>Development</span>
-              </label>
-              <label className="section-filter-checkbox">
-                <input
-                  type="checkbox"
-                  checked={visibleSections.operations}
-                  onChange={() => toggleSection('operations')}
-                />
-                <span>Operations</span>
-              </label>
-              <label className="section-filter-checkbox">
-                <input
-                  type="checkbox"
-                  checked={visibleSections.other}
-                  onChange={() => toggleSection('other')}
-                />
-                <span>Other</span>
-              </label>
-            </div>
-          )}
         </div>
         <div className="board-actions">
           <button className="btn-secondary" onClick={() => setShowMetrics(!showMetrics)}>
