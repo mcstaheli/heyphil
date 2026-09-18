@@ -935,6 +935,75 @@ body {
   display: none;
 }
 
+/* Manually-minimized column (Ideation/Abandoned/Exited) - same narrow
+   vertical strip as an empty column, but the count stays visible since
+   these are usually NOT empty (that's the whole point of minimizing them). */
+.kanban-column.column-minimized {
+  min-width: 96px;
+  max-width: 96px;
+  background: #f5f5f5;
+}
+
+.column-minimized .column-header {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  padding: 20px 8px;
+  height: 240px;
+  justify-content: flex-start;
+  border-bottom: none;
+}
+
+.column-minimized .column-header h3 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.column-minimized .column-header-actions {
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.column-minimized .card-count {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.column-minimized .column-minimize-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: inherit;
+  padding: 0;
+}
+
+.column-minimized .column-add-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+}
+
+.column-minimized .column-cards {
+  display: none;
+}
+
+.column-minimize-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: inherit;
+  opacity: 0.7;
+  padding: 0;
+}
+
+.column-minimize-btn:hover {
+  opacity: 1;
+}
+
 /* Smooth transition when column becomes populated */
 .kanban-column {
   transition: all 0.3s ease;

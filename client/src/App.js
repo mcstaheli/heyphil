@@ -229,6 +229,16 @@ function OriginationBoard({ user, studioMode = false }) {
   const [quickAddTaskText, setQuickAddTaskText] = useState({}); // card id -> draft text
   const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // action ids mid-"just checked off" flash
   const [draggedCard, setDraggedCard] = useState(null);
+  const [minimizedColumns, setMinimizedColumns] = useState(() => new Set()); // column ids manually collapsed to the narrow vertical strip
+
+  const toggleColumnMinimized = (columnId) => {
+    setMinimizedColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(columnId)) next.delete(columnId);
+      else next.add(columnId);
+      return next;
+    });
+  };
   const [filterOwner, setFilterOwner] = useState('');
   const [filterProjectType, setFilterProjectType] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1205,13 +1215,14 @@ function OriginationBoard({ user, studioMode = false }) {
           });
           
           const isEmpty = filteredCards.length === 0;
-          const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned' || 
+          const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned' ||
                             column.id === 'studio-ideation' || column.id === 'studio-exited' || column.id === 'studio-abandoned';
-          
+          const isMinimized = minimizedColumns.has(column.id);
+
           return (
           <div
             key={column.id}
-            className={`kanban-column ${isEmpty ? 'column-empty' : ''} ${isPrePost ? `column-${column.id}` : ''}`}
+            className={`kanban-column ${isMinimized ? 'column-minimized' : (isEmpty ? 'column-empty' : '')} ${isPrePost ? `column-${column.id}` : ''}`}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, column.id)}
           >
@@ -1221,7 +1232,16 @@ function OriginationBoard({ user, studioMode = false }) {
                 <span className="card-count">
                   {filteredCards.length}
                 </span>
-                <button 
+                {isPrePost && (
+                  <button
+                    className="column-minimize-btn"
+                    onClick={() => toggleColumnMinimized(column.id)}
+                    title={isMinimized ? 'Expand column' : 'Minimize column'}
+                  >
+                    {isMinimized ? '▸' : '▾'}
+                  </button>
+                )}
+                <button
                   className="column-add-btn"
                   onClick={() => {
                     setShowNewCard(true);
