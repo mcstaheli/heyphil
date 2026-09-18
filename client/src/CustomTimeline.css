@@ -189,6 +189,52 @@
   width: 32px;
   height: 32px;
   transition: background 0.2s, color 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Two invisible half-height hit zones stacked inside the days badge - a
+   plain rectangle here gets clipped to the parent's circular boundary by
+   its own overflow:hidden, so each renders as a crescent covering exactly
+   the top or bottom half of the circle rather than needing a separate
+   clip-path. Hover darkens just that half and reveals its caret, click
+   adjusts the task's duration by a day without opening the full editor
+   (stopPropagation on the click handler in CustomTimeline.js). */
+.days-stepper-half {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.days-stepper-up {
+  top: 0;
+  align-items: flex-start;
+}
+
+.days-stepper-down {
+  bottom: 0;
+  align-items: flex-end;
+}
+
+.days-stepper-half:hover {
+  opacity: 1;
+  background: rgba(17, 24, 39, 0.55);
+}
+
+.days-stepper-caret {
+  font-size: 8px;
+  line-height: 1;
+  color: white;
+  padding: 1px 0;
 }
 
 .task-days-badge:hover {

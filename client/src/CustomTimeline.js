@@ -654,11 +654,23 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
     
     // Cascade changes to dependent tasks
     updatedTasks = cascadeDependencyChanges(updatedTasks, taskId);
-    
+
     setTasks(updatedTasks);
     saveTasks(updatedTasks);
   };
-  
+
+  // +1/-1 day from the stepper halves on the days badge. Won't shrink a
+  // task past 1 day (end before start) - updateTask's own dependency
+  // enforcement handles pushing the end date back out if this ever
+  // shortened a task into violating a successor's constraint, same as any
+  // other edit.
+  const adjustTaskDuration = (task, delta) => {
+    const newEnd = parseLocalDate(task.end);
+    newEnd.setDate(newEnd.getDate() + delta);
+    if (newEnd < parseLocalDate(task.start)) return;
+    updateTask(task.id, { end: newEnd.toISOString().split('T')[0] });
+  };
+
   // Calculate what would change if we tighten all dependencies (1 day gap,
   // same "day after" rule enforced everywhere else - getMinStartDate is the
   // single source of truth for it, reused here instead of recomputing it
@@ -1554,6 +1566,26 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                           >
                             <div className="task-days-badge" style={{ minWidth: '32px' }}>
                               {days}
+                              {canEdit && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="days-stepper-half days-stepper-up"
+                                    onClick={(e) => { e.stopPropagation(); adjustTaskDuration(task, 1); }}
+                                    title="Add a day"
+                                  >
+                                    <span className="days-stepper-caret">▲</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="days-stepper-half days-stepper-down"
+                                    onClick={(e) => { e.stopPropagation(); adjustTaskDuration(task, -1); }}
+                                    title="Remove a day"
+                                  >
+                                    <span className="days-stepper-caret">▼</span>
+                                  </button>
+                                </>
+                              )}
                             </div>
                             <span style={{
                               fontSize: '11px',
