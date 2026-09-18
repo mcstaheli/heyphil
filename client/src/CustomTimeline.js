@@ -765,6 +765,25 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
     }
   };
 
+  // Sections don't have their own dates/progress - they're only ever a
+  // grouping over their children - so deleting one takes its children
+  // with it, same as the budget-heading delete pattern elsewhere in this
+  // app. The confirm message names the count so it's never a surprise.
+  const deletePhase = (phaseId) => {
+    const phase = tasks.find(t => t.id === phaseId);
+    if (!phase) return;
+    const childCount = tasks.filter(t => t.parentId === phaseId).length;
+    const message = childCount > 0
+      ? `Delete "${phase.name}" and its ${childCount} item${childCount === 1 ? '' : 's'}?`
+      : `Delete "${phase.name}"?`;
+    if (window.confirm(message)) {
+      const updatedTasks = tasks.filter(t => t.id !== phaseId && t.parentId !== phaseId);
+      setTasks(updatedTasks);
+      saveTasks(updatedTasks);
+      setPhasePopover(null);
+    }
+  };
+
   const dateColumns = getDateColumns();
   
   // Auto-calculate phase dates and progress from children
@@ -2072,6 +2091,24 @@ function CustomTimeline({ projectId, compact = false, people = {} }) {
                     />
                   </label>
                   
+                  <button
+                    onClick={() => deletePhase(phase.id)}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      background: 'white',
+                      color: '#ef4444',
+                      border: '1px solid #ef4444',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      marginBottom: '8px'
+                    }}
+                  >
+                    Delete Section
+                  </button>
+
                   <button
                     onClick={() => setPhasePopover(null)}
                     style={{
