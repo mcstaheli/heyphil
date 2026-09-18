@@ -456,14 +456,22 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
     const startOffset = getDaysBetween(timelineRange.start, startDate);
     const duration = (task.type === 'milestone' || task.type === 'event') ? 1 : getDaysBetween(startDate, endDate) + 1;
 
-    // Milestones/events are a single point rendered as a marker centered on
-    // their own day column. `startOffset` is the column's LEFT edge - which
-    // is exactly where a same-day dependency's bar-end boundary lands - so
-    // without the +0.5 day, the marker's own width visually overlaps into
-    // the dependency's last day even though the underlying date is correct.
+    // Every entity anchors to the MIDPOINT of the day(s) it occupies,
+    // rather than the day's raw edges - milestones already worked this way
+    // (a point centered on its day, not the day's boundary); bars now do
+    // too, so a bar's left edge sits at the middle of its start day and its
+    // right edge sits at the middle of its end day (a 1-day bar therefore
+    // has zero width here - rendered as a small centered marker instead,
+    // same idea as a milestone; see the bar JSX). Two things this fixes:
+    // it puts bars and milestones on one consistent coordinate system, and
+    // it guarantees real horizontal room between a predecessor's end-anchor
+    // and a successor's start-anchor for the dependency line's elbow to
+    // actually bend in, instead of both landing on the same pixel when the
+    // successor starts the very next day (the tightest, and most common,
+    // case).
     const isPoint = task.type === 'milestone' || task.type === 'event';
-    const leftPercent = ((isPoint ? startOffset + 0.5 : startOffset) / totalDays) * 100;
-    const widthPercent = (duration / totalDays) * 100;
+    const leftPercent = ((startOffset + 0.5) / totalDays) * 100;
+    const widthPercent = isPoint ? 0 : ((duration - 1) / totalDays) * 100;
 
     return { left: leftPercent, width: widthPercent };
   };
@@ -1806,22 +1814,6 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                 pointerEvents: 'none',
                 zIndex: 1
               }}>
-                <defs>
-                  {dependencyArrows.map((arrow, i) => (
-                    <marker
-                      key={`arrowhead-${i}`}
-                      id={`dep-arrowhead-${i}`}
-                      viewBox="0 0 8 8"
-                      refX="7"
-                      refY="4"
-                      markerWidth="7"
-                      markerHeight="7"
-                      orient="auto-start-reverse"
-                    >
-                      <path d="M 0 0 L 8 4 L 0 8 z" fill={arrow.color} opacity="0.75" />
-                    </marker>
-                  ))}
-                </defs>
                 {dependencyArrows.map((arrow, i) => {
                 // Fixed pixel half-width of the 26px rotated-square diamond
                 // (26 * sqrt(2) / 2 ~= 18.4px), independent of zoom - the
@@ -1845,7 +1837,6 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                       strokeWidth="2"
                       fill="none"
                       opacity="0.6"
-                      markerEnd={`url(#dep-arrowhead-${i})`}
                     />
                   </g>
                 );
@@ -1926,8 +1917,15 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                     <div
                       className={`timeline-bar ${task.type} ${draggingTask === task.id ? 'dragging' : ''} ${hasDependencies ? 'has-dependencies' : ''}`}
                       style={{
-                        left: isMilestone ? `calc(${position.left}% - 20px)` : `${position.left}%`,
-                        width: isMilestone ? '40px' : `${position.width}%`,
+                        // A 1-day task/phase bar now computes to 0% width
+                        // (its start and end midpoints are the same point -
+                        // see getTaskPosition), so it needs the same
+                        // "small centered marker" treatment milestones
+                        // already get, rather than rendering invisibly thin.
+                        left: isMilestone
+                          ? `calc(${position.left}% - 20px)`
+                          : (position.width > 0 ? `${position.left}%` : `calc(${position.left}% - 5px)`),
+                        width: isMilestone ? '40px' : (position.width > 0 ? `${position.width}%` : '10px'),
                         backgroundColor: isMilestone ? 'transparent' : (isPhase ? (() => {
                           const hex = getTaskColor(task).replace('#', '');
                           const r = parseInt(hex.substring(0, 2), 16);
