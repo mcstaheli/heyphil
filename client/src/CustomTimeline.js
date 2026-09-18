@@ -726,19 +726,31 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
   // Apply tightened dependencies
   const applyTightenChanges = () => {
     let updatedTasks = [...tasks];
-    
+    const appliedIds = [];
+
     tightenChanges.forEach(change => {
       if (tightenExclusions.has(change.taskId)) return; // Skip excluded tasks
-      
+
       updatedTasks = updatedTasks.map(t => {
         if (t.id === change.taskId) {
           return { ...t, ...change.newDates };
         }
         return t;
       });
+      appliedIds.push(change.taskId);
     });
-    
+
+    // Cascade each applied change in case tightening one task now pushes
+    // it later than something that depends on it - same as any individual
+    // edit via updateTask. Then persist: this used to only call
+    // setTasks(), which updated the screen but never saved, so the
+    // "tightened" dates silently reverted on the next load.
+    appliedIds.forEach(id => {
+      updatedTasks = cascadeDependencyChanges(updatedTasks, id);
+    });
+
     setTasks(updatedTasks);
+    saveTasks(updatedTasks);
     setShowTightenModal(false);
   };
   
@@ -1897,7 +1909,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                       }} />
                     </div>
                   ) : (
-                    <div 
+                    <div
                       className={`timeline-bar ${task.type} ${draggingTask === task.id ? 'dragging' : ''} ${hasDependencies ? 'has-dependencies' : ''}`}
                       style={{
                         left: isMilestone ? `calc(${position.left}% - 20px)` : `${position.left}%`,
@@ -1907,7 +1919,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                           const r = parseInt(hex.substring(0, 2), 16);
                           const g = parseInt(hex.substring(2, 4), 16);
                           const b = parseInt(hex.substring(4, 6), 16);
-                          return `rgba(${r}, ${g}, ${b}, 0.08)`;
+                          return `rgba(${r}, ${g}, ${b}, 0.15)`;
                         })() : getTaskColor(task)),
                         border: isPhase ? `1px solid ${getTaskColor(task)}` : 'none',
                         borderLeftColor: isPhase ? getTaskColor(task) : (hasDependencies && !isPhase ? 'rgba(0, 0, 0, 0.2)' : 'transparent'),
@@ -1918,8 +1930,20 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                         // The default 30px row height + overflow:hidden (below)
                         // would clip a rotated-square diamond's corners, which
                         // extend past its own 26px width/height once rotated.
-                        overflow: isMilestone ? 'visible' : 'hidden',
-                        boxShadow: isMilestone ? 'none' : undefined
+                        // Phases need it visible too, so their bracket-end legs
+                        // (below) can extend past the shrunk 10px bar height.
+                        overflow: (isMilestone || isPhase) ? 'visible' : 'hidden',
+                        boxShadow: isMilestone ? 'none' : undefined,
+                        // Sections render as a thin "summary bar" (bracket ends
+                        // added below) instead of a full-height filled block -
+                        // the old full-height fill was what made every
+                        // dependency line crossing through a section's row
+                        // look like it was cutting through solid content,
+                        // no matter how the line itself was routed. Shrinking
+                        // the shape it crosses fixes that at the source, and
+                        // matches how MS Project/Smartsheet distinguish a
+                        // summary row from an actual task bar.
+                        ...(isPhase ? { height: '6px', borderRadius: '1px' } : {})
                       }}
                       onMouseDown={handleMouseDown}
                       onClick={handleBarClick}
@@ -1935,6 +1959,12 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                         });
                       }}
                     >
+                      {isPhase && (
+                        <>
+                          <div style={{ position: 'absolute', left: 0, top: 0, width: '2px', height: '14px', backgroundColor: getTaskColor(task) }} />
+                          <div style={{ position: 'absolute', right: 0, top: 0, width: '2px', height: '14px', backgroundColor: getTaskColor(task) }} />
+                        </>
+                      )}
                       {isMilestone && (
                         <div
                           className="event-diamond"
