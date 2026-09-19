@@ -19,6 +19,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
   const [collapsedPhases, setCollapsedPhases] = useState(new Set());
   const [ownerFilter, setOwnerFilter] = useState(null);
   const [showDependencies, setShowDependencies] = useState(true);
+  const [showCriticalPath, setShowCriticalPath] = useState(true);
   const [showTightenModal, setShowTightenModal] = useState(false);
   const [tightenChanges, setTightenChanges] = useState([]);
   const [tightenExclusions, setTightenExclusions] = useState(new Set());
@@ -979,6 +980,8 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
         const toY = taskIndex * 50 + 25;
 
         arrows.push({
+          fromId: depTask.id,
+          toId: task.id,
           fromX: fromIsPoint ? fromPos.left : fromPos.left + fromPos.width,
           fromY: fromY,
           toX: toPos.left,
@@ -996,6 +999,106 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
   };
   
   const dependencyArrows = getDependencyArrows();
+
+  // Critical Path Method, applied to the schedule's actual (already-dated)
+  // tasks rather than computing dates from scratch: the target is the
+  // furthest-out live milestone (same node "Days Remaining"/"Slippage"
+  // anchor to elsewhere in the app), and a task is "critical" if it has
+  // zero slack toward that target - i.e. delaying it by even one day
+  // would push the target's date back too. Tasks that don't feed into
+  // the target at all (a parallel section that doesn't block it) are
+  // never critical, no matter how tight their own internal dependencies
+  // are, since they don't determine when the target actually lands.
+  const getCriticalPathIds = () => {
+    const milestones = tasks.filter((t) => t.type === 'milestone' && t.date);
+    if (!milestones.length) return new Set();
+    const target = [...milestones].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+
+    const byId = new Map(tasks.map((t) => [t.id, t]));
+    const taskDuration = (t) => {
+      if (t.type === 'milestone' || t.type === 'event') return 1;
+      return getDaysBetween(parseLocalDate(t.start), parseLocalDate(t.end)) + 1;
+    };
+    const taskStart = (t) => (t.type === 'milestone' || t.type === 'event' ? parseLocalDate(t.date) : parseLocalDate(t.start));
+    const taskEnd = (t) => (t.type === 'milestone' || t.type === 'event' ? parseLocalDate(t.date) : parseLocalDate(t.end));
+
+    // 1. Ancestor set R: everything the target transitively depends on,
+    // plus the target itself. Only these can possibly be on its critical
+    // path.
+    const relevant = new Set([target.id]);
+    const queue = [target.id];
+    while (queue.length) {
+      const t = byId.get(queue.shift());
+      for (const depId of (t?.dependencies || [])) {
+        if (byId.has(depId) && !relevant.has(depId)) {
+          relevant.add(depId);
+          queue.push(depId);
+        }
+      }
+    }
+
+    // 2. Topological sort of R (Kahn's algorithm, predecessor-before-
+    // successor), then walk it in reverse so every task's successors
+    // within R have their late-start already computed before this task's
+    // late-finish is derived from them.
+    const successorsWithin = new Map([...relevant].map((id) => [id, []]));
+    const inDegree = new Map([...relevant].map((id) => [id, 0]));
+    for (const id of relevant) {
+      for (const depId of (byId.get(id).dependencies || [])) {
+        if (relevant.has(depId)) {
+          successorsWithin.get(depId).push(id);
+          inDegree.set(id, inDegree.get(id) + 1);
+        }
+      }
+    }
+    const topo = [];
+    const ready = [...relevant].filter((id) => inDegree.get(id) === 0);
+    while (ready.length) {
+      const id = ready.shift();
+      topo.push(id);
+      for (const succId of successorsWithin.get(id)) {
+        inDegree.set(succId, inDegree.get(succId) - 1);
+        if (inDegree.get(succId) === 0) ready.push(succId);
+      }
+    }
+
+    // 3. Backward pass: late-finish/late-start per task, starting at the
+    // target (whose late-finish is pinned to its own actual date - no
+    // slack is "allowed" past the real target) and working back through
+    // predecessors.
+    const lateFinish = new Map();
+    const lateStart = new Map();
+    for (const id of [...topo].reverse()) {
+      const t = byId.get(id);
+      const successors = successorsWithin.get(id);
+      let lf;
+      if (id === target.id || successors.length === 0) {
+        lf = taskEnd(t);
+      } else {
+        lf = successors.reduce((min, succId) => {
+          const candidate = new Date(lateStart.get(succId));
+          candidate.setDate(candidate.getDate() - 1);
+          return min === null || candidate < min ? candidate : min;
+        }, null);
+      }
+      lateFinish.set(id, lf);
+      const isPoint = t.type === 'milestone' || t.type === 'event';
+      const ls = new Date(lf);
+      if (!isPoint) ls.setDate(ls.getDate() - taskDuration(t) + 1);
+      lateStart.set(id, ls);
+    }
+
+    // 4. Zero slack (late start === actual/early start) means critical.
+    const criticalIds = new Set();
+    for (const id of relevant) {
+      const t = byId.get(id);
+      const slackDays = Math.round((lateStart.get(id) - taskStart(t)) / (1000 * 60 * 60 * 24));
+      if (slackDays <= 0) criticalIds.add(id);
+    }
+    return criticalIds;
+  };
+
+  const criticalPathIds = showCriticalPath ? getCriticalPathIds() : new Set();
 
   // Routes a dependency line with a short fixed-length stub off each
   // endpoint (instead of bending at the midpoint between them) so the
@@ -1276,6 +1379,23 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                 style={{ cursor: 'pointer' }}
               />
               <span>Show Dependencies</span>
+            </label>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '13px',
+              color: '#64748b',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}>
+              <input
+                type="checkbox"
+                checked={showCriticalPath}
+                onChange={(e) => setShowCriticalPath(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <span title="The chain of tasks with zero slack toward the final milestone - delaying any of them pushes the end date back too">🔥 Critical Path</span>
             </label>
           </div>
         </div>
@@ -1633,6 +1753,14 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
                     {task.name}
+                    {criticalPathIds.has(task.id) && (
+                      <span
+                        title="On the critical path - delaying this pushes back the final milestone"
+                        style={{ marginLeft: '6px', fontSize: '11px' }}
+                      >
+                        🔥
+                      </span>
+                    )}
                     {task.type === 'phase' && task.start && task.end && (
                       <span style={{
                         marginLeft: '8px',
@@ -1820,6 +1948,32 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                   </g>
                 );
               })}
+              {/* Critical-path edges redrawn bold on top, same geometry -
+                  a second pass instead of branching the loop above so a
+                  critical edge is never visually buried under a merely
+                  adjacent one. */}
+              {showCriticalPath && dependencyArrows.map((arrow, i) => {
+                if (!criticalPathIds.has(arrow.fromId) || !criticalPathIds.has(arrow.toId)) return null;
+                const DIAMOND_EDGE = 18;
+                let x1 = (arrow.fromX / 100) * gridWidth;
+                let x2 = (arrow.toX / 100) * gridWidth;
+                if (arrow.fromIsPoint) x1 += DIAMOND_EDGE;
+                if (arrow.toIsPoint) x2 -= DIAMOND_EDGE;
+                const y1 = arrow.fromY + 40;
+                const y2 = arrow.toY + 40;
+                const pathData = buildDependencyPath(x1, y1, x2, y2);
+
+                return (
+                  <path
+                    key={`critical-${i}`}
+                    d={pathData}
+                    stroke="#dc2626"
+                    strokeWidth="3"
+                    fill="none"
+                    opacity="0.85"
+                  />
+                );
+              })}
               </svg>
             )}
 
@@ -1829,6 +1983,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
               const isMilestone = task.type === 'milestone';
               const isEvent = task.type === 'event';
               const isPhase = task.type === 'phase';
+              const isCritical = criticalPathIds.has(task.id);
 
               const handleMouseDown = (e) => {
                 if (compact) return;
@@ -1912,7 +2067,9 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                           const b = parseInt(hex.substring(4, 6), 16);
                           return `rgba(${r}, ${g}, ${b}, 0.08)`;
                         })() : getTaskColor(task)),
-                        border: isPhase ? `1px solid ${getTaskColor(task)}` : 'none',
+                        border: isCritical && !isMilestone
+                          ? '2px solid #dc2626'
+                          : (isPhase ? `1px solid ${getTaskColor(task)}` : 'none'),
                         borderLeftColor: isPhase ? getTaskColor(task) : (hasDependencies && !isPhase ? 'rgba(0, 0, 0, 0.2)' : 'transparent'),
                         cursor: compact || isPhase ? 'default' : 'grab',
                         display: isMilestone ? 'flex' : 'block',
@@ -1922,7 +2079,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                         // would clip a rotated-square diamond's corners, which
                         // extend past its own 26px width/height once rotated.
                         overflow: isMilestone ? 'visible' : 'hidden',
-                        boxShadow: isMilestone ? 'none' : undefined
+                        boxShadow: isCritical && !isMilestone ? '0 0 0 1px rgba(220, 38, 38, 0.3)' : (isMilestone ? 'none' : undefined)
                       }}
                       onMouseDown={handleMouseDown}
                       onClick={handleBarClick}
@@ -1944,7 +2101,9 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                           style={{
                             width: '26px',
                             height: '26px',
-                            backgroundColor: getTaskColor(task)
+                            backgroundColor: getTaskColor(task),
+                            border: isCritical ? '3px solid #dc2626' : undefined,
+                            boxShadow: isCritical ? '0 0 0 2px rgba(220, 38, 38, 0.3), 0 3px 6px rgba(0, 0, 0, 0.15)' : undefined
                           }}
                         />
                       )}

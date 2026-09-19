@@ -9,6 +9,7 @@ import Cashflow from './Cashflow';
 import Settings from './Settings';
 import SettingsPage from './SettingsPage';
 import ProjectDetail from './ProjectDetail';
+import Portfolio from './Portfolio';
 import Layout from './Layout';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -196,6 +197,7 @@ function App() {
           <Route path="/" element={<Navigate to="/labs/board" replace />} />
           <Route path="/labs/board" element={<OriginationBoard user={user} />} />
           <Route path="/labs/board/projects/:projectId" element={<ProjectDetailRoute user={user} />} />
+          <Route path="/labs/portfolio" element={<Portfolio />} />
           <Route path="/labs/studio" element={<OriginationBoard user={user} studioMode={true} />} />
           <Route path="/labs/orgcharts" element={<OrgCharts />} />
           <Route path="/labs/cashflow" element={<Cashflow />} />

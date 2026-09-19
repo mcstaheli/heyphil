@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatDateTime, lockLabel, summarizeLedger } from './projectMetrics';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -21,19 +22,6 @@ function formatMoney(n) {
 function formatNumber(n) {
   const num = Number(n);
   return Number.isFinite(num) ? num.toLocaleString('en-US') : '';
-}
-
-// Includes the time - two locks made the same day (easy to do while
-// getting a plan set up) would otherwise show as identical options.
-function formatDateTime(iso) {
-  return new Date(iso).toLocaleString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
-  });
-}
-
-// Naming a lock is optional - unnamed ones just fall back to their timestamp.
-function lockLabel(lock) {
-  return lock.name ? lock.name : `Locked ${formatDateTime(lock.lockedAt)}`;
 }
 
 // A row with no amount starts a new heading; every line item after it,
@@ -94,24 +82,6 @@ function computeHeadingTotals(items) {
       actual: kids.reduce((sum, k) => sum + (Number(k.actual) || 0), 0)
     };
   });
-}
-
-function sumLeaf(items, field) {
-  return items.filter((i) => !i.isHeading).reduce((sum, i) => sum + (Number(i[field]) || 0), 0);
-}
-
-// The one place the expected/actual/delta math lives, so a future formula
-// change (e.g. rounding) can't drift between the hero tiles and wherever
-// else ends up needing the same numbers. `lock` is whichever lock the
-// caller wants compared against (the module's own version picker can
-// point this at any past lock, not just the latest) - pass null/undefined
-// to compare the live items against themselves (no baseline yet).
-function summarizeLedger(items, lock) {
-  const totalExpected = lock ? sumLeaf(lock.items, 'amount') : sumLeaf(items, 'amount');
-  const totalActual = sumLeaf(items, 'actual');
-  const delta = totalActual - totalExpected;
-  const deltaPct = totalExpected ? (delta / totalExpected) * 100 : null;
-  return { totalExpected, totalActual, delta, deltaPct };
 }
 
 // Budget and Value read the same delta sign in opposite directions:
