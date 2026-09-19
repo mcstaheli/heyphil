@@ -327,8 +327,8 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
       return;
     }
 
-    // Captured before the request, same as BudgetModule/ValueModule's
-    // saveItems - callers always setTasks(updatedTasks) immediately
+    // Captured before the request, same as LedgerModule's saveItems -
+    // callers always setTasks(updatedTasks) immediately
     // before calling this, so `tasks` here (read before the first await)
     // is still this render's pre-update closure value, giving us
     // something to revert to if the save fails. Previously a failed save

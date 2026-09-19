@@ -163,23 +163,40 @@ function resolveBudgetHeadingTotals(items) {
   });
 }
 
-// Overwrites the live budget line items wholesale (matches the existing
+// Budget and Value are two independent ledgers with identical shape and
+// identical live/locked-history behavior - only the column names differ.
+// This allowlist is the only thing ever interpolated into the SQL below
+// (bind parameters can't stand in for identifiers); keeping it a fixed,
+// hardcoded map - never built from a request - is what makes that safe.
+const LEDGER_COLUMNS = {
+  budget: { liveCol: 'budget', locksCol: 'budget_locks' },
+  value: { liveCol: 'value', locksCol: 'value_locks' }
+};
+
+function ledgerColumns(ledger) {
+  const cols = LEDGER_COLUMNS[ledger];
+  if (!cols) throw new Error(`Unknown ledger: ${ledger}`);
+  return cols;
+}
+
+// Overwrites the live line items wholesale (matches the existing
 // tasks/links/timeline pattern - the client sends the full array back,
 // there's no partial/id-targeted update). Returns the full row (or
 // undefined if the project doesn't exist) so the caller can 404 and
 // broadcast consistently with every other project mutation.
-export async function updateProjectBudget(id, items) {
+export async function updateProjectLedger(ledger, id, items) {
+  const { liveCol } = ledgerColumns(ledger);
   const result = await pool.query(
-    `UPDATE projects SET budget = $2::jsonb WHERE id = $1 RETURNING *`,
+    `UPDATE projects SET ${liveCol} = $2::jsonb WHERE id = $1 RETURNING *`,
     [id, JSON.stringify(items || [])]
   );
   return result.rows[0];
 }
 
-// Appends a frozen snapshot to budget_locks. Never overwrites a prior
-// lock - that history is the whole point (see the migration comment in
-// index.js): if the plan changes enough that the story needs resetting,
-// the old locked state is still there to look back on.
+// Appends a frozen snapshot to the ledger's locks column. Never overwrites
+// a prior lock - that history is the whole point (see the migration
+// comment in index.js): if the plan changes enough that the story needs
+// resetting, the old locked state is still there to look back on.
 //
 // Two things that make this safe to call concurrently (e.g. a double
 // click, or two teammates locking the same project seconds apart):
@@ -189,12 +206,13 @@ export async function updateProjectBudget(id, items) {
 // - `items`, when the caller passes what's currently on screen, is what
 //   actually gets locked and persisted - not whatever the DB happens to
 //   have committed, which could still be behind an in-flight edit's save.
-export async function lockProjectBudget(id, lockedBy, items, name) {
+export async function lockProjectLedger(ledger, id, lockedBy, items, name) {
+  const { liveCol, locksCol } = ledgerColumns(ledger);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const current = await client.query(
-      `SELECT budget, budget_locks FROM projects WHERE id = $1 FOR UPDATE`,
+      `SELECT ${liveCol}, ${locksCol} FROM projects WHERE id = $1 FOR UPDATE`,
       [id]
     );
     if (!current.rows[0]) {
@@ -202,8 +220,8 @@ export async function lockProjectBudget(id, lockedBy, items, name) {
       return null;
     }
 
-    const liveItems = Array.isArray(items) ? items : (current.rows[0].budget || []);
-    const locks = current.rows[0].budget_locks || [];
+    const liveItems = Array.isArray(items) ? items : (current.rows[0][liveCol] || []);
+    const locks = current.rows[0][locksCol] || [];
     const lock = {
       id: `lock_${randomUUID()}`,
       name: (typeof name === 'string' && name.trim()) ? name.trim().slice(0, 200) : null,
@@ -213,7 +231,7 @@ export async function lockProjectBudget(id, lockedBy, items, name) {
     };
 
     const result = await client.query(
-      `UPDATE projects SET budget = $2::jsonb, budget_locks = $3::jsonb WHERE id = $1 RETURNING *`,
+      `UPDATE projects SET ${liveCol} = $2::jsonb, ${locksCol} = $3::jsonb WHERE id = $1 RETURNING *`,
       [id, JSON.stringify(liveItems), JSON.stringify([...locks, lock])]
     );
     await client.query('COMMIT');
@@ -226,56 +244,7 @@ export async function lockProjectBudget(id, lockedBy, items, name) {
   }
 }
 
-// Value tracking (annual expected value to Philo vs. actual) - same shape,
-// same live/locked-history split, same heading-rollup math as Budget;
-// resolveBudgetHeadingTotals works unchanged since it only cares about
-// generic amount/actual fields, not what they represent.
-export async function updateProjectValue(id, items) {
-  const result = await pool.query(
-    `UPDATE projects SET value = $2::jsonb WHERE id = $1 RETURNING *`,
-    [id, JSON.stringify(items || [])]
-  );
-  return result.rows[0];
-}
-
-export async function lockProjectValue(id, lockedBy, items, name) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const current = await client.query(
-      `SELECT value, value_locks FROM projects WHERE id = $1 FOR UPDATE`,
-      [id]
-    );
-    if (!current.rows[0]) {
-      await client.query('ROLLBACK');
-      return null;
-    }
-
-    const liveItems = Array.isArray(items) ? items : (current.rows[0].value || []);
-    const locks = current.rows[0].value_locks || [];
-    const lock = {
-      id: `lock_${randomUUID()}`,
-      name: (typeof name === 'string' && name.trim()) ? name.trim().slice(0, 200) : null,
-      lockedAt: new Date().toISOString(),
-      lockedBy: lockedBy || null,
-      items: resolveBudgetHeadingTotals(liveItems)
-    };
-
-    const result = await client.query(
-      `UPDATE projects SET value = $2::jsonb, value_locks = $3::jsonb WHERE id = $1 RETURNING *`,
-      [id, JSON.stringify(liveItems), JSON.stringify([...locks, lock])]
-    );
-    await client.query('COMMIT');
-    return result.rows[0];
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-// Same shape and same concurrency handling as lockProjectBudget (see its
+// Same shape and same concurrency handling as lockProjectLedger (see its
 // comment): FOR UPDATE serializes concurrent locks on the row, and the
 // caller's own on-screen `tasks` (not whatever's last committed) is what
 // gets locked and persisted. Snapshots the full task list (not just

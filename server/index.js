@@ -498,105 +498,65 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Replace the live budget line items (full array, same pattern as
-// tasks/links/timeline elsewhere in this app)
-app.put('/api/projects/:id/budget', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { items } = req.body;
+// Budget and Value are two independent ledgers (live line items + an
+// append-only lock history) with byte-for-byte identical route behavior -
+// registered in a loop instead of as four near-duplicate handlers.
+// 'budget'/'value' here are hardcoded, not request-derived, matching
+// board-db.js's own LEDGER_COLUMNS allowlist.
+for (const ledger of ['budget', 'value']) {
+  // Replace the live line items wholesale (full array, same pattern as
+  // tasks/links/timeline elsewhere in this app)
+  app.put(`/api/projects/:id/${ledger}`, requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { items } = req.body;
 
-    if (!Array.isArray(items)) {
-      return res.status(400).json({ error: 'items must be an array' });
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: 'items must be an array' });
+      }
+
+      const project = await boardDb.updateProjectLedger(ledger, id, items);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+
+      broadcastChange('project:updated', { project });
+      res.json({ items: project[ledger] });
+    } catch (error) {
+      console.error(`Failed to update ${ledger}:`, error);
+      res.status(500).json({ error: `Failed to update ${ledger}` });
     }
+  });
 
-    const project = await boardDb.updateProjectBudget(id, items);
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
+  // Freeze the current ledger (as sent by the client, i.e. exactly what's
+  // on screen) as a new named point in history
+  app.post(`/api/projects/:id/${ledger}/lock`, requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { items, name } = req.body;
+      // items is intentionally optional (board-db.js falls back to the
+      // DB's last-committed value when omitted) - but if it IS present it
+      // must be an array, otherwise lockProjectLedger's own
+      // Array.isArray(items) check would silently treat a malformed
+      // payload as "omitted" and lock whatever's currently in the DB
+      // instead of what the caller meant to send.
+      if (items !== undefined && !Array.isArray(items)) {
+        return res.status(400).json({ error: 'items must be an array' });
+      }
+      const project = await boardDb.lockProjectLedger(ledger, id, req.user.name || req.user.email, items, name);
+
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+
+      broadcastChange('project:updated', { project });
+      res.json({ locks: project[`${ledger}_locks`] });
+    } catch (error) {
+      console.error(`Failed to lock ${ledger}:`, error);
+      res.status(500).json({ error: `Failed to lock ${ledger}` });
     }
-
-    broadcastChange('project:updated', { project });
-    res.json({ budget: project.budget });
-  } catch (error) {
-    console.error('Failed to update budget:', error);
-    res.status(500).json({ error: 'Failed to update budget' });
-  }
-});
-
-// Freeze the current budget (as sent by the client, i.e. exactly what's
-// on screen) as a new named point in history
-app.post('/api/projects/:id/budget/lock', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { items, name } = req.body;
-    // items is intentionally optional (board-db.js falls back to the
-    // DB's last-committed budget when omitted) - but if it IS present it
-    // must be an array, otherwise lockProjectBudget's own
-    // Array.isArray(items) check would silently treat a malformed
-    // payload as "omitted" and lock whatever's currently in the DB
-    // instead of what the caller meant to send.
-    if (items !== undefined && !Array.isArray(items)) {
-      return res.status(400).json({ error: 'items must be an array' });
-    }
-    const project = await boardDb.lockProjectBudget(id, req.user.name || req.user.email, items, name);
-
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    broadcastChange('project:updated', { project });
-    res.json({ budgetLocks: project.budget_locks });
-  } catch (error) {
-    console.error('Failed to lock budget:', error);
-    res.status(500).json({ error: 'Failed to lock budget' });
-  }
-});
-
-// Replace the live value line items (same pattern as budget)
-app.put('/api/projects/:id/value', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { items } = req.body;
-
-    if (!Array.isArray(items)) {
-      return res.status(400).json({ error: 'items must be an array' });
-    }
-
-    const project = await boardDb.updateProjectValue(id, items);
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    broadcastChange('project:updated', { project });
-    res.json({ value: project.value });
-  } catch (error) {
-    console.error('Failed to update value:', error);
-    res.status(500).json({ error: 'Failed to update value' });
-  }
-});
-
-// Freeze the current value (as sent by the client) as a new named point
-// in history
-app.post('/api/projects/:id/value/lock', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { items, name } = req.body;
-    // Same optional-but-must-be-an-array-if-present rule as budget/lock.
-    if (items !== undefined && !Array.isArray(items)) {
-      return res.status(400).json({ error: 'items must be an array' });
-    }
-    const project = await boardDb.lockProjectValue(id, req.user.name || req.user.email, items, name);
-
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    broadcastChange('project:updated', { project });
-    res.json({ valueLocks: project.value_locks });
-  } catch (error) {
-    console.error('Failed to lock value:', error);
-    res.status(500).json({ error: 'Failed to lock value' });
-  }
-});
+  });
+}
 
 // Freeze the current milestone dates (as sent by the client) as a new
 // named point in history, for slippage reporting

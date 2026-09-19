@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import './ProjectDetail.css';
-import BudgetModule from './BudgetModule';
-import ValueModule from './ValueModule';
+import LedgerModule, { BUDGET_LEDGER_CONFIG, VALUE_LEDGER_CONFIG } from './LedgerModule';
 import TimelineModule from './TimelineModule';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -25,12 +24,13 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
   // Keeps this page's own `timeline` snapshot in sync with CustomTimeline's
   // own independent save cycle, so TimelineModule's hero-stat tiles don't
   // go stale relative to whatever the Gantt chart actually shows after a
-  // drag/edit there. Deliberately does NOT sync `budget` the same way:
-  // BudgetModule lifts every keystroke into this page's state optimistically
-  // before it's saved, and blindly overwriting that from a broadcast would
-  // clobber in-progress, unsaved edits the moment any other update to this
-  // project came in - budget doesn't need it anyway, since nothing else
-  // independently mutates it the way CustomTimeline mutates timeline.
+  // drag/edit there. Deliberately does NOT sync `budget`/`value` the same
+  // way: LedgerModule lifts every keystroke into this page's state
+  // optimistically before it's saved, and blindly overwriting that from a
+  // broadcast would clobber in-progress, unsaved edits the moment any
+  // other update to this project came in - neither ledger needs it
+  // anyway, since nothing else independently mutates them the way
+  // CustomTimeline mutates timeline.
   useEffect(() => {
     if (!projectId) return;
     socketRef.current = io(WS_URL, {
@@ -203,11 +203,12 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
           {/* Value - Full Width, defaults collapsed */}
           <div className="detail-section">
             <h3 className="section-heading">📈 Value</h3>
-            <ValueModule
+            <LedgerModule
               projectId={projectId}
-              value={project.value}
-              valueLocks={project.valueLocks}
-              onValueChange={(items) => setProject(prev => ({ ...prev, value: items }))}
+              config={VALUE_LEDGER_CONFIG}
+              items={project.value}
+              locks={project.valueLocks}
+              onItemsChange={(items) => setProject(prev => ({ ...prev, value: items }))}
               onLocksChange={(locks) => setProject(prev => ({ ...prev, valueLocks: locks }))}
               expanded={valueExpanded}
               onToggleExpanded={() => setValueExpanded(e => !e)}
@@ -217,11 +218,12 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
           {/* Budget - Full Width, defaults collapsed */}
           <div className="detail-section">
             <h3 className="section-heading">💰 Budget</h3>
-            <BudgetModule
+            <LedgerModule
               projectId={projectId}
-              budget={project.budget}
-              budgetLocks={project.budgetLocks}
-              onBudgetChange={(items) => setProject(prev => ({ ...prev, budget: items }))}
+              config={BUDGET_LEDGER_CONFIG}
+              items={project.budget}
+              locks={project.budgetLocks}
+              onItemsChange={(items) => setProject(prev => ({ ...prev, budget: items }))}
               onLocksChange={(locks) => setProject(prev => ({ ...prev, budgetLocks: locks }))}
               expanded={budgetExpanded}
               onToggleExpanded={() => setBudgetExpanded(e => !e)}

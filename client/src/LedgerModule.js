@@ -17,7 +17,7 @@ function formatMoney(n) {
 }
 
 // Plain comma grouping, no currency symbol - for the editable table cells,
-// where formatMoney's $ would be redundant with the Expected/Actual headers.
+// where formatMoney's $ would be redundant with the column headers.
 function formatNumber(n) {
   const num = Number(n);
   return Number.isFinite(num) ? num.toLocaleString('en-US') : '';
@@ -37,11 +37,11 @@ function lockLabel(lock) {
 }
 
 // A row with no amount starts a new heading; every line item after it,
-// up to the next heading, is summed into it. Re-pasting an updated value
-// plan carries over `actual` for any item name that matches an existing
-// one exactly, so re-pasting doesn't wipe out actuals already entered
-// against that line.
-function parseValuePaste(text, existingItems) {
+// up to the next heading, is summed into it. Re-pasting an updated
+// ledger carries over `actual` for any item name that matches an
+// existing one exactly, so re-pasting doesn't wipe out actuals already
+// entered against that line.
+function parseLedgerPaste(text, existingItems, idPrefix) {
   const existingByName = new Map(
     existingItems.filter((i) => !i.isHeading).map((i) => [i.name.trim().toLowerCase(), i])
   );
@@ -56,7 +56,7 @@ function parseValuePaste(text, existingItems) {
     const amountRaw = tabIndex === -1 ? '' : rawLine.slice(tabIndex + 1).trim();
     if (!name) continue;
 
-    const id = `v_${crypto.randomUUID()}`;
+    const id = `${idPrefix}_${crypto.randomUUID()}`;
 
     if (!amountRaw) {
       currentHeadingId = id;
@@ -105,8 +105,8 @@ function sumLeaf(items, field) {
 // else ends up needing the same numbers. `lock` is whichever lock the
 // caller wants compared against (the module's own version picker can
 // point this at any past lock, not just the latest) - pass null/undefined
-// to compare the live value against itself (no baseline yet).
-function summarizeValue(items, lock) {
+// to compare the live items against themselves (no baseline yet).
+function summarizeLedger(items, lock) {
   const totalExpected = lock ? sumLeaf(lock.items, 'amount') : sumLeaf(items, 'amount');
   const totalActual = sumLeaf(items, 'actual');
   const delta = totalActual - totalExpected;
@@ -114,23 +114,24 @@ function summarizeValue(items, lock) {
   return { totalExpected, totalActual, delta, deltaPct };
 }
 
-// Inverted from Budget's version of this: there, a positive delta means
-// spending MORE than planned (bad, red) and negative means under (good,
-// green). Here, a positive delta means actual value came in ABOVE
-// expected (good, green) and negative means it fell short (bad, red) -
-// same 'over'/'under' CSS classes (red/green), just mapped to the
-// opposite sign since more value is the good direction, not the bad one.
-function deltaClass(delta) {
-  if (delta > 0) return 'under';
-  if (delta < 0) return 'over';
-  return '';
+// Budget and Value read the same delta sign in opposite directions:
+// spending MORE than budgeted is bad (config.deltaPolarity: 'expense'),
+// but achieving MORE value than expected is good ('income'). Same
+// red/green CSS classes either way, just mapped to whichever sign is
+// actually the bad one for this ledger.
+function deltaClass(delta, polarity) {
+  if (delta === 0) return '';
+  const isBad = polarity === 'expense' ? delta > 0 : delta < 0;
+  return isBad ? 'over' : 'under';
 }
 
-// Annual expected value to Philo vs. actual - functionally identical to
-// BudgetModule (paste-from-Excel, heading rollups, named locks, history
-// view), just a second, independent set of line items and its own
-// value/value_locks columns rather than budget/budget_locks.
-function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChange, expanded, onToggleExpanded }) {
+// Shared implementation behind BudgetModule and ValueModule - same paste-
+// from-Excel, heading rollups, named locks, and history view for both;
+// everything that differs between "track spend against a budget" and
+// "track value against an expectation" (labels, copy, API path, delta
+// polarity) lives in the `config` object each of those two thin wrappers
+// passes in, not here.
+function LedgerModule({ projectId, config, items: liveItems, locks: allLocks, onItemsChange, onLocksChange, expanded, onToggleExpanded }) {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [selectedLockId, setSelectedLockId] = useState(null);
@@ -142,8 +143,8 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
   // formatting the cell being typed into would fight the cursor.
   const [editingCell, setEditingCell] = useState(null);
 
-  const items = value || [];
-  const locks = valueLocks || [];
+  const items = liveItems || [];
+  const locks = allLocks || [];
   const latestLock = locks.length ? locks[locks.length - 1] : null;
   const activeLock = selectedLockId ? locks.find((l) => l.id === selectedLockId) || latestLock : latestLock;
   // Picking anything but the latest lock switches the table into a
@@ -153,7 +154,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
   const isViewingHistory = !!activeLock && activeLock.id !== latestLock?.id;
 
   // In history mode, the row list comes from the LOCK's own items - not
-  // the live value - so a line item deleted since that lock still shows
+  // the live items - so a line item deleted since that lock still shows
   // (it existed at the time) and one added since doesn't (it didn't).
   // Expected amounts are the frozen locked values; actuals stay live/
   // today's, same as everywhere else, since actuals were never
@@ -166,7 +167,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
     )))
     : computeHeadingTotals(items);
 
-  const { totalExpected, totalActual, delta, deltaPct } = summarizeValue(items, activeLock);
+  const { totalExpected, totalActual, delta, deltaPct } = summarizeLedger(items, activeLock);
   const deltaDollarText = (totalExpected === 0 && totalActual === 0) ? '—' : `${delta > 0 ? '+' : ''}${formatMoney(delta)}`;
   const deltaPctText = totalExpected === 0 ? '—' : `${delta > 0 ? '+' : ''}${deltaPct.toFixed(1)}%`;
 
@@ -180,9 +181,9 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
   // anything locked from it) never saw it.
   const saveItems = async (nextItems) => {
     const previousItems = items;
-    onValueChange(nextItems);
+    onItemsChange(nextItems);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/value`, {
+      const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/${config.apiField}`, {
         method: 'PUT',
         credentials: 'include',
         headers: authHeaders(),
@@ -190,18 +191,16 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
       });
       if (!res.ok) throw new Error(`Save failed: ${res.status}`);
     } catch (error) {
-      console.error('Failed to save value:', error);
-      onValueChange(previousItems);
-      window.alert('Could not save that value change - please try again.');
+      console.error(`Failed to save ${config.errorNoun}:`, error);
+      onItemsChange(previousItems);
+      window.alert(config.saveFailAlert);
     }
   };
 
   const handlePasteApply = () => {
-    const parsed = parseValuePaste(pasteText, items);
+    const parsed = parseLedgerPaste(pasteText, items, config.idPrefix);
     if (parsed.length === 0) return;
-    if (items.length > 0 && !window.confirm(
-      'Replace the current value plan with this paste? Actuals are kept for any item name that matches exactly; new or renamed items start at $0 actual.'
-    )) {
+    if (items.length > 0 && !window.confirm(config.replaceConfirmText)) {
       return;
     }
     saveItems(parsed);
@@ -210,7 +209,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
   };
 
   const handleFieldChange = (id, field, rawValue) => {
-    onValueChange(items.map((item) => (item.id === id ? { ...item, [field]: rawValue } : item)));
+    onItemsChange(items.map((item) => (item.id === id ? { ...item, [field]: rawValue } : item)));
   };
 
   const handleFieldBlur = (id, field) => {
@@ -232,7 +231,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
   };
 
   const handleAddRow = (isHeading) => {
-    const id = `v_${crypto.randomUUID()}`;
+    const id = `${config.idPrefix}_${crypto.randomUUID()}`;
     saveItems([...items, {
       id,
       name: '',
@@ -250,7 +249,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
   const handleLock = async () => {
     setLocking(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/value/lock`, {
+      const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/${config.apiField}/lock`, {
         method: 'POST',
         credentials: 'include',
         headers: authHeaders(),
@@ -258,30 +257,30 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
       });
       if (!res.ok) throw new Error(`Lock failed: ${res.status}`);
       const data = await res.json();
-      onLocksChange(data.valueLocks || []);
+      onLocksChange(data.locks || []);
       setSelectedLockId(null);
       setLockPromptOpen(false);
       setLockNameDraft('');
     } catch (error) {
-      console.error('Failed to lock value:', error);
-      window.alert('Could not lock the value plan - please try again.');
+      console.error(`Failed to lock ${config.errorNoun}:`, error);
+      window.alert(config.lockFailAlert);
     } finally {
       setLocking(false);
     }
   };
 
   return (
-    <div className="value-module">
+    <div className="budget-module">
       <div className="hero-row-with-toggle">
         <div className="hero-tile-row">
           <div className="hero-tile-wrapper">
-            <div className="hero-tile-label">Total Value Expected</div>
+            <div className="hero-tile-label">{config.heroTotalLabel}</div>
             <div className="hero-tile">
               <div className="hero-tile-value">{formatMoney(totalExpected)}</div>
             </div>
           </div>
           <div className="hero-tile-wrapper">
-            <div className="hero-tile-label">Total Actual Value</div>
+            <div className="hero-tile-label">{config.heroActualLabel}</div>
             <div className="hero-tile">
               <div className="hero-tile-value">{formatMoney(totalActual)}</div>
             </div>
@@ -289,13 +288,13 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
           <div className="hero-tile-wrapper">
             <div className="hero-tile-label">Δ $</div>
             <div className="hero-tile">
-              <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaDollarText}</div>
+              <div className={`hero-tile-value ${deltaClass(delta, config.deltaPolarity)}`}>{deltaDollarText}</div>
             </div>
           </div>
           <div className="hero-tile-wrapper">
             <div className="hero-tile-label">Δ %</div>
             <div className="hero-tile">
-              <div className={`hero-tile-value ${deltaClass(delta)}`}>{deltaPctText}</div>
+              <div className={`hero-tile-value ${deltaClass(delta, config.deltaPolarity)}`}>{deltaPctText}</div>
             </div>
           </div>
         </div>
@@ -313,7 +312,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
         <>
           <div className="budget-module-header">
             <div className="budget-hero-label">
-              {activeLock ? `Vs. ${lockLabel(activeLock)}` : 'No value locked yet'}
+              {activeLock ? `Vs. ${lockLabel(activeLock)}` : config.noLockText}
             </div>
             <div className="budget-module-actions">
               {locks.length > 0 && (
@@ -339,7 +338,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
               onClick={() => setLockPromptOpen((o) => !o)}
               disabled={locking || items.filter((i) => !i.isHeading).length === 0}
             >
-              🔒 Lock Value
+              {config.lockButtonLabel}
             </button>
           </div>
 
@@ -351,7 +350,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
                 className="budget-lock-name-input"
                 value={lockNameDraft}
                 onChange={(e) => setLockNameDraft(e.target.value)}
-                placeholder={`e.g. "FY26 Plan" (defaults to ${formatDateTime(new Date().toISOString())})`}
+                placeholder={`e.g. "${config.lockNamePlaceholderExample}" (defaults to ${formatDateTime(new Date().toISOString())})`}
                 autoFocus
                 onKeyDown={(e) => { if (e.key === 'Enter') handleLock(); }}
               />
@@ -360,7 +359,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
                   Cancel
                 </button>
                 <button type="button" className="btn-primary" onClick={handleLock} disabled={locking}>
-                  🔒 Lock Value
+                  {config.lockButtonLabel}
                 </button>
               </div>
             </div>
@@ -376,14 +375,14 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
                 rows={6}
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
-                placeholder={'Recurring Revenue\nClient A Renewal\t120000\nClient B Expansion\t45000\nNew Business\nClient C New Deal\t80000'}
+                placeholder={config.pasteExample}
               />
               <div className="budget-paste-actions">
                 <button type="button" className="btn-secondary" onClick={() => { setPasteOpen(false); setPasteText(''); }}>
                   Cancel
                 </button>
                 <button type="button" className="btn-primary" onClick={handlePasteApply} disabled={!pasteText.trim()}>
-                  Replace Value
+                  {config.replaceButtonLabel}
                 </button>
               </div>
             </div>
@@ -393,7 +392,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
             <thead>
               <tr>
                 <th>Line Item</th>
-                <th>Expected</th>
+                <th>{config.columnAmountLabel}</th>
                 <th>Actual</th>
                 <th>Δ $</th>
                 <th>Δ %</th>
@@ -403,7 +402,7 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
             <tbody>
               {displayItems.length === 0 && (
                 <tr><td colSpan={6} className="budget-empty">
-                  {isViewingHistory ? 'This locked snapshot has no line items.' : 'No value line items yet. Paste from Excel or add a row below.'}
+                  {isViewingHistory ? 'This locked snapshot has no line items.' : config.noItemsText}
                 </td></tr>
               )}
               {displayItems.map((item) => {
@@ -452,8 +451,8 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
                         />
                       )}
                     </td>
-                    <td className={deltaClass(rowDelta)}>{formatMoney(rowDelta)}</td>
-                    <td className={deltaClass(rowDelta)}>{item.amount ? `${rowDeltaPct.toFixed(1)}%` : '—'}</td>
+                    <td className={deltaClass(rowDelta, config.deltaPolarity)}>{formatMoney(rowDelta)}</td>
+                    <td className={deltaClass(rowDelta, config.deltaPolarity)}>{item.amount ? `${rowDeltaPct.toFixed(1)}%` : '—'}</td>
                     <td>
                       {!isViewingHistory && (
                         <button type="button" className="budget-row-delete" onClick={() => handleDelete(item)} title="Delete">×</button>
@@ -469,8 +468,8 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
                   <td>Total{activeLock ? ' (vs. locked)' : ''}</td>
                   <td>{formatMoney(totalExpected)}</td>
                   <td>{formatMoney(totalActual)}</td>
-                  <td className={deltaClass(delta)}>{deltaDollarText}</td>
-                  <td className={deltaClass(delta)}>{deltaPctText}</td>
+                  <td className={deltaClass(delta, config.deltaPolarity)}>{deltaDollarText}</td>
+                  <td className={deltaClass(delta, config.deltaPolarity)}>{deltaPctText}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -493,4 +492,44 @@ function ValueModule({ projectId, value, valueLocks, onValueChange, onLocksChang
   );
 }
 
-export default ValueModule;
+export const BUDGET_LEDGER_CONFIG = {
+  apiField: 'budget',
+  idPrefix: 'b',
+  heroTotalLabel: 'Total Budget',
+  heroActualLabel: 'Total Actual',
+  columnAmountLabel: 'Budget',
+  lockButtonLabel: '🔒 Lock Budget',
+  noLockText: 'No budget locked yet',
+  noItemsText: 'No budget line items yet. Paste from Excel or add a row below.',
+  lockNamePlaceholderExample: 'Q3 Baseline',
+  pasteExample: 'Site Work\nGrading\t50000\nUtilities\t22000\nSoft Costs\nArchitecture\t40000',
+  replaceButtonLabel: 'Replace Budget',
+  replaceConfirmText: 'Replace the current budget with this paste? Actuals are kept for any item name that matches exactly; new or renamed items start at $0 actual.',
+  saveFailAlert: 'Could not save that budget change - please try again.',
+  lockFailAlert: 'Could not lock the budget - please try again.',
+  errorNoun: 'budget',
+  // Spending MORE than budgeted is bad -> positive delta is red.
+  deltaPolarity: 'expense'
+};
+
+export const VALUE_LEDGER_CONFIG = {
+  apiField: 'value',
+  idPrefix: 'v',
+  heroTotalLabel: 'Total Value Expected',
+  heroActualLabel: 'Total Actual Value',
+  columnAmountLabel: 'Expected',
+  lockButtonLabel: '🔒 Lock Value',
+  noLockText: 'No value locked yet',
+  noItemsText: 'No value line items yet. Paste from Excel or add a row below.',
+  lockNamePlaceholderExample: 'FY26 Plan',
+  pasteExample: 'Recurring Revenue\nClient A Renewal\t120000\nClient B Expansion\t45000\nNew Business\nClient C New Deal\t80000',
+  replaceButtonLabel: 'Replace Value',
+  replaceConfirmText: 'Replace the current value plan with this paste? Actuals are kept for any item name that matches exactly; new or renamed items start at $0 actual.',
+  saveFailAlert: 'Could not save that value change - please try again.',
+  lockFailAlert: 'Could not lock the value plan - please try again.',
+  errorNoun: 'value',
+  // Achieving MORE value than expected is good -> positive delta is green.
+  deltaPolarity: 'income'
+};
+
+export default LedgerModule;
