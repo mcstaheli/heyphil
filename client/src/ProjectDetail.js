@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import './ProjectDetail.css';
 import BudgetModule from './BudgetModule';
+import ValueModule from './ValueModule';
 import TimelineModule from './TimelineModule';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -11,6 +12,7 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
   const [project, setProject] = useState(null);
   const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
+  const [valueExpanded, setValueExpanded] = useState(false);
   const [budgetExpanded, setBudgetExpanded] = useState(false);
   const [timelineExpanded, setTimelineExpanded] = useState(true);
   const socketRef = useRef(null);
@@ -110,6 +112,8 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
         name: proj.title || 'Untitled Project',
         stage: proj.status || 'Unknown',
         owner: owner,
+        value: proj.value || [],
+        valueLocks: proj.value_locks || [],
         budget: proj.budget || [],
         budgetLocks: proj.budget_locks || [],
         timeline: proj.timeline || [],
@@ -197,6 +201,20 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
         {/* Dashboard Overview */}
         <div className="project-dashboard">
+          {/* Value - Full Width, defaults collapsed */}
+          <div className="detail-section">
+            <h3 className="section-heading">📈 Value</h3>
+            <ValueModule
+              projectId={projectId}
+              value={project.value}
+              valueLocks={project.valueLocks}
+              onValueChange={(items) => setProject(prev => ({ ...prev, value: items }))}
+              onLocksChange={(locks) => setProject(prev => ({ ...prev, valueLocks: locks }))}
+              expanded={valueExpanded}
+              onToggleExpanded={() => setValueExpanded(e => !e)}
+            />
+          </div>
+
           {/* Budget - Full Width, defaults collapsed */}
           <div className="detail-section">
             <h3 className="section-heading">💰 Budget</h3>

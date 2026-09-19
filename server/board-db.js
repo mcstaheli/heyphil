@@ -9,7 +9,7 @@ export async function getAllProjects() {
     SELECT
       id, title, description, status, owner, notes, project_type,
       deal_value, target_close, date_created, deleted_at,
-      budget, budget_locks, timeline, timeline_locks, team, files, tasks, links, needs_ic,
+      budget, budget_locks, value, value_locks, timeline, timeline_locks, team, files, tasks, links, needs_ic,
       created_at, updated_at
     FROM projects
     WHERE deleted_at IS NULL
@@ -23,7 +23,7 @@ export async function getProjectById(id) {
     SELECT
       id, title, description, status, owner, notes, project_type,
       deal_value, target_close, date_created, deleted_at,
-      budget, budget_locks, timeline, timeline_locks, team, files, tasks, links, needs_ic,
+      budget, budget_locks, value, value_locks, timeline, timeline_locks, team, files, tasks, links, needs_ic,
       created_at, updated_at
     FROM projects
     WHERE id = $1
@@ -214,6 +214,55 @@ export async function lockProjectBudget(id, lockedBy, items, name) {
 
     const result = await client.query(
       `UPDATE projects SET budget = $2::jsonb, budget_locks = $3::jsonb WHERE id = $1 RETURNING *`,
+      [id, JSON.stringify(liveItems), JSON.stringify([...locks, lock])]
+    );
+    await client.query('COMMIT');
+    return result.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Value tracking (annual expected value to Philo vs. actual) - same shape,
+// same live/locked-history split, same heading-rollup math as Budget;
+// resolveBudgetHeadingTotals works unchanged since it only cares about
+// generic amount/actual fields, not what they represent.
+export async function updateProjectValue(id, items) {
+  const result = await pool.query(
+    `UPDATE projects SET value = $2::jsonb WHERE id = $1 RETURNING *`,
+    [id, JSON.stringify(items || [])]
+  );
+  return result.rows[0];
+}
+
+export async function lockProjectValue(id, lockedBy, items, name) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query(
+      `SELECT value, value_locks FROM projects WHERE id = $1 FOR UPDATE`,
+      [id]
+    );
+    if (!current.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const liveItems = Array.isArray(items) ? items : (current.rows[0].value || []);
+    const locks = current.rows[0].value_locks || [];
+    const lock = {
+      id: `lock_${randomUUID()}`,
+      name: (typeof name === 'string' && name.trim()) ? name.trim().slice(0, 200) : null,
+      lockedAt: new Date().toISOString(),
+      lockedBy: lockedBy || null,
+      items: resolveBudgetHeadingTotals(liveItems)
+    };
+
+    const result = await client.query(
+      `UPDATE projects SET value = $2::jsonb, value_locks = $3::jsonb WHERE id = $1 RETURNING *`,
       [id, JSON.stringify(liveItems), JSON.stringify([...locks, lock])]
     );
     await client.query('COMMIT');

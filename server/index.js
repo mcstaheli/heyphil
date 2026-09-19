@@ -135,6 +135,18 @@ async function autoMigrate() {
   await runMigrationStep('projects timeline_locks column', () => pool.query(`
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS timeline_locks JSONB NOT NULL DEFAULT '[]'::jsonb
   `));
+
+  // Value tracking (annual expected value to Philo vs. actual) - same
+  // shape and same lock-history pattern as Budget, just a second,
+  // independent set of line items. Unlike budget/timeline, `value` itself
+  // isn't part of the original schema, so it needs its own ADD COLUMN too.
+  await runMigrationStep('projects value column', () => pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS value JSONB NOT NULL DEFAULT '[]'::jsonb
+  `));
+
+  await runMigrationStep('projects value_locks column', () => pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS value_locks JSONB NOT NULL DEFAULT '[]'::jsonb
+  `));
 }
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
@@ -514,6 +526,49 @@ app.post('/api/projects/:id/budget/lock', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to lock budget:', error);
     res.status(500).json({ error: 'Failed to lock budget' });
+  }
+});
+
+// Replace the live value line items (same pattern as budget)
+app.put('/api/projects/:id/value', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { items } = req.body;
+
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'items must be an array' });
+    }
+
+    const project = await boardDb.updateProjectValue(id, items);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    broadcastChange('project:updated', { project });
+    res.json({ value: project.value });
+  } catch (error) {
+    console.error('Failed to update value:', error);
+    res.status(500).json({ error: 'Failed to update value' });
+  }
+});
+
+// Freeze the current value (as sent by the client) as a new named point
+// in history
+app.post('/api/projects/:id/value/lock', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { items, name } = req.body;
+    const project = await boardDb.lockProjectValue(id, req.user.name || req.user.email, items, name);
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    broadcastChange('project:updated', { project });
+    res.json({ valueLocks: project.value_locks });
+  } catch (error) {
+    console.error('Failed to lock value:', error);
+    res.status(500).json({ error: 'Failed to lock value' });
   }
 });
 
