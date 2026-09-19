@@ -1634,20 +1634,32 @@ body {
   }
 }
 
-/* Deal value on cards */
-.card-deal-value {
-  font-size: 14px;
-  font-weight: 700;
-  color: #4caf50;
-  margin: 4px 0 8px 0;
+/* Condensed Value/Budget/Timeline metrics on cards */
+.card-metric-chips {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px 0;
 }
 
-.card-deal-value::before {
-  content: '💰';
+.card-metric-chip {
   font-size: 12px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f1f3f5;
+  color: #495057;
+  white-space: nowrap;
+}
+
+.card-metric-chip.over {
+  background: #fdecea;
+  color: #dc3545;
+}
+
+.card-metric-chip.under {
+  background: #e9f7ef;
+  color: #28a745;
 }
 
 /* Ideation and Closed - Pre/Post activity areas */

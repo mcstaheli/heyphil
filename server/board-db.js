@@ -563,6 +563,15 @@ export async function getBoardData() {
     projectType: project.project_type,
     needsIc: project.needs_ic || false,
     project_id: project.id,  // Self-reference (every card IS a project now)
+    // Condensed Value/Budget/Timeline chips on the mini card use these -
+    // same JSONB columns the Project Detail page reads, just surfaced here
+    // too so the board doesn't need a second round-trip per card.
+    budget: project.budget || [],
+    budgetLocks: project.budget_locks || [],
+    value: project.value || [],
+    valueLocks: project.value_locks || [],
+    timeline: project.timeline || [],
+    timelineLocks: project.timeline_locks || [],
     // Tasks are stored in the projects.tasks JSONB column without a cardId of
     // their own (see addTask) - inject it here so the client's toggle/rename/
     // delete-action calls (which all key off action.cardId) have it to send.

@@ -11,9 +11,74 @@ import SettingsPage from './SettingsPage';
 import ProjectDetail from './ProjectDetail';
 import Portfolio from './Portfolio';
 import Layout from './Layout';
+import { summarizeLedger, computeTimelineMetrics } from './projectMetrics';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
+
+function hasLeafItems(items) {
+  return (items || []).some((i) => !i.isHeading);
+}
+
+// Cards are tiny (~288px) - full dollar amounts don't fit, so this trades
+// precision for width the same way a stock ticker does.
+function formatCompactMoney(n) {
+  const v = Number(n) || 0;
+  const sign = v < 0 ? '-' : '';
+  const abs = Math.abs(v);
+  if (abs >= 1000000) return `${sign}$${(abs / 1000000).toFixed(abs >= 10000000 ? 0 : 1)}M`;
+  if (abs >= 1000) return `${sign}$${Math.round(abs / 1000)}K`;
+  return `${sign}$${Math.round(abs)}`;
+}
+
+// Value shows the goal (what we're aiming for) since that's motivating on
+// its own; Budget and Timeline show delta from plan since those are the
+// two places drifting off-plan is the thing worth flagging at a glance.
+function getCardMetricChips(card) {
+  const chips = [];
+
+  if (hasLeafItems(card.budget)) {
+    const budgetLocks = card.budgetLocks || [];
+    const latestBudgetLock = budgetLocks.length ? budgetLocks[budgetLocks.length - 1] : null;
+    const { delta } = summarizeLedger(card.budget, latestBudgetLock);
+    chips.push({
+      key: 'budget',
+      icon: '💰',
+      text: formatCompactMoney(delta),
+      className: delta > 0 ? 'over' : delta < 0 ? 'under' : ''
+    });
+  }
+
+  if (hasLeafItems(card.value)) {
+    const valueLocks = card.valueLocks || [];
+    const latestValueLock = valueLocks.length ? valueLocks[valueLocks.length - 1] : null;
+    const { totalExpected } = summarizeLedger(card.value, latestValueLock);
+    chips.push({ key: 'value', icon: '🎯', text: formatCompactMoney(totalExpected), className: '' });
+  }
+
+  const hasTimeline = (card.timeline || []).some((t) => t.type === 'milestone' && t.date);
+  if (hasTimeline) {
+    const { finalComparison, daysRemaining } = computeTimelineMetrics(card.timeline, card.timelineLocks);
+    if (finalComparison) {
+      const days = finalComparison.slippageDays;
+      chips.push({
+        key: 'timeline',
+        icon: '📅',
+        text: `${days > 0 ? '+' : ''}${days}d`,
+        className: days > 0 ? 'over' : days < 0 ? 'under' : ''
+      });
+    } else if (daysRemaining !== null) {
+      chips.push({
+        key: 'timeline',
+        icon: '📅',
+        text: daysRemaining < 0 ? `${Math.abs(daysRemaining)}d over` : `${daysRemaining}d`,
+        className: daysRemaining < 0 ? 'over' : ''
+      });
+    }
+  }
+
+  return chips;
+}
 
 // Helper function to generate consistent colors for initials
 // Starred ("do or die") items float to the top; Array.prototype.sort is
@@ -479,6 +544,16 @@ function OriginationBoard({ user, studioMode = false }) {
       projectType: project.project_type || '',
       needsIc: project.needs_ic || false,
       project_id: project.id, // Self-reference, same as getBoardData - the card modal's "View Project" button and debug check both key off this.
+      // Same fields getBoardData exposes for the mini card's metric chips -
+      // without these, a project:updated broadcast (e.g. from editing
+      // Budget/Value/Timeline) would wipe the card's chips back to nothing
+      // until reload, since this whole object gets spread over the old card.
+      budget: project.budget || [],
+      budgetLocks: project.budget_locks || [],
+      value: project.value || [],
+      valueLocks: project.value_locks || [],
+      timeline: project.timeline || [],
+      timelineLocks: project.timeline_locks || [],
       // Tasks/links from the raw project row carry no cardId (see addTask/
       // addLink) - inject it the same way getBoardData does, or a
       // project:updated broadcast (e.g. from the Timeline editor) silently
@@ -1207,8 +1282,9 @@ function OriginationBoard({ user, studioMode = false }) {
             </div>
             <div className="column-cards">
               {filteredCards.map(card => {
-                const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned' || 
+                const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned' ||
                                   column.id === 'studio-ideation' || column.id === 'studio-exited' || column.id === 'studio-abandoned';
+                const metricChips = isPrePost ? [] : getCardMetricChips(card);
                 return (
                   <div
                     key={card.id}
@@ -1270,8 +1346,14 @@ function OriginationBoard({ user, studioMode = false }) {
                       )}
                       <div className="card-content">
                         <h4>{card.title}</h4>
-                        {!isPrePost && card.dealValue > 0 && (
-                          <div className="card-deal-value">${card.dealValue.toLocaleString()}</div>
+                        {metricChips.length > 0 && (
+                          <div className="card-metric-chips">
+                            {metricChips.map((chip) => (
+                              <span key={chip.key} className={`card-metric-chip ${chip.className}`}>
+                                {chip.icon} {chip.text}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1784,18 +1866,6 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                 <option key={type} value={type}>{type}</option>
               ))}
             </select>
-          </div>
-          <div className="form-group">
-            <label>Deal Value ($)</label>
-            <input
-              type="text"
-              value={formData.dealValue ? formData.dealValue.toLocaleString() : ''}
-              onChange={(e) => {
-                const numericValue = e.target.value.replace(/,/g, '');
-                setFormData({ ...formData, dealValue: parseFloat(numericValue) || 0 });
-              }}
-              placeholder="e.g., 500,000"
-            />
           </div>
           <div className="form-group">
             <label>Notes</label>
