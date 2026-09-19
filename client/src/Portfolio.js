@@ -6,6 +6,21 @@ import { summarizeLedger, computeTimelineMetrics, formatDate } from './projectMe
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
+// Stores which projects are EXCLUDED, not which are included - so a
+// project created after the filter was last touched still shows up by
+// default instead of silently disappearing until someone remembers to
+// add it back in.
+const FILTER_STORAGE_KEY = 'heyphil-portfolio-excluded-projects';
+
+function loadExcludedIds() {
+  try {
+    const raw = localStorage.getItem(FILTER_STORAGE_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
 function formatMoney(n) {
   return (Number(n) || 0).toLocaleString('en-US', {
     style: 'currency',
@@ -41,7 +56,18 @@ function Portfolio() {
   const [error, setError] = useState(null);
   const [sortKey, setSortKey] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
+  const [excludedIds, setExcludedIds] = useState(loadExcludedIds);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterSearch, setFilterSearch] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify([...excludedIds]));
+    } catch {
+      // Private browsing / storage disabled - filter just won't persist.
+    }
+  }, [excludedIds]);
 
   useEffect(() => {
     const token = localStorage.getItem('authToken');
@@ -93,10 +119,15 @@ function Portfolio() {
     });
   }, [projects]);
 
+  const visibleRows = useMemo(
+    () => rows.filter((r) => !excludedIds.has(r.id)),
+    [rows, excludedIds]
+  );
+
   const totals = useMemo(() => {
-    const withBudget = rows.filter((r) => r.hasBudget);
-    const withValue = rows.filter((r) => r.hasValue);
-    const withTimeline = rows.filter((r) => r.hasTimeline);
+    const withBudget = visibleRows.filter((r) => r.hasBudget);
+    const withValue = visibleRows.filter((r) => r.hasValue);
+    const withTimeline = visibleRows.filter((r) => r.hasTimeline);
     const withBaseline = withTimeline.filter((r) => r.slippageDays !== null);
 
     const budgetExpected = withBudget.reduce((s, r) => s + r.budget.totalExpected, 0);
@@ -105,7 +136,7 @@ function Portfolio() {
     const valueActual = withValue.reduce((s, r) => s + r.value.totalActual, 0);
 
     return {
-      total: rows.length,
+      total: visibleRows.length,
       withBudget: withBudget.length,
       withValue: withValue.length,
       withTimeline: withTimeline.length,
@@ -119,7 +150,7 @@ function Portfolio() {
       behind: withBaseline.filter((r) => r.slippageDays > 0).length,
       overdue: withTimeline.filter((r) => r.daysRemaining !== null && r.daysRemaining < 0).length
     };
-  }, [rows]);
+  }, [visibleRows]);
 
   const sortedRows = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -135,7 +166,7 @@ function Portfolio() {
         default: return null;
       }
     };
-    return [...rows].sort((a, b) => {
+    return [...visibleRows].sort((a, b) => {
       const av = getValue(a);
       const bv = getValue(b);
       if (sortKey === 'name' || sortKey === 'stage') {
@@ -143,7 +174,7 @@ function Portfolio() {
       }
       return compareWithNullsLast(av, bv, sortDir);
     });
-  }, [rows, sortKey, sortDir]);
+  }, [visibleRows, sortKey, sortDir]);
 
   const handleSort = (key) => {
     if (key === sortKey) {
@@ -155,6 +186,24 @@ function Portfolio() {
   };
 
   const sortArrow = (key) => (sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '');
+
+  const toggleExcluded = (id) => {
+    setExcludedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const showAllProjects = () => setExcludedIds(new Set());
+  const hideAllProjects = () => setExcludedIds(new Set(rows.map((r) => r.id)));
+
+  const modalRows = useMemo(() => {
+    const q = filterSearch.trim().toLowerCase();
+    const list = q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
+    return [...list].sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows, filterSearch]);
 
   if (error) {
     return (
@@ -186,7 +235,9 @@ function Portfolio() {
     <div className="portfolio-page">
       <div className="portfolio-header">
         <h1>Portfolio</h1>
-        <div className="portfolio-header-sub">{totals.total} active projects</div>
+        <div className="portfolio-header-sub">
+          {totals.total} of {rows.length} active projects shown
+        </div>
       </div>
 
       <div className="portfolio-content">
@@ -283,7 +334,12 @@ function Portfolio() {
         </div>
 
         <div className="detail-section">
-          <h2 className="section-heading">Projects</h2>
+          <div className="portfolio-projects-heading">
+            <h2 className="section-heading">Projects</h2>
+            <button type="button" className="btn-secondary" onClick={() => setFilterOpen(true)}>
+              🔎 Filter Projects{excludedIds.size > 0 ? ` (${excludedIds.size} hidden)` : ''}
+            </button>
+          </div>
           <table className="budget-table portfolio-table">
             <thead>
               <tr>
@@ -322,13 +378,65 @@ function Portfolio() {
               ))}
               {sortedRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="budget-empty">No projects yet.</td>
+                  <td colSpan={7} className="budget-empty">
+                    {rows.length === 0 ? 'No projects yet.' : 'No projects match the current filter.'}
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {filterOpen && (
+        <div className="modal-overlay" onClick={() => setFilterOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Filter Projects</h2>
+              <button type="button" className="modal-icon-btn" onClick={() => setFilterOpen(false)} title="Close">
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="portfolio-filter-toolbar">
+                <input
+                  type="text"
+                  className="budget-lock-name-input"
+                  placeholder="Search projects..."
+                  value={filterSearch}
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  autoFocus
+                />
+                <div className="portfolio-filter-actions">
+                  <button type="button" className="btn-secondary" onClick={showAllProjects}>Select All</button>
+                  <button type="button" className="btn-secondary" onClick={hideAllProjects}>Deselect All</button>
+                </div>
+              </div>
+              <div className="portfolio-filter-list">
+                {modalRows.map((r) => (
+                  <label key={r.id} className="portfolio-filter-item">
+                    <input
+                      type="checkbox"
+                      checked={!excludedIds.has(r.id)}
+                      onChange={() => toggleExcluded(r.id)}
+                    />
+                    <span className="portfolio-filter-item-name">{r.name}</span>
+                    <span className="portfolio-filter-item-stage">{r.stage}</span>
+                  </label>
+                ))}
+                {modalRows.length === 0 && (
+                  <div className="budget-empty">No projects match your search.</div>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <div className="modal-actions">
+                <button type="button" className="btn-primary" onClick={() => setFilterOpen(false)}>Done</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
