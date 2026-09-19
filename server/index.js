@@ -464,7 +464,20 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
         return res.status(400).json({ error: 'Title must be 500 characters or less' });
       }
     }
-    
+
+    // Every JSONB array column updateProject accepts - unlike the
+    // dedicated PUT /budget and /value routes, this generic route never
+    // checked shape, so a malformed value (e.g. CustomTimeline.js's
+    // saveTasks(), which is what actually calls this route with
+    // { timeline: updatedTasks }) would silently write a non-array into a
+    // column every reader downstream assumes is an array, failing late
+    // and obscurely instead of failing fast here.
+    for (const field of ['budget', 'timeline', 'team', 'files', 'tasks', 'links']) {
+      if (updates[field] !== undefined && !Array.isArray(updates[field])) {
+        return res.status(400).json({ error: `${field} must be an array` });
+      }
+    }
+
     const project = await boardDb.updateProject(id, updates);
     
     if (!project) {
@@ -515,6 +528,15 @@ app.post('/api/projects/:id/budget/lock', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { items, name } = req.body;
+    // items is intentionally optional (board-db.js falls back to the
+    // DB's last-committed budget when omitted) - but if it IS present it
+    // must be an array, otherwise lockProjectBudget's own
+    // Array.isArray(items) check would silently treat a malformed
+    // payload as "omitted" and lock whatever's currently in the DB
+    // instead of what the caller meant to send.
+    if (items !== undefined && !Array.isArray(items)) {
+      return res.status(400).json({ error: 'items must be an array' });
+    }
     const project = await boardDb.lockProjectBudget(id, req.user.name || req.user.email, items, name);
 
     if (!project) {
@@ -558,6 +580,10 @@ app.post('/api/projects/:id/value/lock', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { items, name } = req.body;
+    // Same optional-but-must-be-an-array-if-present rule as budget/lock.
+    if (items !== undefined && !Array.isArray(items)) {
+      return res.status(400).json({ error: 'items must be an array' });
+    }
     const project = await boardDb.lockProjectValue(id, req.user.name || req.user.email, items, name);
 
     if (!project) {
@@ -578,6 +604,13 @@ app.post('/api/projects/:id/timeline/lock', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { tasks, name } = req.body;
+    // Same optional-but-must-be-an-array-if-present rule as budget/lock -
+    // tasks is deliberately omittable here (see the comment in
+    // TimelineModule.js's handleLock), but a present-and-malformed value
+    // should be rejected, not silently swapped for the DB's current state.
+    if (tasks !== undefined && !Array.isArray(tasks)) {
+      return res.status(400).json({ error: 'tasks must be an array' });
+    }
     const project = await boardDb.lockProjectTimeline(id, req.user.name || req.user.email, tasks, name);
 
     if (!project) {

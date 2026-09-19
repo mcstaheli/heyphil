@@ -163,7 +163,6 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
       }
       
       const data = await response.json();
-      console.log('ProjectDetail: People data from API:', data.people);
       setPeople(data.people || {});
     } catch (error) {
       console.error('Failed to load people:', error);

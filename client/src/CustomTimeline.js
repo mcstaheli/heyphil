@@ -4,13 +4,6 @@ import './CustomTimeline.css';
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 function CustomTimeline({ projectId, compact = false, people = {}, activeLock = null }) {
-  // Debug people data
-  useEffect(() => {
-    console.log('CustomTimeline received people prop:', people);
-    console.log('People keys:', Object.keys(people));
-    console.log('People values:', Object.values(people));
-  }, [people]);
-  
   const [tasks, setTasks] = useState([]);
   const [editingTask, setEditingTask] = useState(null);
   const [timelineRange, setTimelineRange] = useState({ start: null, end: null });
@@ -118,8 +111,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
           const depTask = tasks.find(t => t.id === depId);
           if (!depTask) return latest;
           
-          const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? new Date(depTask.date) : new Date(depTask.end);
-          depEnd.setHours(0, 0, 0, 0);
+          const depEnd = (depTask.type === 'milestone' || depTask.type === 'event') ? parseLocalDate(depTask.date) : parseLocalDate(depTask.end);
           return depEnd > latest ? depEnd : latest;
         }, new Date(0));
         
@@ -133,9 +125,8 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
       if (successors.length > 0) {
         const earliestSuccessorStart = successors.reduce((earliest, successor) => {
           const succStart = (successor.type === 'milestone' || successor.type === 'event')
-            ? new Date(successor.date)
-            : new Date(successor.start);
-          succStart.setHours(0, 0, 0, 0);
+            ? parseLocalDate(successor.date)
+            : parseLocalDate(successor.start);
           return succStart < earliest ? succStart : earliest;
         }, new Date('2100-01-01'));
         
@@ -173,9 +164,8 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
         if (successors.length > 0) {
           const earliestSuccessorStart = successors.reduce((earliest, successor) => {
             const succStart = (successor.type === 'milestone' || successor.type === 'event')
-              ? new Date(successor.date)
-              : new Date(successor.start);
-            succStart.setHours(0, 0, 0, 0);
+              ? parseLocalDate(successor.date)
+              : parseLocalDate(successor.start);
             return succStart < earliest ? succStart : earliest;
           }, new Date('2100-01-01'));
 
@@ -242,11 +232,9 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
 
   // Validate and fix task dependencies
   const validateTaskDependencies = (tasksToValidate) => {
-    let fixed = false;
     const validatedTasks = tasksToValidate.map(task => {
       // Phases can't have dependencies
       if (task.type === 'phase' && task.dependencies && task.dependencies.length > 0) {
-        fixed = true;
         console.warn(`Removing dependencies from phase "${task.name}"`);
         return { ...task, dependencies: [] };
       }
@@ -260,7 +248,6 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
       });
       
       if (nonPhaseDeps.length !== task.dependencies.length) {
-        fixed = true;
         console.warn(`Removing phase dependencies from task "${task.name}"`);
         task = { ...task, dependencies: nonPhaseDeps };
       }
@@ -280,7 +267,6 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
       const taskStart = (task.type === 'milestone' || task.type === 'event') ? parseLocalDate(task.date) : parseLocalDate(task.start);
 
       if (taskStart < latestEndDate) {
-        fixed = true;
         console.warn(`Fixing dependency violation for task "${task.name}"`);
 
         if (task.type === 'milestone' || task.type === 'event') {
@@ -301,10 +287,6 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
       return task;
     });
     
-    if (fixed) {
-      console.log('Fixed dependency violations on load');
-    }
-    
     return validatedTasks;
   };
 
@@ -316,7 +298,6 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
     }
 
     try {
-      console.log('📥 Loading timeline for project:', projectId);
       const token = localStorage.getItem('authToken');
       const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
         credentials: 'include',
@@ -324,17 +305,15 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       if (!res.ok) {
         console.error('❌ Failed to load project:', res.status);
         setTasks([]);
         return;
       }
-      
+
       const data = await res.json();
       const loadedTasks = data.project?.timeline || [];
-      console.log('✅ Loaded timeline:', loadedTasks.length, 'tasks');
-      console.log('Timeline data:', loadedTasks);
       setTasks(validateTaskDependencies(loadedTasks));
     } catch (error) {
       console.error('❌ Error loading timeline:', error);
@@ -348,31 +327,32 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
       return;
     }
 
+    // Captured before the request, same as BudgetModule/ValueModule's
+    // saveItems - callers always setTasks(updatedTasks) immediately
+    // before calling this, so `tasks` here (read before the first await)
+    // is still this render's pre-update closure value, giving us
+    // something to revert to if the save fails. Previously a failed save
+    // just logged an error - the Gantt kept showing the unsaved change
+    // with nothing telling the user it never actually landed.
+    const previousTasks = tasks;
+
     try {
-      console.log('💾 Saving timeline for project:', projectId);
-      console.log('   Tasks to save:', updatedTasks.length);
-      console.log('   Task data:', updatedTasks);
-      
       const token = localStorage.getItem('authToken');
       const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
         method: 'PUT',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         credentials: 'include',
         body: JSON.stringify({ timeline: updatedTasks })
       });
-      
-      if (!res.ok) {
-        console.error('❌ Failed to save timeline:', res.status);
-        const errorText = await res.text();
-        console.error('   Error response:', errorText);
-      } else {
-        console.log('✅ Timeline saved successfully');
-      }
+
+      if (!res.ok) throw new Error(`Save failed: ${res.status}`);
     } catch (error) {
       console.error('❌ Error saving timeline:', error);
+      setTasks(previousTasks);
+      window.alert('Could not save that timeline change - please try again.');
     }
   };
 
@@ -777,28 +757,34 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
     let updatedTasks = [...tasksToUpdate];
     
     dependentTasks.forEach(depTask => {
-      // Calculate new minimum start date based on all dependencies
+      // Calculate new minimum start date based on all dependencies. Uses
+      // parseLocalDate (not raw new Date()) for consistency with the rest
+      // of the file - this specific spot happened to still produce the
+      // right answer with raw parsing (never calling .setHours(0,0,0,0)
+      // meant the UTC-midnight parse's day-early shift and toISOString's
+      // day-late reconversion canceled out), but that's a fragile
+      // coincidence one added .setHours() away from reproducing the exact
+      // bug parseLocalDate exists to prevent.
       const latestEndDate = depTask.dependencies.reduce((latest, depId) => {
         const dep = updatedTasks.find(t => t.id === depId);
         if (!dep) return latest;
-        
-        const depEnd = (dep.type === 'milestone' || dep.type === 'event') 
-          ? new Date(dep.date) 
-          : new Date(dep.end);
+
+        const depEnd = (dep.type === 'milestone' || dep.type === 'event')
+          ? parseLocalDate(dep.date)
+          : parseLocalDate(dep.end);
         return depEnd > latest ? depEnd : latest;
       }, new Date(0));
-      
+
       // Add one day buffer
       latestEndDate.setDate(latestEndDate.getDate() + 1);
-      
+
       const currentStart = (depTask.type === 'milestone' || depTask.type === 'event')
-        ? new Date(depTask.date)
-        : new Date(depTask.start);
-      
+        ? parseLocalDate(depTask.date)
+        : parseLocalDate(depTask.start);
+
       // If the dependent task needs to be shifted
       if (currentStart < latestEndDate) {
-        console.log(`Cascading dependency change: shifting "${depTask.name}" forward`);
-        
+
         updatedTasks = updatedTasks.map(t => {
           if (t.id === depTask.id) {
             if (t.type === 'milestone' || t.type === 'event') {
@@ -893,7 +879,6 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
         if (children.length > 0) {
           const avgProgress = children.reduce((sum, child) => sum + (child.progress || 0), 0) / children.length;
           task.progress = Math.round(avgProgress);
-          console.log(`Phase "${task.name}": ${children.length} tasks, avg progress: ${avgProgress}%`, children.map(c => `${c.name}: ${c.progress}%`));
         } else {
           // No regular tasks, only milestones/events - show 0%
           task.progress = 0;
@@ -1377,14 +1362,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
             };
             
             const ownerPhotoUrl = task.owner && people[task.owner];
-            
-            // Debug logging
-            if (task.owner && taskIndex === 1) {
-              console.log('Task owner:', task.owner);
-              console.log('People keys:', Object.keys(people));
-              console.log('Photo URL:', ownerPhotoUrl);
-            }
-            
+
             return (
               <div 
                 key={task.id} 
@@ -1861,7 +1839,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                 setHasDragged(false); // Reset drag flag at start of new drag
                 setDraggingTask(task.id);
                 setDragStartX(e.clientX);
-                setDragStartDate((task.type === 'milestone' || task.type === 'event') ? new Date(task.date) : new Date(task.start));
+                setDragStartDate((task.type === 'milestone' || task.type === 'event') ? parseLocalDate(task.date) : parseLocalDate(task.start));
               };
               
               const handleBarClick = (e) => {
