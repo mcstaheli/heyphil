@@ -41,7 +41,7 @@ function getCardMetricChips(card) {
     const valueLocks = card.valueLocks || [];
     const latestValueLock = valueLocks.length ? valueLocks[valueLocks.length - 1] : null;
     const { totalExpected } = summarizeLedger(card.value, latestValueLock);
-    chips.push({ key: 'value', icon: '🎯', text: formatCompactMoney(totalExpected), className: '' });
+    chips.push({ key: 'value', icon: '💰', text: formatCompactMoney(totalExpected), className: '' });
   }
 
   if (hasLeafItems(card.budget)) {
@@ -50,7 +50,7 @@ function getCardMetricChips(card) {
     const { delta } = summarizeLedger(card.budget, latestBudgetLock);
     chips.push({
       key: 'budget',
-      icon: '💰',
+      icon: '🎯',
       text: formatCompactMoney(delta),
       className: delta > 0 ? 'over' : delta < 0 ? 'under' : ''
     });
