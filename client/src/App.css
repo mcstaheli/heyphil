@@ -1634,12 +1634,15 @@ body {
   }
 }
 
-/* Condensed Value/Budget/Timeline metrics on cards */
+/* Condensed Value/Budget/Timeline metrics on cards - sits above the
+   photo/title row, so order is target-value-to-Philo, budget delta,
+   timeline delta; nowrap keeps it to one line since it now has the
+   card's full width instead of sharing a row with the photo. */
 .card-metric-chips {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
-  margin: 4px 0 8px 0;
+  margin: 0 0 10px 0;
 }
 
 .card-metric-chip {

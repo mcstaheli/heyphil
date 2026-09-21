@@ -37,6 +37,13 @@ function formatCompactMoney(n) {
 function getCardMetricChips(card) {
   const chips = [];
 
+  if (hasLeafItems(card.value)) {
+    const valueLocks = card.valueLocks || [];
+    const latestValueLock = valueLocks.length ? valueLocks[valueLocks.length - 1] : null;
+    const { totalExpected } = summarizeLedger(card.value, latestValueLock);
+    chips.push({ key: 'value', icon: '🎯', text: formatCompactMoney(totalExpected), className: '' });
+  }
+
   if (hasLeafItems(card.budget)) {
     const budgetLocks = card.budgetLocks || [];
     const latestBudgetLock = budgetLocks.length ? budgetLocks[budgetLocks.length - 1] : null;
@@ -47,13 +54,6 @@ function getCardMetricChips(card) {
       text: formatCompactMoney(delta),
       className: delta > 0 ? 'over' : delta < 0 ? 'under' : ''
     });
-  }
-
-  if (hasLeafItems(card.value)) {
-    const valueLocks = card.valueLocks || [];
-    const latestValueLock = valueLocks.length ? valueLocks[valueLocks.length - 1] : null;
-    const { totalExpected } = summarizeLedger(card.value, latestValueLock);
-    chips.push({ key: 'value', icon: '🎯', text: formatCompactMoney(totalExpected), className: '' });
   }
 
   const hasTimeline = (card.timeline || []).some((t) => t.type === 'milestone' && t.date);
@@ -1299,6 +1299,15 @@ function OriginationBoard({ user, studioMode = false }) {
                     onDragEnd={handleDragEnd}
                     onClick={() => setEditingCard(card)}
                   >
+                    {metricChips.length > 0 && (
+                      <div className="card-metric-chips">
+                        {metricChips.map((chip) => (
+                          <span key={chip.key} className={`card-metric-chip ${chip.className}`}>
+                            {chip.icon} {chip.text}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {!isPrePost && card.daysInStage > 30 && <div className="stale-indicator" title={`${card.daysInStage} days in stage`}>⚠️</div>}
                     {!isPrePost && (
                       <button
@@ -1346,15 +1355,6 @@ function OriginationBoard({ user, studioMode = false }) {
                       )}
                       <div className="card-content">
                         <h4>{card.title}</h4>
-                        {metricChips.length > 0 && (
-                          <div className="card-metric-chips">
-                            {metricChips.map((chip) => (
-                              <span key={chip.key} className={`card-metric-chip ${chip.className}`}>
-                                {chip.icon} {chip.text}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </div>
                     {!isPrePost && (
