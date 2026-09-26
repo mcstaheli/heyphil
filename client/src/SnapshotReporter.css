@@ -11,7 +11,11 @@
   font-size: 22px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   cursor: pointer;
-  z-index: 500;
+  /* Has to outrank every .modal-overlay in the app so the button stays
+     clickable (and the point of the tool - screenshotting exactly what's
+     on screen, including an open dialog) still works with one showing.
+     OrgCharts.css's .modal-overlay is the highest at 10000. */
+  z-index: 10050;
 }
 
 .snap-fab:hover {

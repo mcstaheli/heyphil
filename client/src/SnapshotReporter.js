@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './SnapshotReporter.css';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -176,7 +177,16 @@ function SnapshotReporter() {
     }
   }
 
-  return (
+  // Portaled straight to <body>: other modals in this app (CardModal,
+  // OrgCharts, Cashflow, ...) nest inside their own ancestor elements that
+  // happen to establish their own stacking context, so a plain in-tree
+  // .modal-overlay here can end up painted BEHIND one of those even with a
+  // higher z-index - a fixed-position element's z-index only competes
+  // within its own stacking context, not globally. Rendering at the body
+  // level sidesteps that entirely, which matters here specifically because
+  // the whole point of this button is to still work while some other
+  // dialog is already open.
+  return createPortal(
     <>
       <button
         className="snap-fab"
@@ -193,7 +203,8 @@ function SnapshotReporter() {
           onSubmit={submitReport}
         />
       )}
-    </>
+    </>,
+    document.body
   );
 }
 
