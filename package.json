@@ -12,6 +12,7 @@
     "migrate": "node server/migrate-from-sheets.js",
     "migrate:deleted-at": "node server/add-deleted-at.js",
     "migrate:columns": "node server/migrations/003-restructure-columns.js",
+    "migrate:restore-ideation": "node server/migrations/004-restore-ideation-column.js",
     "db:init": "node server/init-db.js",
     "railway:build": "npm install && cd client && npm install && npm run build",
     "start": "node server/index.js",

@@ -13,7 +13,7 @@ import Portfolio from './Portfolio';
 import StrategyGrid from './StrategyGrid';
 import Layout from './Layout';
 import { summarizeLedger, computeTimelineMetrics } from './projectMetrics';
-import { ORIGINATION_STAGE_ORDER } from './boardStages';
+import { ORIGINATION_STAGE_ORDER, PRE_POST_COLUMN_IDS } from './boardStages';
 import { formatCompactMoney } from './formatMoney';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -342,11 +342,8 @@ function OriginationBoard({ user, studioMode = false }) {
   const [quickAddTaskText, setQuickAddTaskText] = useState({}); // card id -> draft text
   const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // action ids mid-"just checked off" flash
   const [draggedCard, setDraggedCard] = useState(null);
-  // Exited (and the Studio board's pre/post equivalents) default to
-  // minimized - these are the "isPrePost" columns elsewhere in this file.
-  const [minimizedColumns, setMinimizedColumns] = useState(() => new Set([
-    'exited', 'studio-ideation', 'studio-exited', 'studio-abandoned'
-  ]));
+  // The "isPrePost" columns (see PRE_POST_COLUMN_IDS) default to minimized.
+  const [minimizedColumns, setMinimizedColumns] = useState(() => new Set(PRE_POST_COLUMN_IDS));
 
   const toggleColumnMinimized = (columnId) => {
     setMinimizedColumns(prev => {
@@ -372,6 +369,9 @@ function OriginationBoard({ user, studioMode = false }) {
   // order elsewhere in this file (ORIGINATION_STAGE_ORDER) - keep the two
   // in sync, and keep this in sync with board-db.js's own copy server-side.
   const allColumns = [
+    // Restored after Stage 1 folded it into On Deck - see
+    // migrations/004-restore-ideation-column.js.
+    { id: 'ideation', title: 'Ideation', color: '#bbdefb', section: 'origination' },
     { id: 'on-deck', title: 'On Deck', color: '#90caf9', section: 'origination' },
     { id: 'diligence', title: 'Diligence', color: '#42a5f5', section: 'origination' },
     { id: 'capitalize', title: 'Capitalize', color: '#1565c0', section: 'origination' },
@@ -397,14 +397,14 @@ function OriginationBoard({ user, studioMode = false }) {
     loadBoard();
   }, []);
   
-  // Recalculate metrics based on filtered cards (exclude Exited - the sole
-  // terminal stage since Stage 1 folded Ideation/Abandoned/Closed away)
+  // Recalculate metrics based on filtered cards (exclude Ideation - not
+  // yet committed to - and Exited - already done)
   useEffect(() => {
     if (cards.length === 0) return;
 
     // Apply same filters as the board view
     const filteredCards = cards.filter(c => {
-      if (c.column === 'exited') return false;
+      if (PRE_POST_COLUMN_IDS.includes(c.column)) return false;
       if (filterOwner && c.owner !== filterOwner) return false;
       if (filterProjectType && c.projectType !== filterProjectType) return false;
       if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -1371,8 +1371,7 @@ function OriginationBoard({ user, studioMode = false }) {
           });
           
           const isEmpty = filteredCards.length === 0;
-          const isPrePost = column.id === 'exited' ||
-                            column.id === 'studio-ideation' || column.id === 'studio-exited' || column.id === 'studio-abandoned';
+          const isPrePost = PRE_POST_COLUMN_IDS.includes(column.id);
           const isMinimized = minimizedColumns.has(column.id);
 
           return (
@@ -1411,8 +1410,7 @@ function OriginationBoard({ user, studioMode = false }) {
             </div>
             <div className="column-cards">
               {filteredCards.map(card => {
-                const isPrePost = column.id === 'exited' ||
-                                  column.id === 'studio-ideation' || column.id === 'studio-exited' || column.id === 'studio-abandoned';
+                const isPrePost = PRE_POST_COLUMN_IDS.includes(column.id);
                 const metricChips = isPrePost ? [] : getCardMetricChips(card);
                 const isHandoff = column.id === 'handoff';
                 const handoffDays = isHandoff ? daysSince(card.handoff?.enteredAt) : null;
@@ -1852,7 +1850,11 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
-    column: card?.column || initialColumn || columns[0].id,
+    // Origination's default is explicitly 'on-deck', not "whichever column
+    // happens to be first in the array" - that used to be equivalent, but
+    // isn't now that Ideation sorts first. Studio still has no ranked
+    // default of its own, so it keeps relying on array order.
+    column: card?.column || initialColumn || (studioMode ? columns[0].id : 'on-deck'),
     owner: card?.owner || '',
     notes: card?.notes || '',
     annualValue: card?.annualValue || 0,

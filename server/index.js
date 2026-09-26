@@ -851,14 +851,17 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
   try {
     const data = await boardDb.getBoardData();
     
-    // Calculate metrics with proper null handling - Exited is the sole
-    // terminal stage now (Stage 1 restructure folded the old Ideation/
-    // Abandoned/Closed columns into On Deck/Exited), so it's the only one
-    // excluded from "active" totals. Also excludes the pre-restructure
-    // terminal/pre-pipeline names defensively, in case this deploys before
-    // migrate:columns has actually been run against this database.
-    const LEGACY_INACTIVE_STATUSES = new Set(['exited', 'closed', 'abandoned', 'ideation', 'backlog']);
-    const filteredCards = data.cards.filter(c => !LEGACY_INACTIVE_STATUSES.has(c.column));
+    // Calculate metrics with proper null handling.
+    // 'ideation' (not yet committed to) and 'exited' (already done) are
+    // PERMANENTLY, intentionally excluded from "active" totals - these are
+    // real, live stage ids, not legacy names. Do not remove them even after
+    // confirming migrate:columns has run everywhere.
+    // 'closed'/'abandoned'/'backlog' are the DEFENSIVE half of this set -
+    // pre-restructure names kept only in case this deploys before
+    // migrate:columns has run against this database; safe to drop once
+    // that's no longer a concern.
+    const INACTIVE_STATUSES = new Set(['ideation', 'exited', 'closed', 'abandoned', 'backlog']);
+    const filteredCards = data.cards.filter(c => !INACTIVE_STATUSES.has(c.column));
 
     // Group by stage for detailed metrics
     const byStage = {};

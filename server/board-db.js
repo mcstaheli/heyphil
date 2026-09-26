@@ -5,13 +5,16 @@ import pool from './db.js';
 // Origination pipeline stage order (board restructure Stage 1): a card may
 // only move to an equal-or-higher rank. Build is deliberately skippable -
 // Handoff -> Operate just skips a rank, which "rank must not decrease"
-// already allows without needing to special-case it.
+// already allows without needing to special-case it. Ideation (an early
+// idea, not yet decided) sits before On Deck ("identified and worth
+// pursuing") - initially folded into On Deck by the Stage 1 restructure,
+// restored as its own stage afterward (see migrations/004-restore-ideation-column.js).
 //
 // Studio-board statuses (studio-*) and anything else not in this list are
 // outside this ordering entirely and keep moving freely, same as before -
 // see assertForwardMove below.
 export const ORIGINATION_STAGE_ORDER = [
-  'on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets', 'exited'
+  'ideation', 'on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets', 'exited'
 ];
 
 export class ForwardOnlyViolationError extends Error {
