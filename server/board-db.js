@@ -2,70 +2,42 @@
 import { randomUUID } from 'crypto';
 import pool from './db.js';
 
-// Origination pipeline stage order (board restructure Stage 1): a card may
-// only move to an equal-or-higher rank. Build is deliberately skippable -
-// Handoff -> Operate just skips a rank, which "rank must not decrease"
-// already allows without needing to special-case it. Ideation (an early
-// idea, not yet decided) sits before On Deck ("identified and worth
-// pursuing") - initially folded into On Deck by the Stage 1 restructure,
-// restored as its own stage afterward (see migrations/004-restore-ideation-column.js).
-// Abandoned similarly was folded into Exited by Stage 1 and later restored
-// as its own terminal stage (see migrations/005-restore-abandoned-column.js) -
-// ranked just before Exited, so either is reachable directly from any
-// earlier stage (same as Exited always was on its own). Rank alone can't
-// express "both of these are dead ends" (one has to outrank the other, or
-// there's no pipeline order at all) - see TERMINAL_STAGES below for the
-// explicit carve-out that actually enforces it.
-//
-// Studio-board statuses (studio-*) and anything else not in this list are
-// outside this ordering entirely and keep moving freely, same as before -
-// see assertForwardMove below.
+// Origination pipeline stages, in their display/ramp order (board restructure
+// Stage 1). Cards can move freely between any of these in either direction -
+// there is no forward-only enforcement (removed per later request: "don't
+// force cards not to move back anymore"). This list is still the source of
+// truth for which statuses belong to the origination board at all (as
+// opposed to a Studio-board `studio-*` status) - see assertSameBoardFamily
+// below - and for column display order/coloring elsewhere.
 export const ORIGINATION_STAGE_ORDER = [
   'ideation', 'on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets',
   'abandoned', 'exited'
 ];
 
-// Once a card reaches either of these, it's done - no further movement,
-// not even to the OTHER terminal stage. Without this, a plain rank
-// comparison would let 'abandoned' (rank 8) move to 'exited' (rank 9)
-// since 9 >= 8, silently turning a walked-away deal into a completed exit.
-const TERMINAL_STAGES = ['abandoned', 'exited'];
-
 export class ForwardOnlyViolationError extends Error {
   constructor(fromStatus, toStatus) {
-    super(`Cards move forward only: cannot move from "${fromStatus}" back to "${toStatus}"`);
+    super(`Cannot move a card from "${fromStatus}" to "${toStatus}" - the origination board and the Studio board are separate systems.`);
     this.name = 'ForwardOnlyViolationError';
     this.fromStatus = fromStatus;
     this.toStatus = toStatus;
   }
 }
 
-// Exported purely for unit testing (scripts/tests/assertForwardMove.test.js)
-// - this is the one invariant in this file worth protecting with a fast,
-// no-DB test, per CLAUDE.md's "write a test for a testable bug" rule; the
-// abandoned-rank-8/exited-rank-9 gap this function used to have was
-// exactly the kind of thing a test would have caught immediately.
-export function assertForwardMove(fromStatus, toStatus) {
+// The only remaining movement guard: a card can't cross between the
+// origination pipeline and Studio (or any other unrecognized status) - the
+// two are separate tracking systems with their own status namespaces, and
+// letting a card wander between them would just leave it invisible to
+// whichever board's columns don't recognize its new status. Movement WITHIN
+// a family (either direction, including into/out of the terminal stages) is
+// unrestricted.
+export function assertSameBoardFamily(fromStatus, toStatus) {
   if (!fromStatus || !toStatus || fromStatus === toStatus) return;
   const fromIsOrigination = ORIGINATION_STAGE_ORDER.includes(fromStatus);
   const toIsOrigination = ORIGINATION_STAGE_ORDER.includes(toStatus);
   // Neither side is one of ours (both Studio, or both some other unranked
   // value) - not ours to police, let it through untouched.
   if (!fromIsOrigination && !toIsOrigination) return;
-  // Exactly one side is in the origination pipeline: this is either
-  // jumping INTO it from Studio/unknown, or OUT of it to Studio/unknown -
-  // neither is a valid "forward" move, and letting an origination card's
-  // target rank come back as -1 (unranked) would silently bypass the
-  // whole check below, so this has to be its own explicit rejection.
   if (fromIsOrigination !== toIsOrigination) {
-    throw new ForwardOnlyViolationError(fromStatus, toStatus);
-  }
-  if (TERMINAL_STAGES.includes(fromStatus)) {
-    throw new ForwardOnlyViolationError(fromStatus, toStatus);
-  }
-  const fromRank = ORIGINATION_STAGE_ORDER.indexOf(fromStatus);
-  const toRank = ORIGINATION_STAGE_ORDER.indexOf(toStatus);
-  if (toRank < fromRank) {
     throw new ForwardOnlyViolationError(fromStatus, toStatus);
   }
 }
@@ -166,9 +138,9 @@ export async function updateProject(id, updates) {
 // Locks the row for the duration of the check-then-write, same pattern as
 // lockProjectLedger/lockProjectTimeline elsewhere in this file - without
 // it, two concurrent requests moving the same card could each read the
-// status before the other's write commits, letting a combined backward
+// status before the other's write commits, letting a combined cross-board
 // move slip through even though neither request individually violated
-// "forward only".
+// assertSameBoardFamily.
 async function updateProjectWithStatusCheck(id, updates, newStatus) {
   const client = await pool.connect();
   try {
@@ -179,7 +151,7 @@ async function updateProjectWithStatusCheck(id, updates, newStatus) {
     );
     const currentRow = current.rows[0];
     if (currentRow) {
-      assertForwardMove(currentRow.status, newStatus);
+      assertSameBoardFamily(currentRow.status, newStatus);
     }
 
     // The generic status/column update (this path) is also how drag-and-drop
@@ -423,15 +395,16 @@ export async function updateProjectHandoff(id, { operator, checklist } = {}) {
 }
 
 // The compound "Accept Handoff" action: operator becomes the sole owner,
-// the card advances out of Handoff (to Build or Operate - forward-only
-// still applies, so a caller can't use this to sneak a backward move past
-// the check), and the handoff object clears. Requires an operator named
-// and all four checklist items done - same rule the card's own UI gates
-// the Accept button on, enforced again here since this is the one place
-// that actually performs the transition.
+// the card advances out of Handoff (to Build or Operate), and the handoff
+// object clears. Requires an operator named and all four checklist items
+// done - same rule the card's own UI gates the Accept button on, enforced
+// again here since this is the one place that actually performs the
+// transition.
 // Handoff only ever exits to Build or Operate (Build is skippable) - not
-// straight to Assets/Exited, even though those rank higher and would pass
-// assertForwardMove on their own.
+// straight to Assets/Exited. This is the ONLY way out of Handoff at all
+// (the generic status-change path blocks leaving Handoff by any other
+// route - see the Handoff-exit-lock above), so this whitelist is doing
+// real work, independent of assertSameBoardFamily.
 const HANDOFF_NEXT_STATUSES = ['build', 'operate'];
 
 export async function acceptHandoff(id, acceptedBy, nextStatus) {
@@ -454,8 +427,6 @@ export async function acceptHandoff(id, acceptedBy, nextStatus) {
       await client.query('ROLLBACK');
       throw new HandoffNotReadyError('This project is not in Handoff.');
     }
-    assertForwardMove('handoff', nextStatus);
-
     const handoff = row.handoff || {};
     const checklist = handoff.checklist || {};
     if (!handoff.operator) {

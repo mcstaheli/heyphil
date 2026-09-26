@@ -1,18 +1,14 @@
-// Board restructure Stage 1: origination pipeline order, shared by App.js
-// (Kanban board - forward-only checks, Status dropdown filtering) and
-// StrategyGrid.js (which cards are even in scope for the grid - Studio
-// board statuses are never in this list). Mirrors board-db.js's
-// ORIGINATION_STAGE_ORDER server-side; keep both copies in sync.
+// Board restructure Stage 1: origination pipeline stages, in display/ramp
+// order. No forward-only enforcement (removed per request: "don't force
+// cards not to move back anymore") - this is just which statuses belong to
+// the origination board at all, used by StrategyGrid.js (which cards are
+// even in scope for the grid - Studio board statuses are never in this
+// list). Mirrors board-db.js's ORIGINATION_STAGE_ORDER server-side; keep
+// both copies in sync.
 export const ORIGINATION_STAGE_ORDER = [
   'ideation', 'on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets',
   'abandoned', 'exited'
 ];
-
-// Once a card is in either of these, it's done - mirrors board-db.js's own
-// TERMINAL_STAGES (rank alone can't express "both of these are dead ends",
-// since 'abandoned' still has to outrank every earlier stage). Used to lock
-// the Status dropdown/drag-and-drop the same way the server rejects it.
-export const TERMINAL_STAGES = ['abandoned', 'exited'];
 
 // Every "condensed card" stage - minimized by default, gets the small-
 // avatar/no-chips/no-actions card-prepost styling, and excluded from
