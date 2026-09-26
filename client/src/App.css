@@ -1777,9 +1777,10 @@ body {
   color: #28a745;
 }
 
-/* Ideation (restored - see migrations/004-restore-ideation-column.js) and
+/* Ideation, Abandoned (both restored - see migrations/004 and 005), and
    Exited - Pre/Post activity areas */
 .column-ideation,
+.column-abandoned,
 .column-exited,
 .column-studio-ideation,
 .column-studio-exited,
@@ -1788,6 +1789,7 @@ body {
 }
 
 .column-ideation .column-header,
+.column-abandoned .column-header,
 .column-exited .column-header,
 .column-studio-ideation .column-header,
 .column-studio-exited .column-header,
@@ -1841,19 +1843,23 @@ body {
   color: #f44336;
 }
 
-/* Extra spacing to separate Ideation/Exited from the active workflow */
+/* Extra spacing to separate Ideation/Abandoned+Exited from the active
+   workflow - Abandoned carries the left margin now that it leads the
+   trailing pair, not Exited (no gap needed between two terminal columns
+   sitting next to each other). */
 .column-ideation,
 .column-studio-ideation {
   margin-right: 32px;
 }
 
-.column-exited,
+.column-abandoned,
 .column-studio-exited {
   margin-left: 32px;
 }
 
-/* Ideation/Exited - blend column container into page background */
+/* Ideation/Abandoned/Exited - blend column container into page background */
 .column-ideation,
+.column-abandoned,
 .column-exited,
 .column-studio-ideation,
 .column-studio-exited,
@@ -1863,6 +1869,7 @@ body {
 }
 
 .column-ideation .column-cards,
+.column-abandoned .column-cards,
 .column-exited .column-cards,
 .column-studio-ideation .column-cards,
 .column-studio-exited .column-cards,
@@ -1872,6 +1879,7 @@ body {
 
 /* Keep cards white in these columns */
 .column-ideation .kanban-card,
+.column-abandoned .kanban-card,
 .column-exited .kanban-card,
 .column-studio-ideation .kanban-card,
 .column-studio-exited .kanban-card,

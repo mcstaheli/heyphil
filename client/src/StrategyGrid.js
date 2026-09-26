@@ -62,12 +62,13 @@ function StrategyGrid() {
 
   // Only the origination pipeline is in scope here - the Studio board is a
   // separate system with no annual-value/capital-committed/months-to-
-  // first-cash fields of its own. Ideation is excluded too: it's "not yet
-  // committed to" (App.js's own active-metrics filter treats it the same
-  // way) - a speculative number typed in before an idea is even decided on
-  // shouldn't count toward the committed-capital/yield math here.
+  // first-cash fields of its own. Ideation and Abandoned are excluded too
+  // (App.js's own active-metrics filter treats them the same way): an idea
+  // not yet decided on, or a deal walked away from, shouldn't count toward
+  // the committed-capital/yield math here.
   const originationCards = useMemo(
-    () => (projects || []).filter((c) => ORIGINATION_STAGE_ORDER.includes(c.column) && c.column !== 'ideation'),
+    () => (projects || []).filter((c) => ORIGINATION_STAGE_ORDER.includes(c.column)
+      && c.column !== 'ideation' && c.column !== 'abandoned'),
     [projects]
   );
 

@@ -13,7 +13,7 @@ import Portfolio from './Portfolio';
 import StrategyGrid from './StrategyGrid';
 import Layout from './Layout';
 import { summarizeLedger, computeTimelineMetrics } from './projectMetrics';
-import { ORIGINATION_STAGE_ORDER, PRE_POST_COLUMN_IDS } from './boardStages';
+import { ORIGINATION_STAGE_ORDER, PRE_POST_COLUMN_IDS, TERMINAL_STAGES } from './boardStages';
 import { formatCompactMoney } from './formatMoney';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -379,6 +379,9 @@ function OriginationBoard({ user, studioMode = false }) {
     { id: 'build', title: 'Build', color: '#a5d6a7', section: 'origination' },
     { id: 'operate', title: 'Operate', color: '#66bb6a', section: 'origination' },
     { id: 'assets', title: 'Assets', color: '#388e3c', section: 'origination' },
+    // Restored after Stage 1 folded it into Exited - see
+    // migrations/005-restore-abandoned-column.js.
+    { id: 'abandoned', title: 'Abandoned', color: '#616161', section: 'origination' },
     { id: 'exited', title: 'Exited', color: '#1b5e20', section: 'origination' },
     { id: 'studio-ideation', title: 'Ideation', color: '#bbdefb', section: 'studio' },
     { id: 'studio-diligence', title: 'Diligence', color: '#e1bee7', section: 'studio' },
@@ -397,8 +400,8 @@ function OriginationBoard({ user, studioMode = false }) {
     loadBoard();
   }, []);
   
-  // Recalculate metrics based on filtered cards (exclude Ideation - not
-  // yet committed to - and Exited - already done)
+  // Recalculate metrics based on filtered cards (exclude every pre/post
+  // stage - see PRE_POST_COLUMN_IDS - not just Ideation/Exited)
   useEffect(() => {
     if (cards.length === 0) return;
 
@@ -974,25 +977,39 @@ function OriginationBoard({ user, studioMode = false }) {
   const handleDrop = (e, columnId) => {
     e.preventDefault();
     if (draggedCard) {
-      // Client-side half of "cards move forward only" - the server has the
-      // authoritative check (board-db.js), this just avoids a round trip
-      // (and the snap-into-place-then-revert flicker) for the common case
-      // of an accidental backward drag. Studio-board cards aren't ranked at
-      // all, so they're never blocked here.
       const fromRank = ORIGINATION_STAGE_ORDER.indexOf(draggedCard.column);
       const toRank = ORIGINATION_STAGE_ORDER.indexOf(columnId);
-      if (!studioMode && fromRank !== -1 && toRank !== -1 && toRank < fromRank) {
-        const fromTitle = columns.find(c => c.id === draggedCard.column)?.title || draggedCard.column;
-        const toTitle = columns.find(c => c.id === columnId)?.title || columnId;
-        window.alert(`Cards move forward only - can't move from ${fromTitle} back to ${toTitle}.`);
-        handleDragEnd();
-        return;
-      }
-      // The only way out of Handoff is Accept Handoff (names an operator,
-      // requires the checklist complete) - the server rejects a plain drag
-      // out of it too (see board-db.js), this just avoids the round trip.
-      if (!studioMode && draggedCard.column === 'handoff' && columnId !== 'handoff') {
-        window.alert('Leaving Handoff requires accepting it - open the card and use Accept Handoff.');
+      const fromTitle = columns.find(c => c.id === draggedCard.column)?.title || draggedCard.column;
+      const toTitle = columns.find(c => c.id === columnId)?.title || columnId;
+
+      // Client-side half of "cards move forward only" - the server has the
+      // authoritative check either way (board-db.js), these just avoid a
+      // round trip (and the snap-into-place-then-revert flicker) for the
+      // common cases below. Checked in order, first match wins. Studio-
+      // board cards aren't ranked at all, so none of these ever fire for them.
+      const dragGuards = studioMode ? [] : [
+        {
+          blocked: fromRank !== -1 && toRank !== -1 && toRank < fromRank,
+          message: `Cards move forward only - can't move from ${fromTitle} back to ${toTitle}.`
+        },
+        {
+          // The only way out of Handoff is Accept Handoff (names an
+          // operator, requires the checklist complete).
+          blocked: draggedCard.column === 'handoff' && columnId !== 'handoff',
+          message: 'Leaving Handoff requires accepting it - open the card and use Accept Handoff.'
+        },
+        {
+          // A terminal stage (Abandoned/Exited) is a dead end - not even
+          // the OTHER terminal stage is a valid destination (see
+          // board-db.js's TERMINAL_STAGES).
+          blocked: TERMINAL_STAGES.includes(draggedCard.column) && columnId !== draggedCard.column,
+          message: `${fromTitle} is a dead end - cards there can't move anywhere else.`
+        }
+      ];
+
+      const guard = dragGuards.find((g) => g.blocked);
+      if (guard) {
+        window.alert(guard.message);
         handleDragEnd();
         return;
       }
@@ -1892,6 +1909,11 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const availableColumns = useMemo(() => {
     if (studioMode || !card) return columns;
     if (card.column === 'handoff') return columns.filter((col) => col.id === 'handoff');
+    // A terminal stage (Abandoned/Exited) is a dead end - not even the
+    // OTHER terminal stage is a valid destination from here (the server
+    // rejects it too; this just avoids offering a choice that would only
+    // bounce back with an error).
+    if (TERMINAL_STAGES.includes(card.column)) return columns.filter((col) => col.id === card.column);
     const currentRank = ORIGINATION_STAGE_ORDER.indexOf(card.column);
     if (currentRank === -1) return columns;
     return columns.filter((col) => ORIGINATION_STAGE_ORDER.indexOf(col.id) >= currentRank);

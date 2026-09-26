@@ -9,13 +9,27 @@ import pool from './db.js';
 // idea, not yet decided) sits before On Deck ("identified and worth
 // pursuing") - initially folded into On Deck by the Stage 1 restructure,
 // restored as its own stage afterward (see migrations/004-restore-ideation-column.js).
+// Abandoned similarly was folded into Exited by Stage 1 and later restored
+// as its own terminal stage (see migrations/005-restore-abandoned-column.js) -
+// ranked just before Exited, so either is reachable directly from any
+// earlier stage (same as Exited always was on its own). Rank alone can't
+// express "both of these are dead ends" (one has to outrank the other, or
+// there's no pipeline order at all) - see TERMINAL_STAGES below for the
+// explicit carve-out that actually enforces it.
 //
 // Studio-board statuses (studio-*) and anything else not in this list are
 // outside this ordering entirely and keep moving freely, same as before -
 // see assertForwardMove below.
 export const ORIGINATION_STAGE_ORDER = [
-  'ideation', 'on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets', 'exited'
+  'ideation', 'on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets',
+  'abandoned', 'exited'
 ];
+
+// Once a card reaches either of these, it's done - no further movement,
+// not even to the OTHER terminal stage. Without this, a plain rank
+// comparison would let 'abandoned' (rank 8) move to 'exited' (rank 9)
+// since 9 >= 8, silently turning a walked-away deal into a completed exit.
+const TERMINAL_STAGES = ['abandoned', 'exited'];
 
 export class ForwardOnlyViolationError extends Error {
   constructor(fromStatus, toStatus) {
@@ -26,7 +40,12 @@ export class ForwardOnlyViolationError extends Error {
   }
 }
 
-function assertForwardMove(fromStatus, toStatus) {
+// Exported purely for unit testing (scripts/tests/assertForwardMove.test.js)
+// - this is the one invariant in this file worth protecting with a fast,
+// no-DB test, per CLAUDE.md's "write a test for a testable bug" rule; the
+// abandoned-rank-8/exited-rank-9 gap this function used to have was
+// exactly the kind of thing a test would have caught immediately.
+export function assertForwardMove(fromStatus, toStatus) {
   if (!fromStatus || !toStatus || fromStatus === toStatus) return;
   const fromIsOrigination = ORIGINATION_STAGE_ORDER.includes(fromStatus);
   const toIsOrigination = ORIGINATION_STAGE_ORDER.includes(toStatus);
@@ -39,6 +58,9 @@ function assertForwardMove(fromStatus, toStatus) {
   // target rank come back as -1 (unranked) would silently bypass the
   // whole check below, so this has to be its own explicit rejection.
   if (fromIsOrigination !== toIsOrigination) {
+    throw new ForwardOnlyViolationError(fromStatus, toStatus);
+  }
+  if (TERMINAL_STAGES.includes(fromStatus)) {
     throw new ForwardOnlyViolationError(fromStatus, toStatus);
   }
   const fromRank = ORIGINATION_STAGE_ORDER.indexOf(fromStatus);
