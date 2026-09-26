@@ -16,6 +16,13 @@ import { summarizeLedger, computeTimelineMetrics } from './projectMetrics';
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 
+// Board restructure Stage 1: mirrors board-db.js's ORIGINATION_STAGE_ORDER
+// - duplicated (client and server don't share a module) but must stay
+// identical. Used to keep the Status dropdown and drag-and-drop from even
+// offering a backward move, ahead of the server's own authoritative check.
+// Studio-board statuses aren't in this list and are never rank-checked.
+const ORIGINATION_STAGE_ORDER = ['on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets', 'exited'];
+
 function hasLeafItems(items) {
   return (items || []).some((i) => !i.isHeading);
 }
@@ -296,10 +303,10 @@ function OriginationBoard({ user, studioMode = false }) {
   const [quickAddTaskText, setQuickAddTaskText] = useState({}); // card id -> draft text
   const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // action ids mid-"just checked off" flash
   const [draggedCard, setDraggedCard] = useState(null);
-  // Ideation/Abandoned/Exited (and their Studio equivalents) default to
+  // Exited (and the Studio board's pre/post equivalents) default to
   // minimized - these are the "isPrePost" columns elsewhere in this file.
   const [minimizedColumns, setMinimizedColumns] = useState(() => new Set([
-    'ideation', 'closed', 'abandoned', 'studio-ideation', 'studio-exited', 'studio-abandoned'
+    'exited', 'studio-ideation', 'studio-exited', 'studio-abandoned'
   ]));
 
   const toggleColumnMinimized = (columnId) => {
@@ -320,23 +327,27 @@ function OriginationBoard({ user, studioMode = false }) {
   const [showTrash, setShowTrash] = useState(false);
   const [deletedCards, setDeletedCards] = useState([]);
 
+  // Board restructure Stage 1: Origination (blue ramp) -> Handoff (amber,
+  // deliberately off-ramp - a caution/transition state, not a rung on
+  // either ladder) -> Execution (green ramp). Order here IS the pipeline
+  // order elsewhere in this file (ORIGINATION_STAGE_ORDER) - keep the two
+  // in sync, and keep this in sync with board-db.js's own copy server-side.
   const allColumns = [
-    { id: 'ideation', title: 'Ideation', color: '#bbdefb', section: 'origination' },
     { id: 'on-deck', title: 'On Deck', color: '#90caf9', section: 'origination' },
-    { id: 'due-diligence', title: 'Due Diligence', color: '#64b5f6', section: 'origination' },
-    { id: 'capitalization', title: 'Capitalization', color: '#42a5f5', section: 'origination' },
-    { id: 'development', title: 'Development', color: '#1976d2', section: 'development' },
-    { id: 'operations', title: 'Operations', color: '#ef6c00', section: 'operations' },
-    { id: 'assets', title: 'Assets', color: '#66bb6a', section: 'origination' },
+    { id: 'diligence', title: 'Diligence', color: '#42a5f5', section: 'origination' },
+    { id: 'capitalize', title: 'Capitalize', color: '#1565c0', section: 'origination' },
+    { id: 'handoff', title: 'Handoff', color: '#ffa000', section: 'origination' },
+    { id: 'build', title: 'Build', color: '#a5d6a7', section: 'origination' },
+    { id: 'operate', title: 'Operate', color: '#66bb6a', section: 'origination' },
+    { id: 'assets', title: 'Assets', color: '#388e3c', section: 'origination' },
+    { id: 'exited', title: 'Exited', color: '#1b5e20', section: 'origination' },
     { id: 'studio-ideation', title: 'Ideation', color: '#bbdefb', section: 'studio' },
     { id: 'studio-diligence', title: 'Diligence', color: '#e1bee7', section: 'studio' },
     { id: 'studio-validation', title: 'Validation', color: '#ce93d8', section: 'studio' },
     { id: 'studio-launch', title: 'Launch', color: '#ba68c8', section: 'studio' },
     { id: 'studio-spinout', title: 'Spinout', color: '#ab47bc', section: 'studio' },
     { id: 'studio-abandoned', title: 'Abandoned', color: '#616161', section: 'studio' },
-    { id: 'studio-exited', title: 'Exited', color: '#2196f3', section: 'studio' },
-    { id: 'abandoned', title: 'Abandoned', color: '#616161', section: 'other' },
-    { id: 'closed', title: 'Exited', color: '#2196f3', section: 'other' }
+    { id: 'studio-exited', title: 'Exited', color: '#2196f3', section: 'studio' }
   ];
 
   const columns = studioMode
@@ -347,13 +358,14 @@ function OriginationBoard({ user, studioMode = false }) {
     loadBoard();
   }, []);
   
-  // Recalculate metrics based on filtered cards (exclude Ideation, Closed, and Abandoned)
+  // Recalculate metrics based on filtered cards (exclude Exited - the sole
+  // terminal stage since Stage 1 folded Ideation/Abandoned/Closed away)
   useEffect(() => {
     if (cards.length === 0) return;
-    
+
     // Apply same filters as the board view
     const filteredCards = cards.filter(c => {
-      if (c.column === 'ideation' || c.column === 'closed' || c.column === 'abandoned') return false;
+      if (c.column === 'exited') return false;
       if (filterOwner && c.owner !== filterOwner) return false;
       if (filterProjectType && c.projectType !== filterProjectType) return false;
       if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -502,7 +514,7 @@ function OriginationBoard({ user, studioMode = false }) {
           id: card.id,
           title: card.title || 'Untitled',
           description: card.description || '',
-          column: card.column || 'backlog',
+          column: card.column || 'on-deck',
           owner: card.owner || '',
           notes: card.notes || '',
           dealValue: card.dealValue || 0,
@@ -867,6 +879,20 @@ function OriginationBoard({ user, studioMode = false }) {
   const handleDrop = (e, columnId) => {
     e.preventDefault();
     if (draggedCard) {
+      // Client-side half of "cards move forward only" - the server has the
+      // authoritative check (board-db.js), this just avoids a round trip
+      // (and the snap-into-place-then-revert flicker) for the common case
+      // of an accidental backward drag. Studio-board cards aren't ranked at
+      // all, so they're never blocked here.
+      const fromRank = ORIGINATION_STAGE_ORDER.indexOf(draggedCard.column);
+      const toRank = ORIGINATION_STAGE_ORDER.indexOf(columnId);
+      if (!studioMode && fromRank !== -1 && toRank !== -1 && toRank < fromRank) {
+        const fromTitle = columns.find(c => c.id === draggedCard.column)?.title || draggedCard.column;
+        const toTitle = columns.find(c => c.id === columnId)?.title || columnId;
+        window.alert(`Cards move forward only - can't move from ${fromTitle} back to ${toTitle}.`);
+        handleDragEnd();
+        return;
+      }
       moveCard(draggedCard.id, columnId);
     }
     handleDragEnd();
@@ -1242,7 +1268,7 @@ function OriginationBoard({ user, studioMode = false }) {
           });
           
           const isEmpty = filteredCards.length === 0;
-          const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned' ||
+          const isPrePost = column.id === 'exited' ||
                             column.id === 'studio-ideation' || column.id === 'studio-exited' || column.id === 'studio-abandoned';
           const isMinimized = minimizedColumns.has(column.id);
 
@@ -1282,7 +1308,7 @@ function OriginationBoard({ user, studioMode = false }) {
             </div>
             <div className="column-cards">
               {filteredCards.map(card => {
-                const isPrePost = column.id === 'ideation' || column.id === 'closed' || column.id === 'abandoned' ||
+                const isPrePost = column.id === 'exited' ||
                                   column.id === 'studio-ideation' || column.id === 'studio-exited' || column.id === 'studio-abandoned';
                 const metricChips = isPrePost ? [] : getCardMetricChips(card);
                 return (
@@ -1676,7 +1702,19 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
     projectTypeColors ? Object.keys(projectTypeColors) : [],
     [projectTypeColors]
   );
-  
+
+  // Cards move forward only - editing an existing card hides backward
+  // stages from the picker entirely (the server enforces this too; this
+  // just avoids offering a choice that would only bounce back with an
+  // error). A brand-new card isn't moving from anywhere, so it can start
+  // in any stage. Studio-board cards aren't ranked at all.
+  const availableColumns = useMemo(() => {
+    if (studioMode || !card) return columns;
+    const currentRank = ORIGINATION_STAGE_ORDER.indexOf(card.column);
+    if (currentRank === -1) return columns;
+    return columns.filter((col) => ORIGINATION_STAGE_ORDER.indexOf(col.id) >= currentRank);
+  }, [columns, card, studioMode]);
+
   const handleAddAction = async () => {
     if (!newActionText.trim()) return;
     
@@ -1838,7 +1876,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               value={formData.column}
               onChange={(e) => setFormData({ ...formData, column: e.target.value })}
             >
-              {columns.map(col => (
+              {availableColumns.map(col => (
                 <option key={col.id} value={col.id}>{col.title}</option>
               ))}
             </select>

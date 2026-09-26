@@ -1,0 +1,286 @@
+[
+  {
+    "id": "c38531f4-7963-4608-a6e8-711f3831e897",
+    "status": "abandoned"
+  },
+  {
+    "id": "ab43a62e-3cdb-4c08-a86d-692a596a9613",
+    "status": "abandoned"
+  },
+  {
+    "id": "79f244cd-4c68-499e-8570-ff9e41cceef5",
+    "status": "abandoned"
+  },
+  {
+    "id": "be1f1649-2e63-43a0-b2fa-ba43c42e1171",
+    "status": "assets"
+  },
+  {
+    "id": "8014dcea-26fc-4ea5-b9de-315624a6b459",
+    "status": "abandoned"
+  },
+  {
+    "id": "e0901300-6421-4057-ab64-2328aaac186c",
+    "status": "abandoned"
+  },
+  {
+    "id": "30186982-fb6e-4d77-a8f8-a9a414eb21ac",
+    "status": "operations"
+  },
+  {
+    "id": "e33e4d14-3360-4429-ad65-422448917134",
+    "status": "due-diligence"
+  },
+  {
+    "id": "670c4019-27c8-40e5-a7d4-999f106f9a15",
+    "status": "development"
+  },
+  {
+    "id": "5c835329-b755-49d0-8bcd-694bec05f5c2",
+    "status": "abandoned"
+  },
+  {
+    "id": "f3bd416f-cda7-43e1-a04b-f434a45480cd",
+    "status": "abandoned"
+  },
+  {
+    "id": "46ef46f7-9215-4cb7-90b4-4270602b2beb",
+    "status": "on-deck"
+  },
+  {
+    "id": "5c21eed4-54a7-455b-a9fd-d6890f0567f5",
+    "status": "due-diligence"
+  },
+  {
+    "id": "e2189c15-ffdb-4d78-a3c9-1c6863c18eaf",
+    "status": "operations"
+  },
+  {
+    "id": "03e055cf-003f-477c-9e30-9fc7ab983c1d",
+    "status": "ideation"
+  },
+  {
+    "id": "45887124-f5ad-4f7f-8a4f-e7354d060b75",
+    "status": "on-deck"
+  },
+  {
+    "id": "67905c05-f115-4453-af84-a4edcad1257a",
+    "status": "ideation"
+  },
+  {
+    "id": "2a5f89db-9d6f-4fe9-ad79-5f4daf9dcb45",
+    "status": "ideation"
+  },
+  {
+    "id": "ef38baee-d6ff-49ec-b25e-53a8990906c6",
+    "status": "ideation"
+  },
+  {
+    "id": "d37acaf8-0539-4ba4-af01-749dcf659270",
+    "status": "backlog"
+  },
+  {
+    "id": "80afa2f2-9fba-4e29-91c8-a49cdcc26f21",
+    "status": "abandoned"
+  },
+  {
+    "id": "15a23eb6-1e20-4a4b-9309-ecd6409305f4",
+    "status": "abandoned"
+  },
+  {
+    "id": "63dd0195-7448-4be1-b9bf-cd10ce1ab2c8",
+    "status": "assets"
+  },
+  {
+    "id": "ccea0894-4727-4552-a550-776946f520a1",
+    "status": "ideation"
+  },
+  {
+    "id": "0d44765c-eaa3-4639-9a36-acbeaffd367b",
+    "status": "due-diligence"
+  },
+  {
+    "id": "e0e8bee9-84ce-4b0a-ba9c-dd68c896fbbf",
+    "status": "operations"
+  },
+  {
+    "id": "d01c7b16-8167-49bf-8b6a-f1c937e5186e",
+    "status": "ideation"
+  },
+  {
+    "id": "5112da5c-06a7-44c1-be7d-253fadac9ba2",
+    "status": "backlog"
+  },
+  {
+    "id": "ce37c4fd-24b9-4581-a2eb-cab9394e9485",
+    "status": "on-deck"
+  },
+  {
+    "id": "70e9abed-2b62-42f3-ba04-7123e018f4dc",
+    "status": "abandoned"
+  },
+  {
+    "id": "961fcdf8-0f54-420e-bc5a-95c99fb06fc2",
+    "status": "capitalization"
+  },
+  {
+    "id": "abcff2e8-8fb4-49d6-9bc3-15c1656de775",
+    "status": "capitalization"
+  },
+  {
+    "id": "17b05a36-dd8d-4dd5-9fd3-7669e3fb14ad",
+    "status": "abandoned"
+  },
+  {
+    "id": "e101a5fa-fcd0-4ccf-b3c1-c4ef82582827",
+    "status": "abandoned"
+  },
+  {
+    "id": "d76317a3-75ea-42db-9b32-d3710ff4ad16",
+    "status": "operations"
+  },
+  {
+    "id": "2cd9c314-a9f0-4c0b-9e1d-5c3366b06df4",
+    "status": "on-deck"
+  },
+  {
+    "id": "1926dd31-516f-4ce0-a700-2b954ad898c2",
+    "status": "due-diligence"
+  },
+  {
+    "id": "af3c3724-f8f4-44b8-adb5-ef2883430e8f",
+    "status": "abandoned"
+  },
+  {
+    "id": "e5187e71-42eb-4925-a2f9-3a6d06539df3",
+    "status": "ideation"
+  },
+  {
+    "id": "fbec7f16-a286-4e8d-bb91-c9b2bfd6b1b6",
+    "status": "backlog"
+  },
+  {
+    "id": "baed5d4f-4b13-4220-9451-342b27362137",
+    "status": "ideation"
+  },
+  {
+    "id": "5d97e9a9-1dea-43fb-b920-d79ed112a138",
+    "status": "ideation"
+  },
+  {
+    "id": "b2017b49-04a5-4bb8-98dc-eb98081c776b",
+    "status": "assets"
+  },
+  {
+    "id": "c2ea3e50-3ce2-4974-bdd5-f328207c90cf",
+    "status": "on-deck"
+  },
+  {
+    "id": "6954a59b-b11b-4e55-99ad-bd9383247bdc",
+    "status": "abandoned"
+  },
+  {
+    "id": "6d6749cd-ddd6-4f2e-930d-bfbf73386b36",
+    "status": "backlog"
+  },
+  {
+    "id": "f260d1f9-f3fa-454b-91d7-1139e000b9ae",
+    "status": "on-deck"
+  },
+  {
+    "id": "2f8dcc33-0ae5-40ec-9aa1-1182738a0b90",
+    "status": "development"
+  },
+  {
+    "id": "d041e11e-cec9-4bde-8857-68548ec2702e",
+    "status": "ic-diligence"
+  },
+  {
+    "id": "cd37a345-401d-4b38-b66b-c58083847741",
+    "status": "abandoned"
+  },
+  {
+    "id": "1db4ff71-cf10-4545-8c30-e6ff7d734d95",
+    "status": "abandoned"
+  },
+  {
+    "id": "9bbea2bd-f32a-431a-8e0c-b97cd612e424",
+    "status": "abandoned"
+  },
+  {
+    "id": "a8ff567f-6de7-4246-b829-949d047bbd79",
+    "status": "abandoned"
+  },
+  {
+    "id": "0c4af4c0-ea2a-4a71-ac5c-c21c8dc3ff90",
+    "status": "abandoned"
+  },
+  {
+    "id": "91408fe0-e930-4c84-be84-cc1a294c6fd8",
+    "status": "abandoned"
+  },
+  {
+    "id": "1f510c74-e25d-48e1-add2-ad494144c3b3",
+    "status": "abandoned"
+  },
+  {
+    "id": "7b7c1dd9-9c7d-4d1a-8d6c-cd673b357e0d",
+    "status": "on-deck"
+  },
+  {
+    "id": "bc7be74a-c253-4055-b296-342374485b59",
+    "status": "assets"
+  },
+  {
+    "id": "c1c2d4c6-8c55-402e-8b50-4ebcd30e4c50",
+    "status": "due-diligence"
+  },
+  {
+    "id": "c68b3098-cd52-4519-9cee-7be5ca17b3f9",
+    "status": "ideation"
+  },
+  {
+    "id": "7a071999-77a5-45ac-aeac-6b37bce06ee1",
+    "status": "due-diligence"
+  },
+  {
+    "id": "be202825-b7ef-4330-a6c1-3a287b83fc45",
+    "status": "on-deck"
+  },
+  {
+    "id": "19e84e81-5807-4d43-916f-3b211171bbdb",
+    "status": "ideation"
+  },
+  {
+    "id": "c06616a3-c35c-430c-93dd-1f87f7456134",
+    "status": "capitalization"
+  },
+  {
+    "id": "ead3cf1d-7a93-4297-8f50-c73ae6a777e3",
+    "status": "abandoned"
+  },
+  {
+    "id": "9bfadeda-cb84-4ebd-82d6-9826529df6d9",
+    "status": "ideation"
+  },
+  {
+    "id": "27cf82c9-2866-4fdf-b176-cc67ee37d59b",
+    "status": "development"
+  },
+  {
+    "id": "fdf8869f-9455-49a4-8e59-86681c869b1e",
+    "status": "abandoned"
+  },
+  {
+    "id": "236785f5-59d5-44a8-a266-50000119c121",
+    "status": "abandoned"
+  },
+  {
+    "id": "fa8bed81-2db4-487c-83e5-3e1d6d15e120",
+    "status": "ideation"
+  },
+  {
+    "id": "e8a1d016-e17d-4662-9ae9-29bd0a770ea4",
+    "status": "abandoned"
+  }
+]

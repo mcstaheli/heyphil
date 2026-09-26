@@ -2,6 +2,49 @@
 import { randomUUID } from 'crypto';
 import pool from './db.js';
 
+// Origination pipeline stage order (board restructure Stage 1): a card may
+// only move to an equal-or-higher rank. Build is deliberately skippable -
+// Handoff -> Operate just skips a rank, which "rank must not decrease"
+// already allows without needing to special-case it.
+//
+// Studio-board statuses (studio-*) and anything else not in this list are
+// outside this ordering entirely and keep moving freely, same as before -
+// see assertForwardMove below.
+export const ORIGINATION_STAGE_ORDER = [
+  'on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets', 'exited'
+];
+
+export class ForwardOnlyViolationError extends Error {
+  constructor(fromStatus, toStatus) {
+    super(`Cards move forward only: cannot move from "${fromStatus}" back to "${toStatus}"`);
+    this.name = 'ForwardOnlyViolationError';
+    this.fromStatus = fromStatus;
+    this.toStatus = toStatus;
+  }
+}
+
+function assertForwardMove(fromStatus, toStatus) {
+  if (!fromStatus || !toStatus || fromStatus === toStatus) return;
+  const fromIsOrigination = ORIGINATION_STAGE_ORDER.includes(fromStatus);
+  const toIsOrigination = ORIGINATION_STAGE_ORDER.includes(toStatus);
+  // Neither side is one of ours (both Studio, or both some other unranked
+  // value) - not ours to police, let it through untouched.
+  if (!fromIsOrigination && !toIsOrigination) return;
+  // Exactly one side is in the origination pipeline: this is either
+  // jumping INTO it from Studio/unknown, or OUT of it to Studio/unknown -
+  // neither is a valid "forward" move, and letting an origination card's
+  // target rank come back as -1 (unranked) would silently bypass the
+  // whole check below, so this has to be its own explicit rejection.
+  if (fromIsOrigination !== toIsOrigination) {
+    throw new ForwardOnlyViolationError(fromStatus, toStatus);
+  }
+  const fromRank = ORIGINATION_STAGE_ORDER.indexOf(fromStatus);
+  const toRank = ORIGINATION_STAGE_ORDER.indexOf(toStatus);
+  if (toRank < fromRank) {
+    throw new ForwardOnlyViolationError(fromStatus, toStatus);
+  }
+}
+
 // ========== PROJECTS (unified with board cards) ==========
 
 export async function getAllProjects() {
@@ -42,7 +85,7 @@ export async function createProject(project) {
   `, [
     project.title,
     project.description || null,
-    project.status || project.column || 'ideation',
+    project.status || project.column || 'on-deck',
     project.owner || null,
     project.notes || null,
     project.projectType || null,
@@ -60,6 +103,50 @@ export async function createProject(project) {
 }
 
 export async function updateProject(id, updates) {
+  // 'column' is the board's alias for 'status' - either one moving the
+  // card needs the same forward-only check against whatever status is
+  // currently committed. Reading that status and checking it has to happen
+  // on the same locked row as the write itself (see below), or two
+  // concurrent moves on the same card can each read a stale pre-move
+  // status and both pass a check that, applied in sequence, wouldn't have.
+  const newStatus = updates.status !== undefined ? updates.status
+    : (updates.column !== undefined ? updates.column : undefined);
+
+  if (newStatus !== undefined) {
+    return updateProjectWithStatusCheck(id, updates, newStatus);
+  }
+  return updateProjectFields(id, updates);
+}
+
+// Locks the row for the duration of the check-then-write, same pattern as
+// lockProjectLedger/lockProjectTimeline elsewhere in this file - without
+// it, two concurrent requests moving the same card could each read the
+// status before the other's write commits, letting a combined backward
+// move slip through even though neither request individually violated
+// "forward only".
+async function updateProjectWithStatusCheck(id, updates, newStatus) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query('SELECT status FROM projects WHERE id = $1 FOR UPDATE', [id]);
+    if (current.rows[0]) {
+      assertForwardMove(current.rows[0].status, newStatus);
+    }
+    const project = await updateProjectFields(id, updates, client);
+    await client.query('COMMIT');
+    return project;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// The actual dynamic UPDATE, shared by both the status-checked and
+// unchecked paths - `client` defaults to the shared pool for callers with
+// no transaction of their own to run it in.
+async function updateProjectFields(id, updates, client = pool) {
   const fields = [];
   const values = [];
   let paramCount = 1;
@@ -135,7 +222,7 @@ export async function updateProject(id, updates) {
   }
 
   values.push(id);
-  const result = await pool.query(
+  const result = await client.query(
     `UPDATE projects SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`,
     values
   );

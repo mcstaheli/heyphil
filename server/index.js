@@ -493,6 +493,9 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
     
     res.json({ project });
   } catch (error) {
+    if (error instanceof boardDb.ForwardOnlyViolationError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Failed to update project:', error);
     res.status(500).json({ error: 'Failed to update project' });
   }
@@ -738,11 +741,15 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
   try {
     const data = await boardDb.getBoardData();
     
-    // Calculate metrics with proper null handling
-    const filteredCards = data.cards.filter(c => 
-      c.column !== 'ideation' && c.column !== 'closed' && c.column !== 'abandoned'
-    );
-    
+    // Calculate metrics with proper null handling - Exited is the sole
+    // terminal stage now (Stage 1 restructure folded the old Ideation/
+    // Abandoned/Closed columns into On Deck/Exited), so it's the only one
+    // excluded from "active" totals. Also excludes the pre-restructure
+    // terminal/pre-pipeline names defensively, in case this deploys before
+    // migrate:columns has actually been run against this database.
+    const LEGACY_INACTIVE_STATUSES = new Set(['exited', 'closed', 'abandoned', 'ideation', 'backlog']);
+    const filteredCards = data.cards.filter(c => !LEGACY_INACTIVE_STATUSES.has(c.column));
+
     // Group by stage for detailed metrics
     const byStage = {};
     filteredCards.forEach(card => {
@@ -752,15 +759,13 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       byStage[card.column].count++;
       byStage[card.column].value += parseFloat(card.dealValue) || 0;
     });
-    
+
     const metrics = {
       totalDeals: filteredCards.length,
       totalValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.dealValue) || 0), 0),
       totalDealValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.dealValue) || 0), 0),
       totalProjects: filteredCards.length,
-      activeProjects: filteredCards.filter(c => 
-        c.column !== 'backlog' && c.column !== 'closed' && c.column !== 'abandoned'
-      ).length,
+      activeProjects: filteredCards.length,
       byStage
     };
     
@@ -1037,6 +1042,9 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     
     res.json({ success: true });
   } catch (error) {
+    if (error instanceof boardDb.ForwardOnlyViolationError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Failed to update card:', error);
     res.status(500).json({ error: 'Failed to update card' });
   }
@@ -1401,42 +1409,52 @@ app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
     const { cardIds, updates } = req.body; // updates: { column?, owner? }
     const user = req.user.name || req.user.email;
 
-    // Update each card. getCardById()/updateCard() don't exist on board-db -
-    // a card and a project are the same row now, so this uses the project
-    // equivalents (updateProject already treats 'column' as an alias for
-    // 'status').
+    // Update each card independently - one card violating "forward only"
+    // (or hitting any other error) must not abort the rest of the batch, or
+    // silently leave earlier cards in the loop updated with no way for the
+    // client to tell which ones actually moved.
+    const skipped = [];
     for (const cardId of cardIds) {
-      const oldProject = await boardDb.getProjectById(cardId);
-      if (!oldProject) continue;
+      try {
+        const oldProject = await boardDb.getProjectById(cardId);
+        if (!oldProject) continue;
 
-      await boardDb.updateProject(cardId, updates);
+        await boardDb.updateProject(cardId, updates);
 
-      // Log bulk update
-      const changes = [];
-      if (updates.column && oldProject.status !== updates.column) {
-        changes.push(`Bulk moved: ${oldProject.status} → ${updates.column}`);
+        // Log bulk update
+        const changes = [];
+        if (updates.column && oldProject.status !== updates.column) {
+          changes.push(`Bulk moved: ${oldProject.status} → ${updates.column}`);
+        }
+        if (updates.owner && oldProject.owner !== updates.owner) {
+          changes.push(`Bulk assigned: ${updates.owner}`);
+        }
+
+        if (changes.length > 0) {
+          await boardDb.addLog(
+            cardId,
+            'Bulk Update',
+            user,
+            changes.join(', ')
+          );
+        }
+
+        // Broadcast each update
+        broadcastChange('card:updated', {
+          id: cardId,
+          ...updates
+        });
+      } catch (error) {
+        if (error instanceof boardDb.ForwardOnlyViolationError) {
+          skipped.push({ cardId, reason: error.message });
+        } else {
+          console.error(`Failed bulk update for card ${cardId}:`, error);
+          skipped.push({ cardId, reason: 'Failed to update' });
+        }
       }
-      if (updates.owner && oldProject.owner !== updates.owner) {
-        changes.push(`Bulk assigned: ${updates.owner}`);
-      }
-
-      if (changes.length > 0) {
-        await boardDb.addLog(
-          cardId,
-          'Bulk Update',
-          user,
-          changes.join(', ')
-        );
-      }
-
-      // Broadcast each update
-      broadcastChange('card:updated', {
-        id: cardId,
-        ...updates
-      });
     }
-    
-    res.json({ success: true, updated: cardIds.length });
+
+    res.json({ success: true, updated: cardIds.length - skipped.length, skipped });
   } catch (error) {
     console.error('Failed bulk update:', error);
     res.status(500).json({ error: 'Failed to bulk update cards' });

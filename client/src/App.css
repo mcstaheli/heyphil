@@ -1665,19 +1665,16 @@ body {
   color: #28a745;
 }
 
-/* Ideation and Closed - Pre/Post activity areas */
-.column-ideation,
-.column-closed,
-.column-abandoned,
+/* Exited - Pre/Post activity area (Origination's sole terminal stage since
+   Stage 1 folded Ideation/Abandoned/Closed away) */
+.column-exited,
 .column-studio-ideation,
 .column-studio-exited,
 .column-studio-abandoned {
   max-width: 280px;
 }
 
-.column-ideation .column-header,
-.column-closed .column-header,
-.column-abandoned .column-header,
+.column-exited .column-header,
 .column-studio-ideation .column-header,
 .column-studio-exited .column-header,
 .column-studio-abandoned .column-header {
@@ -1689,7 +1686,7 @@ body {
 
 
 
-/* Pre/Post cards (Ideation & Closed) - minimal display */
+/* Pre/Post cards (Exited, and the Studio board's own pre/post stages) - minimal display */
 .kanban-card.card-prepost {
   padding: 10px;
 }
@@ -1730,21 +1727,18 @@ body {
   color: #f44336;
 }
 
-/* Extra spacing to separate Ideation and Closed from workflow */
-.column-ideation,
+/* Extra spacing to separate Exited from the active workflow */
 .column-studio-ideation {
   margin-right: 32px;
 }
 
-.column-closed,
+.column-exited,
 .column-studio-exited {
   margin-left: 32px;
 }
 
-/* Ideation, Closed, Abandoned - blend column container into page background */
-.column-ideation,
-.column-closed,
-.column-abandoned,
+/* Exited - blend column container into page background */
+.column-exited,
 .column-studio-ideation,
 .column-studio-exited,
 .column-studio-abandoned {
@@ -1752,9 +1746,7 @@ body {
   box-shadow: none;
 }
 
-.column-ideation .column-cards,
-.column-closed .column-cards,
-.column-abandoned .column-cards,
+.column-exited .column-cards,
 .column-studio-ideation .column-cards,
 .column-studio-exited .column-cards,
 .column-studio-abandoned .column-cards {
@@ -1762,9 +1754,7 @@ body {
 }
 
 /* Keep cards white in these columns */
-.column-ideation .kanban-card,
-.column-closed .kanban-card,
-.column-abandoned .kanban-card,
+.column-exited .kanban-card,
 .column-studio-ideation .kanban-card,
 .column-studio-exited .kanban-card,
 .column-studio-abandoned .kanban-card {
@@ -1773,13 +1763,11 @@ body {
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
-.column-abandoned,
 .column-studio-abandoned {
   max-width: 280px;
   margin-left: 32px;
 }
 
-.column-abandoned .column-header,
 .column-studio-abandoned .column-header {
   background: transparent !important;
   color: #999;
