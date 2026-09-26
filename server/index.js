@@ -147,6 +147,51 @@ async function autoMigrate() {
   await runMigrationStep('projects value_locks column', () => pool.query(`
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS value_locks JSONB NOT NULL DEFAULT '[]'::jsonb
   `));
+
+  // Board restructure Stage 2: transient state for a card sitting in
+  // Handoff - operator, the four-item exit checklist, and enteredAt (for
+  // the "how long has this been sitting here" alarm). Null once the card
+  // isn't in Handoff (never entered, or already accepted past it) - see
+  // acceptHandoff/board-db.js's own comments for the full lifecycle.
+  await runMigrationStep('projects handoff column', () => pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS handoff JSONB
+  `));
+
+  // Board restructure Stage 3: "deal value" -> "annual value" (expected
+  // annual cash to Philo) - a rename, not a new column, so it can't use
+  // ADD COLUMN IF NOT EXISTS like everything else here. RENAME COLUMN has
+  // no IF EXISTS form, so this checks information_schema itself to stay
+  // idempotent (safe to run every boot, same as the rest of autoMigrate).
+  await runMigrationStep('projects deal_value -> annual_value rename', async () => {
+    const { rows } = await pool.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'projects' AND column_name IN ('deal_value', 'annual_value')
+    `);
+    const names = rows.map((r) => r.column_name);
+    if (names.includes('deal_value') && !names.includes('annual_value')) {
+      await pool.query('ALTER TABLE projects RENAME COLUMN deal_value TO annual_value');
+    }
+  });
+
+  // Capital committed (kept as-is, was never tracked as its own field
+  // before) and months to first cash (required in the UI for On
+  // Deck/Diligence/Capitalize/Handoff; forced to 0 on entering Assets -
+  // see the assets auto-zero hook in board-db.js).
+  await runMigrationStep('projects capital_committed column', () => pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS capital_committed DECIMAL(15, 2)
+  `));
+  await runMigrationStep('projects months_to_first_cash column', () => pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS months_to_first_cash INTEGER
+  `));
+
+  // Append-only history of {status, annualValue, capitalCommitted,
+  // monthsToFirstCash, at} snapshotted on every column-rank transition
+  // (see the snapshot hook in board-db.js) - same "never overwrite, just
+  // append" pattern as budget_locks/value_locks/timeline_locks, so a
+  // project's numbers over its life stay visible even as they change.
+  await runMigrationStep('projects metric_snapshots column', () => pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS metric_snapshots JSONB NOT NULL DEFAULT '[]'::jsonb
+  `));
 }
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
@@ -417,8 +462,8 @@ app.get('/api/projects/:id', requireAuth, async (req, res) => {
 // Create new project
 app.post('/api/projects', requireAuth, async (req, res) => {
   try {
-    const { title, description, status, targetClose, dealValue, budget, timeline, team, files } = req.body;
-    
+    const { title, description, status, targetClose, annualValue, capitalCommitted, monthsToFirstCash, budget, timeline, team, files } = req.body;
+
     // Input validation
     if (!title || title.trim().length === 0) {
       return res.status(400).json({ error: 'Title is required' });
@@ -426,13 +471,15 @@ app.post('/api/projects', requireAuth, async (req, res) => {
     if (title.length > 500) {
       return res.status(400).json({ error: 'Title must be 500 characters or less' });
     }
-    
+
     const project = await boardDb.createProject({
       title,
       description,
       status,
       targetClose,
-      dealValue,
+      annualValue,
+      capitalCommitted,
+      monthsToFirstCash,
       budget,
       timeline,
       team,
@@ -478,6 +525,16 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
       }
     }
 
+    // handoff and metricSnapshots are system-managed (the whole point of
+    // Handoff's checklist gate is that it can't be skipped) - unlike every
+    // other field here, this route forwards `updates` to boardDb.updateProject
+    // unfiltered, so without stripping these two, a raw PUT could fabricate
+    // or wipe Handoff state, or the audit trail, bypassing updateProjectHandoff/
+    // acceptHandoff's validation entirely. Neither client route ever needs
+    // to set them here - they go through their own dedicated endpoints.
+    delete updates.handoff;
+    delete updates.metricSnapshots;
+
     const project = await boardDb.updateProject(id, updates);
     
     if (!project) {
@@ -493,7 +550,7 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
     
     res.json({ project });
   } catch (error) {
-    if (error instanceof boardDb.ForwardOnlyViolationError) {
+    if (error instanceof boardDb.ForwardOnlyViolationError || error instanceof boardDb.HandoffNotReadyError) {
       return res.status(400).json({ error: error.message });
     }
     console.error('Failed to update project:', error);
@@ -585,6 +642,59 @@ app.post('/api/projects/:id/timeline/lock', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to lock timeline:', error);
     res.status(500).json({ error: 'Failed to lock timeline' });
+  }
+});
+
+// Edit the operator/checklist while a card sits in Handoff (partial -
+// only the fields sent are changed)
+app.put('/api/projects/:id/handoff', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { operator, checklist } = req.body;
+    const project = await boardDb.updateProjectHandoff(id, { operator, checklist });
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    broadcastChange('project:updated', { project });
+    res.json({ handoff: project.handoff });
+  } catch (error) {
+    if (error instanceof boardDb.HandoffNotReadyError) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('Failed to update handoff:', error);
+    res.status(500).json({ error: 'Failed to update handoff' });
+  }
+});
+
+// Accept a Handoff: operator becomes sole owner, card advances to
+// nextStatus (Build or Operate), handoff clears - see acceptHandoff.
+app.post('/api/projects/:id/handoff/accept', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nextStatus } = req.body;
+    if (!nextStatus) {
+      return res.status(400).json({ error: 'nextStatus is required' });
+    }
+    const result = await boardDb.acceptHandoff(id, req.user.name || req.user.email, nextStatus);
+    if (!result) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    await boardDb.addLog(
+      id,
+      'Handoff Accepted',
+      req.user.name || req.user.email,
+      `${result.operator} accepted handoff from ${result.originator || 'Unassigned'} - now in ${nextStatus}`
+    );
+
+    broadcastChange('project:updated', { project: result.project });
+    res.json({ project: result.project });
+  } catch (error) {
+    if (error instanceof boardDb.HandoffNotReadyError || error instanceof boardDb.ForwardOnlyViolationError) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('Failed to accept handoff:', error);
+    res.status(500).json({ error: 'Failed to accept handoff' });
   }
 });
 
@@ -757,13 +867,13 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
         byStage[card.column] = { count: 0, value: 0 };
       }
       byStage[card.column].count++;
-      byStage[card.column].value += parseFloat(card.dealValue) || 0;
+      byStage[card.column].value += parseFloat(card.annualValue) || 0;
     });
 
     const metrics = {
       totalDeals: filteredCards.length,
-      totalValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.dealValue) || 0), 0),
-      totalDealValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.dealValue) || 0), 0),
+      totalValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.annualValue) || 0), 0),
+      totalDealValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.annualValue) || 0), 0),
       totalProjects: filteredCards.length,
       activeProjects: filteredCards.length,
       byStage
@@ -875,7 +985,7 @@ app.get('/api/origination/board__OLD_SHEETS', requireAuth, async (req, res) => {
       column: row[2] || 'ideation',
       owner: row[3] || '',
       notes: row[4] || '',
-      dealValue: parseFloat(row[6]) || 0,
+      annualValue: parseFloat(row[6]) || 0,
       dateCreated: row[7] || new Date().toISOString(),
       projectType: row[8] || '', // Project Type from column I
       actions: actionsByCard[row[5]] || [],
@@ -885,7 +995,7 @@ app.get('/api/origination/board__OLD_SHEETS', requireAuth, async (req, res) => {
     // Calculate metrics
     const metrics = {
       totalDeals: cards.length,
-      totalValue: cards.reduce((sum, c) => sum + c.dealValue, 0),
+      totalValue: cards.reduce((sum, c) => sum + c.annualValue, 0),
       byStage: {},
       avgTimeInStage: {}
     };
@@ -895,7 +1005,7 @@ app.get('/api/origination/board__OLD_SHEETS', requireAuth, async (req, res) => {
         metrics.byStage[card.column] = { count: 0, value: 0 };
       }
       metrics.byStage[card.column].count++;
-      metrics.byStage[card.column].value += card.dealValue;
+      metrics.byStage[card.column].value += card.annualValue;
       
       // Calculate days in current stage
       const created = new Date(card.dateCreated);
@@ -912,8 +1022,8 @@ app.get('/api/origination/board__OLD_SHEETS', requireAuth, async (req, res) => {
 
 app.post('/api/origination/card', requireAuth, async (req, res) => {
   try {
-    const { title, description, column, owner, notes, dealValue, projectType } = req.body;
-    
+    const { title, description, column, owner, notes, annualValue, capitalCommitted, monthsToFirstCash, projectType } = req.body;
+
     // Input validation
     if (!title || title.trim().length === 0) {
       return res.status(400).json({ error: 'Title is required' });
@@ -927,13 +1037,13 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
     if (!column || column.trim().length === 0) {
       return res.status(400).json({ error: 'Column is required' });
     }
-    if (dealValue && (isNaN(dealValue) || dealValue < 0 || dealValue > 999999999999)) {
-      return res.status(400).json({ error: 'Deal value must be a valid positive number' });
+    if (annualValue && (isNaN(annualValue) || annualValue < 0 || annualValue > 999999999999)) {
+      return res.status(400).json({ error: 'Annual value must be a valid positive number' });
     }
     if (notes && notes.length > 10000) {
       return res.status(400).json({ error: 'Notes must be 10,000 characters or less' });
     }
-    
+
     // Create project (cards are now projects)
     const project = await boardDb.createProject({
       title,
@@ -941,7 +1051,9 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
       column,  // Maps to status
       owner,
       notes,
-      dealValue: dealValue || 0,
+      annualValue: annualValue || 0,
+      capitalCommitted,
+      monthsToFirstCash,
       projectType,
       dateCreated: new Date()
     });
@@ -962,7 +1074,7 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
       column: project.status,
       owner: project.owner,
       notes: project.notes,
-      dealValue: parseFloat(project.deal_value) || 0,
+      annualValue: parseFloat(project.annual_value) || 0,
       projectType: project.project_type,
       dateCreated: project.date_created,
       project_id: project.id,
@@ -986,14 +1098,14 @@ app.post('/api/origination/card', requireAuth, async (req, res) => {
 app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, column, owner, notes, dealValue, projectType } = req.body;
-    
+    const { title, description, column, owner, notes, annualValue, capitalCommitted, monthsToFirstCash, projectType } = req.body;
+
     // Get old project for change tracking
     const oldProject = await boardDb.getProjectById(id);
     if (!oldProject) {
       return res.status(404).json({ error: 'Project not found' });
     }
-    
+
     // Update project (cards ARE projects now)
     const updatedProject = await boardDb.updateProject(id, {
       title,
@@ -1001,7 +1113,9 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
       column,  // Maps to status
       owner,
       notes,
-      dealValue,
+      annualValue,
+      capitalCommitted,
+      monthsToFirstCash: monthsToFirstCash === '' ? null : monthsToFirstCash,
       projectType
     });
     
@@ -1012,8 +1126,8 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
     if (oldProject.title !== title) changes.push(`Title changed`);
     if (oldProject.description !== description) changes.push(`Description updated`);
     if (oldProject.notes !== notes) changes.push(`Notes updated`);
-    if (parseFloat(oldProject.deal_value || 0) !== parseFloat(dealValue || 0)) {
-      changes.push(`Deal value: $${oldProject.deal_value || 0} → $${dealValue || 0}`);
+    if (parseFloat(oldProject.annual_value || 0) !== parseFloat(annualValue || 0)) {
+      changes.push(`Annual value: $${oldProject.annual_value || 0} → $${annualValue || 0}`);
     }
     if ((oldProject.project_type || '') !== (projectType || '')) {
       changes.push(`Project type: ${oldProject.project_type || 'None'} → ${projectType || 'None'}`);
@@ -1036,13 +1150,13 @@ app.put('/api/origination/card/:id', requireAuth, async (req, res) => {
       column,
       owner,
       notes,
-      dealValue,
+      annualValue,
       projectType
     });
     
     res.json({ success: true });
   } catch (error) {
-    if (error instanceof boardDb.ForwardOnlyViolationError) {
+    if (error instanceof boardDb.ForwardOnlyViolationError || error instanceof boardDb.HandoffNotReadyError) {
       return res.status(400).json({ error: error.message });
     }
     console.error('Failed to update card:', error);
@@ -1113,7 +1227,7 @@ app.get('/api/origination/trash', requireAuth, async (req, res) => {
       column: p.status,
       owner: p.owner,
       notes: p.notes,
-      deal_value: p.deal_value,
+      annual_value: p.annual_value,
       date_created: p.date_created,
       project_type: p.project_type,
       deleted_at: p.deleted_at
@@ -1158,7 +1272,7 @@ app.post('/api/origination/card/:id/restore', requireAuth, async (req, res) => {
       column: restoredProject.status,
       owner: restoredProject.owner,
       notes: restoredProject.notes,
-      dealValue: parseFloat(restoredProject.deal_value) || 0,
+      annualValue: parseFloat(restoredProject.annual_value) || 0,
       dateCreated: restoredProject.date_created,
       projectType: restoredProject.project_type,
       project_id: restoredProject.id,
@@ -1445,7 +1559,7 @@ app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
           ...updates
         });
       } catch (error) {
-        if (error instanceof boardDb.ForwardOnlyViolationError) {
+        if (error instanceof boardDb.ForwardOnlyViolationError || error instanceof boardDb.HandoffNotReadyError) {
           skipped.push({ cardId, reason: error.message });
         } else {
           console.error(`Failed bulk update for card ${cardId}:`, error);
@@ -1471,14 +1585,17 @@ app.get('/api/origination/export', requireAuth, async (req, res) => {
     const { cards } = await boardDb.getBoardData();
 
     const escapeCsv = (val) => {
-      if (!val) return '';
+      // Not `!val` - that treats a legitimate 0 (e.g. months_to_first_cash
+      // on every Assets-stage card, which is forced to exactly 0) the same
+      // as never having been set at all.
+      if (val === null || val === undefined || val === '') return '';
       const str = String(val).replace(/"/g, '""');
       return str.includes(',') || str.includes('"') ? `"${str}"` : str;
     };
 
     // CSV header
     const csv = [
-      'Title,Description,Stage,Owner,Notes,Card ID,Deal Value,Date Created,Project Type'
+      'Title,Description,Stage,Owner,Notes,Card ID,Annual Value,Capital Committed,Months to First Cash,Date Created,Project Type'
     ];
 
     // Add data rows
@@ -1490,7 +1607,9 @@ app.get('/api/origination/export', requireAuth, async (req, res) => {
         escapeCsv(card.owner),
         escapeCsv(card.notes),
         escapeCsv(card.id),
-        escapeCsv(card.dealValue),
+        escapeCsv(card.annualValue),
+        escapeCsv(card.capitalCommitted),
+        escapeCsv(card.monthsToFirstCash),
         escapeCsv(card.dateCreated),
         escapeCsv(card.projectType)
       ].join(','));

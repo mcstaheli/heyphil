@@ -1,0 +1,79 @@
+.strategy-grid-svg {
+  width: 100%;
+  height: auto;
+  max-height: 640px;
+  font-family: inherit;
+}
+
+.quadrant-out-of-mandate {
+  fill: #fdecea;
+  fill-opacity: 0.6;
+}
+
+.quadrant-x-mark {
+  font-size: 64px;
+  fill: #dc3545;
+  fill-opacity: 0.25;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.quadrant-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  fill: #dc3545;
+  pointer-events: none;
+}
+
+.axis-line {
+  stroke: #212529;
+  stroke-width: 1.5;
+}
+
+.split-line {
+  stroke: #adb5bd;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.tick-line {
+  stroke: #212529;
+  stroke-width: 1;
+}
+
+.tick-label {
+  font-size: 11px;
+  fill: #6c757d;
+}
+
+.axis-title {
+  font-size: 12px;
+  font-weight: 600;
+  fill: #495057;
+}
+
+.grid-point {
+  cursor: pointer;
+}
+
+.grid-point circle {
+  stroke: white;
+  stroke-width: 1.5;
+  transition: fill-opacity 0.15s;
+}
+
+.grid-point:hover circle {
+  fill-opacity: 1 !important;
+}
+
+.grid-point .point-flagged {
+  stroke: #dc3545;
+  stroke-width: 2.5;
+}
+
+.point-label {
+  font-size: 10px;
+  fill: #333;
+  pointer-events: none;
+}

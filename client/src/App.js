@@ -10,33 +10,25 @@ import Settings from './Settings';
 import SettingsPage from './SettingsPage';
 import ProjectDetail from './ProjectDetail';
 import Portfolio from './Portfolio';
+import StrategyGrid from './StrategyGrid';
 import Layout from './Layout';
 import { summarizeLedger, computeTimelineMetrics } from './projectMetrics';
+import { ORIGINATION_STAGE_ORDER } from './boardStages';
+import { formatCompactMoney } from './formatMoney';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 
-// Board restructure Stage 1: mirrors board-db.js's ORIGINATION_STAGE_ORDER
-// - duplicated (client and server don't share a module) but must stay
-// identical. Used to keep the Status dropdown and drag-and-drop from even
-// offering a backward move, ahead of the server's own authoritative check.
-// Studio-board statuses aren't in this list and are never rank-checked.
-const ORIGINATION_STAGE_ORDER = ['on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets', 'exited'];
+// Board restructure Stage 3: months-to-first-cash is only meaningful (and
+// required in the form) before operations start - Assets is "producing
+// now" so it's forced to 0 there instead (see board-db.js's auto-zero
+// hook). Build/Operate/Exited are left alone: not required, not zeroed.
+const MONTHS_TO_FIRST_CASH_REQUIRED_STAGES = ['on-deck', 'diligence', 'capitalize', 'handoff'];
 
 function hasLeafItems(items) {
   return (items || []).some((i) => !i.isHeading);
 }
 
-// Cards are tiny (~288px) - full dollar amounts don't fit, so this trades
-// precision for width the same way a stock ticker does.
-function formatCompactMoney(n) {
-  const v = Number(n) || 0;
-  const sign = v < 0 ? '-' : '';
-  const abs = Math.abs(v);
-  if (abs >= 1000000) return `${sign}$${(abs / 1000000).toFixed(abs >= 10000000 ? 0 : 1)}M`;
-  if (abs >= 1000) return `${sign}$${Math.round(abs / 1000)}K`;
-  return `${sign}$${Math.round(abs)}`;
-}
 
 // Value shows the goal (what we're aiming for) since that's motivating on
 // its own; Budget and Timeline show delta from plan since those are the
@@ -112,6 +104,52 @@ function getInitialsColor(name) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
   return colors[Math.abs(hash) % colors.length];
+}
+
+// Shared photo-or-initials avatar, used both for a card's normal owner
+// avatar and (Stage 2) the smaller stacked operator avatar on a Handoff
+// card - same visual language at two different sizes.
+function renderAvatar(name, people, size) {
+  if (!name) return null;
+  if (people[name]) {
+    return (
+      <img
+        src={people[name]}
+        alt={name}
+        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', border: '2px solid #555' }}
+      />
+    );
+  }
+  return (
+    <div
+      className="avatar-initials"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: getInitialsColor(name),
+        color: 'white',
+        fontSize: Math.round(size * 0.4),
+        fontWeight: 'bold',
+        border: '2px solid #555'
+      }}
+    >
+      {name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
+    </div>
+  );
+}
+
+// Board restructure Stage 2: the alarm for a card sitting in Handoff too
+// long - 14 days is a starting default, easy to change in one place.
+const HANDOFF_ALARM_DAYS = 14;
+
+function daysSince(isoString) {
+  if (!isoString) return null;
+  const ms = new Date() - new Date(isoString);
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
 // Wrapper component for project detail route
@@ -270,6 +308,7 @@ function App() {
           <Route path="/labs/board" element={<OriginationBoard user={user} />} />
           <Route path="/labs/board/projects/:projectId" element={<ProjectDetailRoute user={user} />} />
           <Route path="/labs/portfolio" element={<Portfolio />} />
+          <Route path="/labs/strategy-grid" element={<StrategyGrid />} />
           <Route path="/labs/studio" element={<OriginationBoard user={user} studioMode={true} />} />
           <Route path="/labs/orgcharts" element={<OrgCharts />} />
           <Route path="/labs/cashflow" element={<Cashflow />} />
@@ -374,7 +413,7 @@ function OriginationBoard({ user, studioMode = false }) {
     
     const newMetrics = {
       totalDeals: filteredCards.length,
-      totalValue: filteredCards.reduce((sum, c) => sum + (c.dealValue || 0), 0),
+      totalValue: filteredCards.reduce((sum, c) => sum + (c.annualValue || 0), 0),
       byStage: {}
     };
     
@@ -383,7 +422,7 @@ function OriginationBoard({ user, studioMode = false }) {
         newMetrics.byStage[card.column] = { count: 0, value: 0 };
       }
       newMetrics.byStage[card.column].count++;
-      newMetrics.byStage[card.column].value += (card.dealValue || 0);
+      newMetrics.byStage[card.column].value += (card.annualValue || 0);
     });
     
     setMetrics(newMetrics);
@@ -517,9 +556,10 @@ function OriginationBoard({ user, studioMode = false }) {
           column: card.column || 'on-deck',
           owner: card.owner || '',
           notes: card.notes || '',
-          dealValue: card.dealValue || 0,
+          annualValue: card.annualValue || 0,
           dateCreated: card.dateCreated || new Date(),
           projectType: card.projectType || '',
+          handoff: card.handoff || null,
           actions: [],
           log: []
         }];
@@ -551,7 +591,7 @@ function OriginationBoard({ user, studioMode = false }) {
       column: project.status || 'backlog',
       owner: project.owner || '',
       notes: project.notes || '',
-      dealValue: parseFloat(project.deal_value) || 0,
+      annualValue: parseFloat(project.annual_value) || 0,
       dateCreated: project.date_created || new Date(),
       projectType: project.project_type || '',
       needsIc: project.needs_ic || false,
@@ -566,6 +606,12 @@ function OriginationBoard({ user, studioMode = false }) {
       valueLocks: project.value_locks || [],
       timeline: project.timeline || [],
       timelineLocks: project.timeline_locks || [],
+      handoff: project.handoff || null,
+      capitalCommitted: parseFloat(project.capital_committed) || 0,
+      monthsToFirstCash: project.months_to_first_cash !== null && project.months_to_first_cash !== undefined
+        ? project.months_to_first_cash
+        : null,
+      metricSnapshots: project.metric_snapshots || [],
       // Tasks/links from the raw project row carry no cardId (see addTask/
       // addLink) - inject it the same way getBoardData does, or a
       // project:updated broadcast (e.g. from the Timeline editor) silently
@@ -793,6 +839,55 @@ function OriginationBoard({ user, studioMode = false }) {
     }
   };
 
+  // Board restructure Stage 2: partial edit of a Handoff card's
+  // operator/checklist - saves immediately (no pending state to lose if
+  // the modal closes without a generic Save), same as the IC flag toggle.
+  const updateHandoff = async (cardId, partial) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/projects/${cardId}/handoff`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(partial)
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        alert(`Failed to update handoff:\n\n${result.error || 'Unknown error'}`);
+        return;
+      }
+      const data = await response.json();
+      setCards(prevCards => prevCards.map(c => (c.id === cardId ? { ...c, handoff: data.handoff } : c)));
+      setEditingCard(prev => (prev && prev.id === cardId ? { ...prev, handoff: data.handoff } : prev));
+    } catch (error) {
+      console.error('Failed to update handoff:', error);
+      alert('Failed to update handoff - check console for details');
+    }
+  };
+
+  // Operator becomes sole owner, card advances to nextStatus, handoff
+  // clears - see acceptHandoff in board-db.js for the full transition.
+  const acceptHandoff = async (cardId, nextStatus) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/projects/${cardId}/handoff/accept`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ nextStatus })
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        alert(`Could not accept handoff:\n\n${result.error || 'Unknown error'}`);
+        return;
+      }
+      const { project } = await response.json();
+      setCards(prevCards => prevCards.map(c => (c.id === cardId
+        ? { ...c, column: project.status, owner: project.owner, handoff: project.handoff }
+        : c)));
+      setEditingCard(null);
+    } catch (error) {
+      console.error('Failed to accept handoff:', error);
+      alert('Failed to accept handoff - check console for details');
+    }
+  };
+
   const moveCard = async (cardId, newColumn) => {
     const card = cards.find(c => c.id === cardId);
     if (!card || card.column === newColumn) return;
@@ -890,6 +985,14 @@ function OriginationBoard({ user, studioMode = false }) {
         const fromTitle = columns.find(c => c.id === draggedCard.column)?.title || draggedCard.column;
         const toTitle = columns.find(c => c.id === columnId)?.title || columnId;
         window.alert(`Cards move forward only - can't move from ${fromTitle} back to ${toTitle}.`);
+        handleDragEnd();
+        return;
+      }
+      // The only way out of Handoff is Accept Handoff (names an operator,
+      // requires the checklist complete) - the server rejects a plain drag
+      // out of it too (see board-db.js), this just avoids the round trip.
+      if (!studioMode && draggedCard.column === 'handoff' && columnId !== 'handoff') {
+        window.alert('Leaving Handoff requires accepting it - open the card and use Accept Handoff.');
         handleDragEnd();
         return;
       }
@@ -1096,7 +1199,7 @@ function OriginationBoard({ user, studioMode = false }) {
             column: restoredCard.column_name || restoredCard.column,
             owner: restoredCard.owner || '',
             notes: restoredCard.notes || '',
-            dealValue: restoredCard.deal_value || 0,
+            annualValue: restoredCard.annual_value || 0,
             dateCreated: restoredCard.date_created,
             projectType: restoredCard.project_type || '',
             actions: [],
@@ -1214,7 +1317,7 @@ function OriginationBoard({ user, studioMode = false }) {
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
             <option value="dateCreated">Newest First</option>
             <option value="title">Alphabetical</option>
-            <option value="dealValue">Deal Size</option>
+            <option value="annualValue">Annual Value</option>
             <option value="daysInStage">Time in Stage</option>
           </select>
         </div>
@@ -1262,7 +1365,7 @@ function OriginationBoard({ user, studioMode = false }) {
           filteredCards.sort((a, b) => {
             if (sortBy === 'dateCreated') return new Date(b.dateCreated) - new Date(a.dateCreated);
             if (sortBy === 'title') return a.title.localeCompare(b.title);
-            if (sortBy === 'dealValue') return (b.dealValue || 0) - (a.dealValue || 0);
+            if (sortBy === 'annualValue') return (b.annualValue || 0) - (a.annualValue || 0);
             if (sortBy === 'daysInStage') return (b.daysInStage || 0) - (a.daysInStage || 0);
             return 0;
           });
@@ -1311,6 +1414,8 @@ function OriginationBoard({ user, studioMode = false }) {
                 const isPrePost = column.id === 'exited' ||
                                   column.id === 'studio-ideation' || column.id === 'studio-exited' || column.id === 'studio-abandoned';
                 const metricChips = isPrePost ? [] : getCardMetricChips(card);
+                const isHandoff = column.id === 'handoff';
+                const handoffDays = isHandoff ? daysSince(card.handoff?.enteredAt) : null;
                 return (
                   <div
                     key={card.id}
@@ -1325,6 +1430,14 @@ function OriginationBoard({ user, studioMode = false }) {
                     onDragEnd={handleDragEnd}
                     onClick={() => setEditingCard(card)}
                   >
+                    {isHandoff && handoffDays !== null && (
+                      <div
+                        className={`handoff-days-badge ${handoffDays >= HANDOFF_ALARM_DAYS ? 'handoff-days-alarm' : ''}`}
+                        title={`In Handoff for ${handoffDays} day${handoffDays === 1 ? '' : 's'}`}
+                      >
+                        ⏳ {handoffDays}d in Handoff
+                      </div>
+                    )}
                     {metricChips.length > 0 && (
                       <div className="card-metric-chips">
                         {metricChips.map((chip) => (
@@ -1348,33 +1461,14 @@ function OriginationBoard({ user, studioMode = false }) {
                     )}
                     <div className="card-main">
                       {card.owner && (
-                        <div className="card-photo">
-                          {people[card.owner] ? (
-                            <img 
-                              src={people[card.owner]} 
-                              alt={card.owner}
-                              style={{
-                                border: '2px solid #555'
-                              }}
-                            />
-                          ) : (
-                            <div 
-                              className="avatar-initials"
-                              style={{
-                                width: '60px',
-                                height: '60px',
-                                borderRadius: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backgroundColor: getInitialsColor(card.owner),
-                                color: 'white',
-                                fontSize: '24px',
-                                fontWeight: 'bold',
-                                border: '2px solid #555'
-                              }}
-                            >
-                              {card.owner.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                        <div className={`card-photo ${isHandoff ? 'card-photo-stacked' : ''}`}>
+                          {renderAvatar(card.owner, people, 60)}
+                          {/* Handoff: originator (existing avatar, unchanged position/size)
+                              plus the incoming operator as a smaller offset avatar - both
+                              come from the same people list, no separate operator roster. */}
+                          {isHandoff && card.handoff?.operator && (
+                            <div className="card-photo-operator" title={`Operator: ${card.handoff.operator}`}>
+                              {renderAvatar(card.handoff.operator, people, 28)}
                             </div>
                           )}
                         </div>
@@ -1527,6 +1621,8 @@ function OriginationBoard({ user, studioMode = false }) {
           studioMode={studioMode}
           onViewProject={(projectId) => navigate(`/labs/board/projects/${projectId}`)}
           currentUser={user}
+          onUpdateHandoff={updateHandoff}
+          onAcceptHandoff={acceptHandoff}
         />
       )}
 
@@ -1673,14 +1769,95 @@ function TrashModal({ deletedCards, onClose, onRestore, people, projectTypeColor
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode, onViewProject, currentUser }) {
+const HANDOFF_CHECKLIST_ITEMS = [
+  { key: 'operatorAccepted', label: 'Operator named and accepted' },
+  { key: 'budgetTimelineRestated', label: 'Budget and timeline restated by the operator' },
+  { key: 'diligenceTransferred', label: 'Open diligence items transferred' },
+  { key: 'first90DaysAgreed', label: 'First 90 days agreed' }
+];
+
+// Board restructure Stage 2: shown inside CardModal only for a card
+// currently sitting in Handoff. Every edit here saves immediately via its
+// own PUT /handoff (not the modal's generic Save), same convention as the
+// IC flag toggle elsewhere on the board - there's no "pending" state to
+// lose if the modal is closed without hitting Save.
+function HandoffPanel({ card, sortedPeople, onUpdateHandoff, onAcceptHandoff }) {
+  const handoff = card.handoff || {};
+  const checklist = handoff.checklist || {};
+  const [nextStatus, setNextStatus] = useState('operate');
+  const [accepting, setAccepting] = useState(false);
+
+  const allChecked = HANDOFF_CHECKLIST_ITEMS.every((item) => checklist[item.key]);
+  const canAccept = !!handoff.operator && allChecked;
+  const daysIn = daysSince(handoff.enteredAt);
+
+  const handleAccept = async () => {
+    setAccepting(true);
+    try {
+      await onAcceptHandoff(card.id, nextStatus);
+    } finally {
+      setAccepting(false);
+    }
+  };
+
+  return (
+    <div className="handoff-panel">
+      <h3>🤝 Handoff</h3>
+      {daysIn !== null && (
+        <div className={`handoff-panel-days ${daysIn >= HANDOFF_ALARM_DAYS ? 'handoff-days-alarm' : ''}`}>
+          In Handoff for {daysIn} day{daysIn === 1 ? '' : 's'}
+        </div>
+      )}
+      <div className="form-group">
+        <label>Operator (incoming owner)</label>
+        <select
+          value={handoff.operator || ''}
+          onChange={(e) => onUpdateHandoff(card.id, { operator: e.target.value || null })}
+        >
+          <option value="">Not yet named</option>
+          {sortedPeople.map((person) => (
+            <option key={person} value={person}>{person}</option>
+          ))}
+        </select>
+      </div>
+      <div className="handoff-checklist">
+        {HANDOFF_CHECKLIST_ITEMS.map((item) => (
+          <label key={item.key} className="handoff-checklist-item">
+            <input
+              type="checkbox"
+              checked={!!checklist[item.key]}
+              onChange={(e) => onUpdateHandoff(card.id, { checklist: { [item.key]: e.target.checked } })}
+            />
+            {item.label}
+          </label>
+        ))}
+      </div>
+      <div className="handoff-accept-row">
+        <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
+          <option value="build">Move to Build</option>
+          <option value="operate">Move to Operate</option>
+        </select>
+        <button type="button" className="btn-primary" disabled={!canAccept || accepting} onClick={handleAccept}>
+          ✅ Accept Handoff
+        </button>
+      </div>
+      {!canAccept && (
+        <p className="handoff-hint">Name an operator and complete the checklist to accept.</p>
+      )}
+    </div>
+  );
+}
+
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode, onViewProject, currentUser, onUpdateHandoff, onAcceptHandoff }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
     column: card?.column || initialColumn || columns[0].id,
     owner: card?.owner || '',
     notes: card?.notes || '',
-    dealValue: card?.dealValue || 0,
+    annualValue: card?.annualValue || 0,
+    capitalCommitted: card?.capitalCommitted || 0,
+    monthsToFirstCash: card?.monthsToFirstCash !== null && card?.monthsToFirstCash !== undefined ? card.monthsToFirstCash : '',
     projectType: card?.projectType || ''
   });
   const [newActionText, setNewActionText] = useState('');
@@ -1707,9 +1884,12 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   // stages from the picker entirely (the server enforces this too; this
   // just avoids offering a choice that would only bounce back with an
   // error). A brand-new card isn't moving from anywhere, so it can start
-  // in any stage. Studio-board cards aren't ranked at all.
+  // in any stage. Studio-board cards aren't ranked at all. A card already
+  // in Handoff locks to just Handoff - the only way out is Accept Handoff
+  // (the server rejects a plain status change out of it too).
   const availableColumns = useMemo(() => {
     if (studioMode || !card) return columns;
+    if (card.column === 'handoff') return columns.filter((col) => col.id === 'handoff');
     const currentRank = ORIGINATION_STAGE_ORDER.indexOf(card.column);
     if (currentRank === -1) return columns;
     return columns.filter((col) => ORIGINATION_STAGE_ORDER.indexOf(col.id) >= currentRank);
@@ -1742,11 +1922,17 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
     }
   };
 
+  const monthsToFirstCashRequired = MONTHS_TO_FIRST_CASH_REQUIRED_STAGES.includes(formData.column);
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.title || !formData.title.trim()) {
       alert('Please enter a title for the project');
       setEditingTitle(true);
+      return;
+    }
+    if (monthsToFirstCashRequired && formData.monthsToFirstCash === '') {
+      alert('Months to First Cash is required for On Deck, Diligence, Capitalize, and Handoff cards.');
       return;
     }
     onSave(formData, pendingActions);
@@ -1775,6 +1961,10 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
         if (!formData.title || !formData.title.trim()) {
           alert('Please enter a title for the project');
           setEditingTitle(true);
+          return;
+        }
+        if (MONTHS_TO_FIRST_CASH_REQUIRED_STAGES.includes(formData.column) && formData.monthsToFirstCash === '') {
+          alert('Months to First Cash is required for On Deck, Diligence, Capitalize, and Handoff cards.');
           return;
         }
         onSave(formData, pendingActions);
@@ -1881,6 +2071,14 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               ))}
             </select>
           </div>
+          {!studioMode && card?.column === 'handoff' && (
+            <HandoffPanel
+              card={card}
+              sortedPeople={sortedPeople}
+              onUpdateHandoff={onUpdateHandoff}
+              onAcceptHandoff={onAcceptHandoff}
+            />
+          )}
           <div className="form-group">
             <label>Owner</label>
             <select
@@ -1904,6 +2102,50 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                 <option key={type} value={type}>{type}</option>
               ))}
             </select>
+          </div>
+          <div className="form-group">
+            <label>Annual Value ($)</label>
+            <input
+              type="text"
+              value={formData.annualValue ? formData.annualValue.toLocaleString() : ''}
+              onChange={(e) => {
+                const numericValue = e.target.value.replace(/,/g, '');
+                setFormData({ ...formData, annualValue: parseFloat(numericValue) || 0 });
+              }}
+              placeholder="e.g., 500,000 - expected annual cash to Philo"
+            />
+          </div>
+          <div className="form-group">
+            <label>Capital Committed ($)</label>
+            <input
+              type="text"
+              value={formData.capitalCommitted ? formData.capitalCommitted.toLocaleString() : ''}
+              onChange={(e) => {
+                const numericValue = e.target.value.replace(/,/g, '');
+                setFormData({ ...formData, capitalCommitted: parseFloat(numericValue) || 0 });
+              }}
+              placeholder="e.g., 2,000,000"
+            />
+          </div>
+          <div className="form-group">
+            <label>
+              Months to First Cash
+              {monthsToFirstCashRequired && <span className="required-asterisk"> *</span>}
+              {formData.column === 'assets' && <span className="field-hint"> (producing now - always 0)</span>}
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={formData.column === 'assets' ? 0 : formData.monthsToFirstCash}
+              disabled={formData.column === 'assets'}
+              required={monthsToFirstCashRequired}
+              onChange={(e) => setFormData({
+                ...formData,
+                monthsToFirstCash: e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0)
+              })}
+              placeholder="e.g., 12"
+            />
           </div>
           <div className="form-group">
             <label>Notes</label>

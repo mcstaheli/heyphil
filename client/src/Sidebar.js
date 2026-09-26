@@ -7,6 +7,7 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const LABS_APPS = [
   { path: '/labs/board', label: 'Project Board' },
   { path: '/labs/portfolio', label: 'Portfolio' },
+  { path: '/labs/strategy-grid', label: 'Strategy Grid' },
   { path: '/labs/studio', label: 'Studio Board' },
   { path: '/labs/orgcharts', label: 'Org Charts' },
   { path: '/labs/cashflow', label: 'Cashflow', accessKey: 'cashflow' },

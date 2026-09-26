@@ -51,8 +51,9 @@ export async function getAllProjects() {
   const result = await pool.query(`
     SELECT
       id, title, description, status, owner, notes, project_type,
-      deal_value, target_close, date_created, deleted_at,
+      annual_value, target_close, date_created, deleted_at,
       budget, budget_locks, value, value_locks, timeline, timeline_locks, team, files, tasks, links, needs_ic,
+      handoff, capital_committed, months_to_first_cash, metric_snapshots,
       created_at, updated_at
     FROM projects
     WHERE deleted_at IS NULL
@@ -65,8 +66,9 @@ export async function getProjectById(id) {
   const result = await pool.query(`
     SELECT
       id, title, description, status, owner, notes, project_type,
-      deal_value, target_close, date_created, deleted_at,
+      annual_value, target_close, date_created, deleted_at,
       budget, budget_locks, value, value_locks, timeline, timeline_locks, team, files, tasks, links, needs_ic,
+      handoff, capital_committed, months_to_first_cash, metric_snapshots,
       created_at, updated_at
     FROM projects
     WHERE id = $1
@@ -75,21 +77,29 @@ export async function getProjectById(id) {
 }
 
 export async function createProject(project) {
+  const initialStatus = project.status || project.column || 'on-deck';
+  // A card created directly into Handoff (the "New Card" flow lets you pick
+  // any initial column) needs the same fresh checklist/enteredAt stamp a
+  // normal transition into Handoff gets - this is the one creation path,
+  // separate from updateProjectWithStatusCheck's own entering-Handoff hook.
+  const initialHandoff = initialStatus === 'handoff' ? (project.handoff || freshHandoff()) : (project.handoff || null);
+
   const result = await pool.query(`
     INSERT INTO projects (
       title, description, status, owner, notes, project_type,
-      deal_value, target_close, date_created, budget, timeline, team, files, tasks, links
+      annual_value, target_close, date_created, budget, timeline, team, files, tasks, links,
+      capital_committed, months_to_first_cash, handoff
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb)
     RETURNING *
   `, [
     project.title,
     project.description || null,
-    project.status || project.column || 'on-deck',
+    initialStatus,
     project.owner || null,
     project.notes || null,
     project.projectType || null,
-    project.dealValue || null,
+    project.annualValue || null,
     project.targetClose || null,
     project.dateCreated || new Date(),
     project.budget ? JSON.stringify(project.budget) : null,
@@ -97,7 +107,17 @@ export async function createProject(project) {
     project.team ? JSON.stringify(project.team) : null,
     project.files ? JSON.stringify(project.files) : null,
     project.tasks ? JSON.stringify(project.tasks) : '[]',
-    project.links ? JSON.stringify(project.links) : '[]'
+    project.links ? JSON.stringify(project.links) : '[]',
+    // Both use an explicit null/undefined/'' check (not `|| null`) so an
+    // intentional 0 is stored as 0, not silently coerced to "never set" -
+    // and '' (an empty form field left untouched, since months-to-first-
+    // cash isn't required outside the origination/Handoff stages) can't
+    // reach the INTEGER column and crash the insert.
+    project.capitalCommitted !== undefined && project.capitalCommitted !== null && project.capitalCommitted !== ''
+      ? project.capitalCommitted : null,
+    project.monthsToFirstCash !== undefined && project.monthsToFirstCash !== null && project.monthsToFirstCash !== ''
+      ? project.monthsToFirstCash : null,
+    initialHandoff ? JSON.stringify(initialHandoff) : null
   ]);
   return result.rows[0];
 }
@@ -128,10 +148,62 @@ async function updateProjectWithStatusCheck(id, updates, newStatus) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const current = await client.query('SELECT status FROM projects WHERE id = $1 FOR UPDATE', [id]);
-    if (current.rows[0]) {
-      assertForwardMove(current.rows[0].status, newStatus);
+    const current = await client.query(
+      'SELECT status, annual_value, capital_committed, months_to_first_cash, metric_snapshots FROM projects WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    const currentRow = current.rows[0];
+    if (currentRow) {
+      assertForwardMove(currentRow.status, newStatus);
     }
+
+    // The generic status/column update (this path) is also how drag-and-drop
+    // and the Status dropdown move a card - without this check, either one
+    // could carry a card straight out of Handoff without ever naming an
+    // operator or completing the checklist, since neither goes through
+    // acceptHandoff. The only way out of Handoff is Accept Handoff.
+    if (currentRow?.status === 'handoff' && newStatus !== 'handoff') {
+      throw new HandoffNotReadyError(
+        'Leaving Handoff requires accepting it - name an operator and complete the checklist, then use Accept Handoff.'
+      );
+    }
+
+    // Newly entering Handoff (not already there - editing operator/checklist
+    // while sitting in Handoff re-sends the same status, which skips this)
+    // always starts a fresh checklist and stamps enteredAt, the source of
+    // the "how long has this card been sitting in Handoff" alarm - this
+    // unconditionally overrides any handoff value the caller sent, same
+    // reasoning as the months-to-first-cash override below: a drag-and-drop
+    // move (moveCard) spreads the ENTIRE card back at the server, including
+    // whatever handoff/monthsToFirstCash it already had, so "only fill in
+    // if the caller omitted it" would never actually fire for that path.
+    if (newStatus === 'handoff' && currentRow?.status !== 'handoff') {
+      updates = { ...updates, handoff: freshHandoff() };
+    }
+
+    // Assets is "producing now" - months to first cash is always 0 there,
+    // not something to keep asking for. Unconditionally forced on entering
+    // Assets (see the handoff comment above for why "only if omitted"
+    // wouldn't reliably fire).
+    if (newStatus === 'assets' && currentRow?.status !== 'assets') {
+      updates = { ...updates, monthsToFirstCash: 0 };
+    }
+
+    // Snapshot annual value / capital committed / months to first cash on
+    // every stage change - same "append, never overwrite" pattern as
+    // budget_locks/value_locks/timeline_locks, so a project's numbers over
+    // its life stay visible even as they change. Uses the EFFECTIVE values
+    // (this same request's own updates, if it's changing a number and the
+    // stage together, else whatever's already committed).
+    if (currentRow && newStatus !== currentRow.status) {
+      const snapshot = buildMetricSnapshot(newStatus, {
+        annualValue: updates.annualValue !== undefined ? updates.annualValue : currentRow.annual_value,
+        capitalCommitted: updates.capitalCommitted !== undefined ? updates.capitalCommitted : currentRow.capital_committed,
+        monthsToFirstCash: updates.monthsToFirstCash !== undefined ? updates.monthsToFirstCash : currentRow.months_to_first_cash
+      });
+      updates = { ...updates, metricSnapshots: [...(currentRow.metric_snapshots || []), snapshot] };
+    }
+
     const project = await updateProjectFields(id, updates, client);
     await client.query('COMMIT');
     return project;
@@ -141,6 +213,37 @@ async function updateProjectWithStatusCheck(id, updates, newStatus) {
   } finally {
     client.release();
   }
+}
+
+// Single source of truth for the four exit-criteria keys - freshHandoff's
+// blank checklist and acceptHandoff's completeness check both derive from
+// this instead of each hand-listing the four keys separately.
+const HANDOFF_CHECKLIST_KEYS = ['operatorAccepted', 'budgetTimelineRestated', 'diligenceTransferred', 'first90DaysAgreed'];
+
+function freshHandoff() {
+  return {
+    operator: null,
+    checklist: Object.fromEntries(HANDOFF_CHECKLIST_KEYS.map((key) => [key, false])),
+    enteredAt: new Date().toISOString()
+  };
+}
+
+// Shared by both places a stage transition happens (the generic path in
+// updateProjectWithStatusCheck, and acceptHandoff, which bypasses it) - a
+// single place to keep the snapshot shape and, critically, the numeric
+// coercion consistent. Without the explicit Number(...) here, a value that
+// came from a fresh `updates` payload (a JS number) and one read back from
+// a DECIMAL(15,2) column (node-pg returns those as strings, e.g. "500000.00")
+// would end up with different JS types for the same logical field depending
+// on which transition produced the snapshot entry.
+function buildMetricSnapshot(status, { annualValue, capitalCommitted, monthsToFirstCash }) {
+  return {
+    status,
+    annualValue: annualValue === null || annualValue === undefined ? null : Number(annualValue),
+    capitalCommitted: capitalCommitted === null || capitalCommitted === undefined ? null : Number(capitalCommitted),
+    monthsToFirstCash: monthsToFirstCash === null || monthsToFirstCash === undefined ? null : Number(monthsToFirstCash),
+    at: new Date().toISOString()
+  };
 }
 
 // The actual dynamic UPDATE, shared by both the status-checked and
@@ -180,9 +283,21 @@ async function updateProjectFields(id, updates, client = pool) {
     fields.push(`project_type = $${paramCount++}`);
     values.push(updates.projectType);
   }
-  if (updates.dealValue !== undefined) {
-    fields.push(`deal_value = $${paramCount++}`);
-    values.push(updates.dealValue);
+  if (updates.annualValue !== undefined) {
+    fields.push(`annual_value = $${paramCount++}`);
+    values.push(updates.annualValue);
+  }
+  if (updates.capitalCommitted !== undefined) {
+    fields.push(`capital_committed = $${paramCount++}`);
+    values.push(updates.capitalCommitted);
+  }
+  if (updates.monthsToFirstCash !== undefined) {
+    fields.push(`months_to_first_cash = $${paramCount++}`);
+    values.push(updates.monthsToFirstCash);
+  }
+  if (updates.metricSnapshots !== undefined) {
+    fields.push(`metric_snapshots = $${paramCount++}::jsonb`);
+    values.push(JSON.stringify(updates.metricSnapshots));
   }
   if (updates.targetClose !== undefined) {
     fields.push(`target_close = $${paramCount++}`);
@@ -216,6 +331,10 @@ async function updateProjectFields(id, updates, client = pool) {
     fields.push(`needs_ic = $${paramCount++}`);
     values.push(!!updates.needsIc);
   }
+  if (updates.handoff !== undefined) {
+    fields.push(`handoff = $${paramCount++}::jsonb`);
+    values.push(updates.handoff === null ? null : JSON.stringify(updates.handoff));
+  }
 
   if (fields.length === 0) {
     return getProjectById(id);
@@ -227,6 +346,124 @@ async function updateProjectFields(id, updates, client = pool) {
     values
   );
   return result.rows[0];
+}
+
+export class HandoffNotReadyError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'HandoffNotReadyError';
+  }
+}
+
+// Partial update of the operator/checklist while a card sits in Handoff -
+// merges onto whatever's already there rather than requiring the caller to
+// resend the whole object (checklist keys not mentioned stay as they were).
+// Locked the same way acceptHandoff is - without it, two edits landing
+// close together (two checklist boxes ticked in quick succession, or this
+// racing an in-flight acceptHandoff) each read the pre-edit handoff and
+// whichever write commits last wins, silently reverting the other one.
+export async function updateProjectHandoff(id, { operator, checklist } = {}) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query('SELECT status, handoff FROM projects WHERE id = $1 FOR UPDATE', [id]);
+    if (!current.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    if (current.rows[0].status !== 'handoff') {
+      await client.query('ROLLBACK');
+      throw new HandoffNotReadyError('This project is not in Handoff.');
+    }
+
+    const existing = current.rows[0].handoff || freshHandoff();
+    const updated = {
+      ...existing,
+      operator: operator !== undefined ? operator : existing.operator,
+      checklist: checklist !== undefined ? { ...existing.checklist, ...checklist } : existing.checklist
+    };
+
+    const result = await client.query(
+      'UPDATE projects SET handoff = $2::jsonb WHERE id = $1 RETURNING *',
+      [id, JSON.stringify(updated)]
+    );
+    await client.query('COMMIT');
+    return result.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// The compound "Accept Handoff" action: operator becomes the sole owner,
+// the card advances out of Handoff (to Build or Operate - forward-only
+// still applies, so a caller can't use this to sneak a backward move past
+// the check), and the handoff object clears. Requires an operator named
+// and all four checklist items done - same rule the card's own UI gates
+// the Accept button on, enforced again here since this is the one place
+// that actually performs the transition.
+// Handoff only ever exits to Build or Operate (Build is skippable) - not
+// straight to Assets/Exited, even though those rank higher and would pass
+// assertForwardMove on their own.
+const HANDOFF_NEXT_STATUSES = ['build', 'operate'];
+
+export async function acceptHandoff(id, acceptedBy, nextStatus) {
+  if (!HANDOFF_NEXT_STATUSES.includes(nextStatus)) {
+    throw new HandoffNotReadyError(`Handoff can only advance to Build or Operate, not "${nextStatus}".`);
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query(
+      'SELECT status, owner, handoff, annual_value, capital_committed, months_to_first_cash, metric_snapshots FROM projects WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    const row = current.rows[0];
+    if (!row) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    if (row.status !== 'handoff') {
+      await client.query('ROLLBACK');
+      throw new HandoffNotReadyError('This project is not in Handoff.');
+    }
+    assertForwardMove('handoff', nextStatus);
+
+    const handoff = row.handoff || {};
+    const checklist = handoff.checklist || {};
+    if (!handoff.operator) {
+      await client.query('ROLLBACK');
+      throw new HandoffNotReadyError('Name an operator before accepting the handoff.');
+    }
+    if (!HANDOFF_CHECKLIST_KEYS.every((key) => checklist[key])) {
+      await client.query('ROLLBACK');
+      throw new HandoffNotReadyError('The handoff checklist is not complete yet.');
+    }
+
+    const originator = row.owner;
+    const operator = handoff.operator;
+    // Same snapshot-on-transition as the generic path (updateProjectWithStatusCheck)
+    // - this route bypasses that path entirely, so it has to do it here too.
+    const snapshot = buildMetricSnapshot(nextStatus, {
+      annualValue: row.annual_value,
+      capitalCommitted: row.capital_committed,
+      monthsToFirstCash: row.months_to_first_cash
+    });
+    const metricSnapshots = [...(row.metric_snapshots || []), snapshot];
+    const result = await client.query(
+      'UPDATE projects SET status = $2, owner = $3, handoff = NULL, metric_snapshots = $4::jsonb WHERE id = $1 RETURNING *',
+      [id, nextStatus, operator, JSON.stringify(metricSnapshots)]
+    );
+    await client.query('COMMIT');
+    return { project: result.rows[0], originator, operator };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // Sum of a heading's direct child line items, for both budget and actual.
@@ -387,7 +624,7 @@ export async function getDeletedProjects() {
   const result = await pool.query(`
     SELECT 
       id, title, description, status, owner, notes, project_type,
-      deal_value, date_created, deleted_at,
+      annual_value, date_created, deleted_at,
       created_at, updated_at
     FROM projects
     WHERE deleted_at IS NOT NULL
@@ -645,7 +882,7 @@ export async function getBoardData() {
     column: project.status,  // Map status -> column for board
     owner: project.owner,
     notes: project.notes,
-    dealValue: parseFloat(project.deal_value) || 0,
+    annualValue: parseFloat(project.annual_value) || 0,
     dateCreated: project.date_created,
     projectType: project.project_type,
     needsIc: project.needs_ic || false,
@@ -659,6 +896,14 @@ export async function getBoardData() {
     valueLocks: project.value_locks || [],
     timeline: project.timeline || [],
     timelineLocks: project.timeline_locks || [],
+    // Dual-avatar/checklist/enteredAt state while a card sits in Handoff -
+    // null the rest of the time (see acceptHandoff/freshHandoff).
+    handoff: project.handoff || null,
+    capitalCommitted: parseFloat(project.capital_committed) || 0,
+    monthsToFirstCash: project.months_to_first_cash !== null && project.months_to_first_cash !== undefined
+      ? project.months_to_first_cash
+      : null,
+    metricSnapshots: project.metric_snapshots || [],
     // Tasks are stored in the projects.tasks JSONB column without a cardId of
     // their own (see addTask) - inject it here so the client's toggle/rename/
     // delete-action calls (which all key off action.cardId) have it to send.
