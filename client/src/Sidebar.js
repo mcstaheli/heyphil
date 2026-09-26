@@ -11,6 +11,7 @@ const LABS_APPS = [
   { path: '/labs/studio', label: 'Studio Board' },
   { path: '/labs/orgcharts', label: 'Org Charts' },
   { path: '/labs/cashflow', label: 'Cashflow', accessKey: 'cashflow' },
+  { path: '/labs/improvements', label: 'Improvements' },
 ];
 
 function Sidebar({ user, onLogout }) {

@@ -15,11 +15,14 @@ import 'dotenv/config';
 import * as boardDb from './board-db.js';
 import * as orgchartDb from './orgchart-db.js';
 import * as cashflowDb from './cashflow-db.js';
+import * as improvementsDb from './improvements-db.js';
+import { runClassificationSweep } from './improvements-classify.js';
 import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
 import { JWT_SECRET, requireAuth } from './auth-middleware.js';
 import { hasAppAccess } from './permissions.js';
 import cashflowRouter from './routes/cashflow.js';
+import improvementsRouter from './routes/improvements.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -192,6 +195,8 @@ async function autoMigrate() {
   await runMigrationStep('projects metric_snapshots column', () => pool.query(`
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS metric_snapshots JSONB NOT NULL DEFAULT '[]'::jsonb
   `));
+
+  await runMigrationStep('improvements table', () => improvementsDb.createTables());
 }
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
@@ -264,7 +269,11 @@ app.use(cors({
   origin: process.env.APP_URL || 'http://localhost:3000',
   credentials: true
 }));
-app.use(express.json());
+// The Improvements board's screenshot data URIs are the reason this isn't
+// body-parser's 100kb default - a single full-tab PNG capture routinely
+// exceeds that on its own, well before the annotation overlay is even
+// composited in.
+app.use(express.json({ limit: '10mb' }));
 app.use(passport.initialize());
 
 // Health check
@@ -374,6 +383,15 @@ app.get('/api/access/:appKey', requireAuth, async (req, res) => {
 });
 
 app.use('/api/cashflow', cashflowRouter);
+app.use('/api/improvements', improvementsRouter);
+
+// Classification sweep for the Improvements board - see
+// improvements-classify.js for exactly what this does (and deliberately
+// doesn't do). Runs once shortly after boot, then every 3 hours; a missing
+// ANTHROPIC_API_KEY just logs and no-ops each time rather than failing.
+const IMPROVEMENTS_SWEEP_INTERVAL_MS = 3 * 60 * 60 * 1000;
+setTimeout(() => runClassificationSweep().catch((e) => console.error('⚠️  Improvements sweep failed:', e.message)), 30 * 1000);
+setInterval(() => runClassificationSweep().catch((e) => console.error('⚠️  Improvements sweep failed:', e.message)), IMPROVEMENTS_SWEEP_INTERVAL_MS);
 
 // Google Sheets API with Service Account
 const getSheets = () => {

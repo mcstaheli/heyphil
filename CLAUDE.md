@@ -18,7 +18,7 @@ Root `.env` (copy from `.env.example` — **but the example is missing `DATABASE
 - `DATABASE_URL` — Postgres connection string (not in `.env.example`)
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`
 - `ORIGINATION_SHEET_ID` — only used by legacy/setup scripts, not the running app
-- Optional: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (chat notifications), `DEBUG_SQL` (logs every query)
+- Optional: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (chat notifications), `DEBUG_SQL` (logs every query), `ANTHROPIC_API_KEY` (Improvements board auto-triage sweep - classifies new reports as bug/feature every 3h; no-ops without it)
 
 `client/.env`: `REACT_APP_API_URL` (localhost:3002 in dev; api.heyphil.bot in the production env file)
 
