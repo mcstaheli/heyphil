@@ -48,6 +48,16 @@ export async function createTables() {
   await step('improvements status index', () => pool.query(`
     CREATE INDEX IF NOT EXISTS idx_improvements_status ON improvements(status) WHERE deleted_at IS NULL
   `));
+
+  // Stable, human-friendly reference number ("bug 3", "feature 5") - the
+  // id (UUID) isn't something a person can say out loud, and a card's
+  // position in a list shifts as items move/get added, which is exactly
+  // what this needs to NOT do for "current and future reference" to mean
+  // anything. SERIAL backfills existing rows too (in roughly insertion
+  // order for a table this size, which is all "current" reference needs).
+  await step('improvements seq_num column', () => pool.query(`
+    ALTER TABLE improvements ADD COLUMN IF NOT EXISTS seq_num SERIAL
+  `));
 }
 
 const VALID_KINDS = ['bug', 'feature'];
@@ -57,6 +67,7 @@ function mapRow(row) {
   if (!row) return null;
   return {
     id: row.id,
+    seqNum: row.seq_num,
     title: row.title,
     note: row.note,
     kind: row.kind,

@@ -27,6 +27,15 @@ const RESOLVED_COLUMNS = ['shipped', 'abandoned'];
 
 const KIND_LABEL = { bug: '🐛 Bug', feature: '✨ Feature' };
 
+// Only bugs and features sitting in a Triaged column are things you'd
+// actually say "fix bug 3" / "implement feature 5" about - Intake hasn't
+// been sorted yet, and Shipped/Abandoned are already done.
+const PROMPTABLE_COLUMNS = ['triaged-bugs', 'triaged-features'];
+
+function claudePrompt(item) {
+  return item.kind === 'bug' ? `fix bug ${item.seqNum}` : `implement feature ${item.seqNum}`;
+}
+
 function authHeaders() {
   const token = localStorage.getItem('authToken');
   return { Authorization: `Bearer ${token}` };
@@ -50,6 +59,7 @@ function Improvements() {
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
   const [draggedId, setDraggedId] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
 
   const load = useCallback(() => {
     fetch(`${API_BASE_URL}/api/improvements`, { headers: authHeaders() })
@@ -150,6 +160,19 @@ function Improvements() {
     setDraggedId(null);
   }
 
+  // Copies just the prompt text ("fix bug 3"), not a full shell command -
+  // browsers can't open a Terminal window or run anything for you (no web
+  // API crosses that boundary), and a full `cd ~/path && claude ...`
+  // command would be wrong for anyone whose clone lives somewhere else.
+  // Paste this into an already-running Claude Code session.
+  function copyPrompt(item, e) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(claudePrompt(item)).then(() => {
+      setCopiedId(item.id);
+      setTimeout(() => setCopiedId((id) => (id === item.id ? null : id)), 1500);
+    });
+  }
+
   if (loading) return <div className="imp-page"><p>Loading...</p></div>;
   if (error) return <div className="imp-page"><p>Failed to load: {error}</p></div>;
 
@@ -191,7 +214,17 @@ function Improvements() {
                   )}
                   <div className="imp-card-body">
                     <div className="imp-card-kind">
-                      {item.kind ? KIND_LABEL[item.kind] : '❔ Unclassified'}
+                      <span>{item.seqNum != null && `#${item.seqNum} `}{item.kind ? KIND_LABEL[item.kind] : '❔ Unclassified'}</span>
+                      {PROMPTABLE_COLUMNS.includes(item.status) && (
+                        <button
+                          className="imp-copy-btn"
+                          onClick={(e) => copyPrompt(item, e)}
+                          title={`Copy: ${claudePrompt(item)}`}
+                          type="button"
+                        >
+                          {copiedId === item.id ? 'Copied!' : '📋'}
+                        </button>
+                      )}
                     </div>
                     <div className="imp-card-title">{item.title}</div>
                     <div className="imp-card-meta">
@@ -230,6 +263,18 @@ function ImprovementModal({ item, onClose, onSave, onDelete }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{item.seqNum != null && `#${item.seqNum} `}{item.kind ? KIND_LABEL[item.kind] : '❔ Unclassified'}</h3>
+          {PROMPTABLE_COLUMNS.includes(item.status) && (
+            <button
+              className="btn-secondary"
+              onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(claudePrompt(item)); }}
+              type="button"
+            >
+              📋 Copy: {claudePrompt(item)}
+            </button>
+          )}
+        </div>
         <div className="modal-body">
           <div className="imp-modal-body">
             {item.screenshot && (
