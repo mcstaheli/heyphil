@@ -418,12 +418,27 @@ function OriginationBoard({ user, studioMode = false }) {
       return true;
     });
     
+    // Months to First Cash only means anything for cards still on the way
+    // to their first cash event (MONTHS_TO_FIRST_CASH_REQUIRED_STAGES) -
+    // averaging it across the whole pipeline (including Assets, where
+    // it's forced to 0, or Handoff/Build where it's often unset) would
+    // just dilute a genuinely useful "how far out is cash, on average,
+    // for deals still getting there" number into a meaningless one.
+    const cardsWithMonthsToFirstCash = filteredCards.filter(
+      (c) => MONTHS_TO_FIRST_CASH_REQUIRED_STAGES.includes(c.column) && c.monthsToFirstCash != null
+    );
+    const avgMonthsToFirstCash = cardsWithMonthsToFirstCash.length > 0
+      ? cardsWithMonthsToFirstCash.reduce((sum, c) => sum + c.monthsToFirstCash, 0) / cardsWithMonthsToFirstCash.length
+      : null;
+
     const newMetrics = {
       totalDeals: filteredCards.length,
       totalValue: filteredCards.reduce((sum, c) => sum + (c.annualValue || 0), 0),
+      totalCapitalCommitted: filteredCards.reduce((sum, c) => sum + (c.capitalCommitted || 0), 0),
+      avgMonthsToFirstCash,
       byStage: {}
     };
-    
+
     filteredCards.forEach(card => {
       if (!newMetrics.byStage[card.column]) {
         newMetrics.byStage[card.column] = { count: 0, value: 0 };
@@ -431,7 +446,7 @@ function OriginationBoard({ user, studioMode = false }) {
       newMetrics.byStage[card.column].count++;
       newMetrics.byStage[card.column].value += (card.annualValue || 0);
     });
-    
+
     setMetrics(newMetrics);
   }, [cards, filterOwner, filterProjectType, searchQuery]);
 
@@ -1333,8 +1348,16 @@ function OriginationBoard({ user, studioMode = false }) {
             <p>Total Deals</p>
           </div>
           <div className="metric-card">
-            <h3>${(metrics.totalValue / 1000000).toFixed(1)}M</h3>
-            <p>Total Value</p>
+            <h3>{formatCompactMoney(metrics.totalValue)}</h3>
+            <p>Total Annual Value</p>
+          </div>
+          <div className="metric-card">
+            <h3>{formatCompactMoney(metrics.totalCapitalCommitted)}</h3>
+            <p>Total Capital Committed</p>
+          </div>
+          <div className="metric-card">
+            <h3>{metrics.avgMonthsToFirstCash != null ? `${metrics.avgMonthsToFirstCash.toFixed(1)}mo` : '—'}</h3>
+            <p>Avg. Months to First Cash</p>
           </div>
           {Object.entries(metrics.byStage).map(([stage, data]) => (
             <div key={stage} className="metric-card">
