@@ -25,7 +25,16 @@ Root `.env` (copy from `.env.example` — **but the example is missing `DATABASE
 GitHub repo secrets (Settings → Secrets and variables → Actions), for `.github/workflows/auto-fix-bugs.yml`:
 - `ANTHROPIC_API_KEY` — same key as the server's, lets headless Claude Code run
 - `DATABASE_URL` — same production Postgres connection string as the server's, so the workflow can read/update the `improvements` table directly
-- Without both set, the workflow just fails at that step every 6h — safe, but means auto-fix isn't running
+- Without both set, the workflow just fails at that step once a day — safe, but means auto-fix isn't running
+
+### Auto-fix pipeline (Improvements board bugs)
+
+Runs once a day (`.github/workflows/auto-fix-bugs.yml`), picks at most one classified bug, and **pushes straight to `main` with no human review** — Railway deploys it immediately. Three independent gates have to pass first, in order:
+1. `auto-fix-implement-prompt.md` — a headless Claude Code run investigates and writes a fix (or backs off and leaves a note on the improvement instead), left uncommitted; runs `npm test` itself.
+2. `npm run smoke` — boots the fixed server against the real DB.
+3. `auto-fix-verify-prompt.md` — a **separate** headless Claude Code run, no memory of step 1, independently re-fetches the bug report and adversarially reviews the actual diff before approving.
+
+Only if all three pass does `scripts/auto-fix/finalize.mjs` commit and push (approve) or discard the diff and record why (any rejection). That script is also the only thing that writes the improvement's final `status`/`prUrl` — every branch in the workflow YAML funnels through it rather than duplicating the DB-write logic per outcome.
 
 ## Conventions
 

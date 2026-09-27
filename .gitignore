@@ -11,3 +11,6 @@ client/node_modules
 .railway
 service-account.json
 test
+
+# Auto-fix workflow scratch state (ephemeral per CI run - never meant to be committed)
+.auto-fix-state.json
