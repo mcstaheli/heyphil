@@ -3,13 +3,16 @@
 // report or a feature request, and move it to Triaged with that kind and a
 // one-line reasoning note attached.
 //
-// Deliberately stops there. It does NOT touch code, open a PR, or push
-// anything - even for items it classifies as bugs. Auto-fixing and
-// deploying a live change to a shared production app on an unsupervised
-// timer is a different order of risk than auto-labeling a card, and that
-// step needs an explicit human go-ahead per report rather than a standing
-// cron. A classified bug just sits in Triaged for a person (or a Claude
-// Code session someone points at it) to pick up.
+// Deliberately stops there - this module never touches code, opens a PR,
+// or pushes anything. Following up on a classified bug (investigating,
+// fixing, testing, opening a PR) is handled entirely separately by
+// .github/workflows/auto-fix-bugs.yml, a scheduled GitHub Actions job
+// running headless Claude Code - not by this in-process sweep. That's a
+// deliberate split: this file runs inside the deployed server on every
+// boot, so it stays to the narrow, cheap, always-safe-to-retry task of
+// labeling a card. Investigating and editing the actual codebase warrants
+// its own dedicated, auditable job (with its own PR trail) rather than
+// living inside the app process itself.
 import Anthropic from '@anthropic-ai/sdk';
 import * as improvementsDb from './improvements-db.js';
 

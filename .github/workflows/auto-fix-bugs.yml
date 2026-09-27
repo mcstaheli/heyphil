@@ -1,0 +1,50 @@
+name: Auto-fix triaged bugs (Improvements board)
+
+# Picks up at most one bug report per run that the Improvements board's
+# classification sweep has already labeled kind=bug, status=triaged, and
+# investigates/fixes/opens a PR for it - see auto-fix-prompt.md for exactly
+# what it's told to do (and when it's told to back off instead of guessing).
+# Deliberately opens a PR rather than pushing to main - a human still
+# reviews and merges every change before it reaches production.
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Configure git identity
+        run: |
+          git config user.name "heyphil-auto-fix[bot]"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Auto-fix one triaged bug (if any)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          claude -p "$(cat .github/workflows/auto-fix-prompt.md)" \
+            --permission-mode bypassPermissions \
+            --output-format text

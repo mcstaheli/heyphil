@@ -22,6 +22,11 @@ Root `.env` (copy from `.env.example` — **but the example is missing `DATABASE
 
 `client/.env`: `REACT_APP_API_URL` (localhost:3002 in dev; api.heyphil.bot in the production env file)
 
+GitHub repo secrets (Settings → Secrets and variables → Actions), for `.github/workflows/auto-fix-bugs.yml`:
+- `ANTHROPIC_API_KEY` — same key as the server's, lets headless Claude Code run
+- `DATABASE_URL` — same production Postgres connection string as the server's, so the workflow can read/update the `improvements` table directly
+- Without both set, the workflow just fails at that step every 6h — safe, but means auto-fix isn't running
+
 ## Conventions
 
 - ESM throughout (`"type": "module"`) — use `import`, not `require`, everywhere including server code.
