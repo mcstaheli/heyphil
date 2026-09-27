@@ -22,6 +22,7 @@ import { JWT_SECRET, requireAuth } from './auth-middleware.js';
 import { hasAppAccess } from './permissions.js';
 import cashflowRouter from './routes/cashflow.js';
 import improvementsRouter from './routes/improvements.js';
+import { initRealtime } from './realtime.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +40,7 @@ const io = new SocketIOServer(httpServer, {
     credentials: true
   }
 });
+initRealtime(io);
 
 const PORT = process.env.PORT || 3002;
 

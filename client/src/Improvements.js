@@ -1,15 +1,17 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { io } from 'socket.io-client';
 import './Improvements.css';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 
 // Mirrors server/improvements-db.js's IMPROVEMENT_COLUMNS - keep in sync.
 // No forward-only restriction (same house style as the origination board -
 // see boardStages.js): a card can move to any column in either direction.
-// Sorting Intake into the two Triaged columns, and fixing/implementing
-// from there, is something a person asks an interactive Claude Code
-// session to do ("triage", "fix bugs 1-4") - see CLAUDE.md - not anything
-// automated in this codebase.
+// Sorting Intake, auto-fixing bugs, and implementing features is something
+// a person asks an interactive Claude Code session to do ("triage",
+// "implement feature N") - see CLAUDE.md - not anything automated in this
+// codebase.
 const COLUMNS = [
   { id: 'intake', title: 'Intake' },
   { id: 'triaged-bugs', title: 'Triaged - Bugs' },
@@ -17,6 +19,11 @@ const COLUMNS = [
   { id: 'shipped', title: 'Shipped' },
   { id: 'abandoned', title: 'Abandoned' },
 ];
+
+// Once a card lands here, nobody needs the screenshot for visual
+// reference anymore - showing the full thumbnail just makes an
+// already-resolved card take up as much space as an active one.
+const RESOLVED_COLUMNS = ['shipped', 'abandoned'];
 
 const KIND_LABEL = { bug: '🐛 Bug', feature: '✨ Feature' };
 
@@ -60,6 +67,38 @@ function Improvements() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Live updates so a report submitted (or triaged/fixed) anywhere shows
+  // up here without a manual refresh - same pattern App.js already uses
+  // for the origination board, just its own connection since this page
+  // isn't part of that component tree.
+  const socketRef = useRef(null);
+  useEffect(() => {
+    socketRef.current = io(WS_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 10,
+    });
+
+    socketRef.current.on('improvement:created', ({ improvement }) => {
+      setItems((prev) => (prev.some((it) => it.id === improvement.id) ? prev : [improvement, ...prev]));
+    });
+
+    socketRef.current.on('improvement:updated', ({ improvement }) => {
+      setItems((prev) => prev.map((it) => (it.id === improvement.id ? improvement : it)));
+      setSelected((prev) => (prev && prev.id === improvement.id ? improvement : prev));
+    });
+
+    socketRef.current.on('improvement:deleted', ({ improvementId }) => {
+      setItems((prev) => prev.filter((it) => it.id !== improvementId));
+      setSelected((prev) => (prev && prev.id === improvementId ? null : prev));
+    });
+
+    return () => {
+      socketRef.current.disconnect();
+    };
+  }, []);
 
   const byColumn = useMemo(() => {
     const grouped = Object.fromEntries(COLUMNS.map((c) => [c.id, []]));
@@ -118,9 +157,9 @@ function Improvements() {
     <div className="imp-page">
       <div className="imp-header">
         <h2>Improvements</h2>
-        <p className="imp-subtitle">
-          Bug reports and feature requests captured with the snapshot button, anywhere in the app.
-          Ask a Claude Code session to "triage" to sort Intake, then "fix bugs 1-4" or "implement feature 2".
+        <p className="imp-subtitle">Bug reports and feature requests captured with the snapshot button, anywhere in the app.</p>
+        <p className="imp-hint">
+          Tell a Claude Code session <strong>&quot;triage&quot;</strong> to sort Intake and auto-fix any bugs, or <strong>&quot;implement feature 2&quot;</strong> to build a specific feature.
         </p>
       </div>
 
@@ -145,7 +184,7 @@ function Improvements() {
                   onDragStart={() => handleDragStart(item.id)}
                   onClick={() => setSelected(item)}
                 >
-                  {item.screenshot && (
+                  {item.screenshot && !RESOLVED_COLUMNS.includes(item.status) && (
                     <div className="imp-card-thumb">
                       <img src={item.screenshot} alt="" />
                     </div>
@@ -242,7 +281,7 @@ function ImprovementModal({ item, onClose, onSave, onDelete }) {
         </div>
         <div className="modal-footer">
           <div className="imp-modal-actions">
-            <button className="btn-remove-action" onClick={onDelete}>Delete</button>
+            <button className="btn-danger" onClick={onDelete}>Delete</button>
             <button className="btn-primary" onClick={onClose}>Done</button>
           </div>
         </div>

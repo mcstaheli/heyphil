@@ -1,6 +1,7 @@
 import express from 'express';
 import { requireAuth } from '../auth-middleware.js';
 import * as improvementsDb from '../improvements-db.js';
+import { broadcastChange } from '../realtime.js';
 
 const router = express.Router();
 
@@ -30,10 +31,17 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { title, note, screenshot, pageUrl } = req.body;
-    if (!screenshot || typeof screenshot !== 'string' || !screenshot.startsWith('data:image/')) {
+    // Screenshot is optional (the text-only "skip screenshot" path sends
+    // null/undefined) - but if one IS provided, it has to actually be an
+    // image, and a report with neither a screenshot nor a note is just an
+    // empty card with nothing to triage.
+    if (screenshot && (typeof screenshot !== 'string' || !screenshot.startsWith('data:image/'))) {
       return res.status(400).json({ error: 'screenshot must be a data:image/* URI' });
     }
     const trimmedNote = typeof note === 'string' ? note.trim() : '';
+    if (!screenshot && !trimmedNote) {
+      return res.status(400).json({ error: 'A report needs a screenshot, a note, or both.' });
+    }
     const derivedTitle = (title && title.trim()) || trimmedNote.slice(0, 80) || 'Untitled report';
     const improvement = await improvementsDb.createImprovement({
       title: derivedTitle,
@@ -43,6 +51,7 @@ router.post('/', async (req, res) => {
       reporterEmail: req.user.email,
       reporterName: req.user.name,
     });
+    broadcastChange('improvement:created', { improvement });
     res.status(201).json({ improvement });
   } catch (error) {
     console.error('Failed to create improvement:', error.message);
@@ -54,6 +63,7 @@ router.put('/:id', async (req, res) => {
   try {
     const improvement = await improvementsDb.updateImprovement(req.params.id, req.body || {});
     if (!improvement) return res.status(404).json({ error: 'Not found' });
+    broadcastChange('improvement:updated', { improvement });
     res.json({ improvement });
   } catch (error) {
     if (/^(kind|status) must be one of/.test(error.message)) {
@@ -68,6 +78,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const ok = await improvementsDb.softDeleteImprovement(req.params.id);
     if (!ok) return res.status(404).json({ error: 'Not found' });
+    broadcastChange('improvement:deleted', { improvementId: req.params.id });
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to delete improvement:', error.message);

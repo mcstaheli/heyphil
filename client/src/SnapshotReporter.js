@@ -148,9 +148,77 @@ function AnnotateModal({ imageDataUrl, onClose, onSubmit }) {
   );
 }
 
+// Fallback for a report that doesn't need a screenshot - reached when
+// someone declines the screen-share prompt rather than through a separate
+// persistent button, which would risk yet another bottom-right collision
+// (see the DevTools/trash toggle bug this file already had to work around).
+// Declining the prompt is itself a clear signal "I don't want to share my
+// screen for this one", so offering the no-screenshot path right there is
+// the natural moment for it.
+function TextOnlyModal({ onClose, onSubmit }) {
+  const [note, setNote] = useState('');
+  const [pageUrl, setPageUrl] = useState(window.location.pathname);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    if (!note.trim()) {
+      window.alert('Add a note describing what you\'re seeing.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onSubmit({ screenshot: null, note, pageUrl });
+      onClose();
+    } catch (err) {
+      window.alert(err.message || 'Failed to submit report');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Report a bug or idea</h3>
+        </div>
+        <div className="modal-body">
+          <p className="snap-hint">No screenshot needed - just describe what you're seeing or what you'd like to see.</p>
+          <textarea
+            className="snap-note"
+            rows={4}
+            placeholder="What are you seeing, or what would you like to see?"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            autoFocus
+          />
+          <label className="snap-page-label">
+            Page
+            <input
+              className="snap-page-input"
+              value={pageUrl}
+              onChange={(e) => setPageUrl(e.target.value)}
+              placeholder="/labs/board"
+            />
+          </label>
+        </div>
+        <div className="modal-footer">
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={onClose} disabled={submitting}>Cancel</button>
+            <button className="btn-primary" onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Submitting…' : 'Submit report'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SnapshotReporter() {
   const [captured, setCaptured] = useState(null);
   const [capturing, setCapturing] = useState(false);
+  const [showTextOnly, setShowTextOnly] = useState(false);
 
   const handleClick = useCallback(async () => {
     if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -162,9 +230,12 @@ function SnapshotReporter() {
       const dataUrl = await captureScreen();
       setCaptured(dataUrl);
     } catch (err) {
-      // The user cancelling the share picker is the common case here -
-      // not an error worth surfacing.
-      if (err.name !== 'NotAllowedError') {
+      // Declining the share prompt is the common case here, and a clear
+      // signal this report doesn't need a screenshot - offer the
+      // lightweight note-only path instead of just doing nothing.
+      if (err.name === 'NotAllowedError') {
+        setShowTextOnly(true);
+      } else {
         window.alert(`Couldn't capture the screen: ${err.message}`);
       }
     } finally {
@@ -172,12 +243,12 @@ function SnapshotReporter() {
     }
   }, []);
 
-  async function submitReport({ screenshot, note }) {
+  async function submitReport({ screenshot, note, pageUrl }) {
     const token = localStorage.getItem('authToken');
     const res = await fetch(`${API_BASE_URL}/api/improvements`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ note, screenshot, pageUrl: window.location.pathname }),
+      body: JSON.stringify({ note, screenshot, pageUrl: pageUrl || window.location.pathname }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -208,6 +279,12 @@ function SnapshotReporter() {
         <AnnotateModal
           imageDataUrl={captured}
           onClose={() => setCaptured(null)}
+          onSubmit={submitReport}
+        />
+      )}
+      {showTextOnly && (
+        <TextOnlyModal
+          onClose={() => setShowTextOnly(false)}
           onSubmit={submitReport}
         />
       )}

@@ -87,3 +87,20 @@
   box-sizing: border-box;
   margin-bottom: 12px;
 }
+
+.snap-page-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+}
+
+.snap-page-input {
+  font-weight: 400;
+  font-family: 'Courier New', monospace;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}

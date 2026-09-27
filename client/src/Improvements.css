@@ -10,8 +10,19 @@
 }
 
 .imp-subtitle {
-  margin: 0 0 12px;
+  margin: 0 0 4px;
   color: #666;
+}
+
+.imp-hint {
+  margin: 0 0 12px;
+  color: #999;
+  font-size: 13px;
+}
+
+.imp-hint strong {
+  color: #666;
+  font-weight: 600;
 }
 
 .imp-board {
