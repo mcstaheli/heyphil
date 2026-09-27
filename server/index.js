@@ -19,7 +19,7 @@ import * as improvementsDb from './improvements-db.js';
 import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
 import { JWT_SECRET, requireAuth } from './auth-middleware.js';
-import { hasAppAccess } from './permissions.js';
+import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin } from './permissions.js';
 import cashflowRouter from './routes/cashflow.js';
 import improvementsRouter from './routes/improvements.js';
 import { initRealtime } from './realtime.js';
@@ -102,7 +102,7 @@ async function autoMigrate() {
   });
 
   // Per-app access control, for private Labs apps (in addition to the
-  // login-level ALLOWED_EMAILS gate below)
+  // login-level allowed_emails gate below)
   await runMigrationStep('app_access table', () => pool.query(`
     CREATE TABLE IF NOT EXISTS app_access (
       email VARCHAR(255) NOT NULL,
@@ -206,6 +206,28 @@ async function autoMigrate() {
   await runMigrationStep('people email column', () => pool.query(`
     ALTER TABLE people ADD COLUMN IF NOT EXISTS email VARCHAR(255)
   `));
+
+  // Who can log in at all, moved out of the hardcoded ALLOWED_EMAILS
+  // array (used to require a code change + redeploy to add anyone) and
+  // into the database, editable from Settings -> Team instead (per
+  // request). Seeded once with the exact emails that array used to hold,
+  // so this migration can never silently lock anyone out who had access
+  // before it ran.
+  await runMigrationStep('allowed_emails table', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS allowed_emails (
+      email VARCHAR(255) PRIMARY KEY,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `));
+  await runMigrationStep('allowed_emails seed (formerly-hardcoded ALLOWED_EMAILS)', () => pool.query(`
+    INSERT INTO allowed_emails (email) VALUES
+      ('chad@philo.ventures'),
+      ('tracy.stratton@philo.ventures'),
+      ('greg@philo.ventures'),
+      ('scott@philo.ventures'),
+      ('connor.bell@philo.ventures')
+    ON CONFLICT (email) DO NOTHING
+  `));
 }
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
@@ -238,9 +260,6 @@ try {
   console.error('⚠️  Migration lock unavailable - server will boot without running migrations this cycle:', error.message);
 }
 
-// Allowed users
-const ALLOWED_EMAILS = ['chad@philo.ventures', 'tracy.stratton@philo.ventures', 'greg@philo.ventures', 'scott@philo.ventures', 'connor.bell@philo.ventures'];
-
 // Configure Google OAuth
 passport.use(
   new GoogleStrategy(
@@ -252,13 +271,21 @@ passport.use(
       accessType: 'offline',
       prompt: 'consent'
     },
-    (accessToken, refreshToken, profile, done) => {
+    async (accessToken, refreshToken, profile, done) => {
       const email = profile.emails[0].value;
-      
-      if (!ALLOWED_EMAILS.includes(email)) {
-        return done(null, false, { message: 'Unauthorized email' });
+
+      // Was a hardcoded ALLOWED_EMAILS array - moved to the allowed_emails
+      // table (see permissions.js) so granting access doesn't require a
+      // code change and redeploy, per request.
+      try {
+        if (!(await isEmailAllowedToLogin(email))) {
+          return done(null, false, { message: 'Unauthorized email' });
+        }
+      } catch (error) {
+        console.error('Login allowlist check failed:', error.message);
+        return done(error);
       }
-      
+
       const user = {
         id: profile.id,
         email: email,
@@ -267,7 +294,7 @@ passport.use(
         accessToken,
         refreshToken
       };
-      
+
       return done(null, user);
     }
   )
@@ -1717,6 +1744,46 @@ app.delete('/api/people/:name', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to delete person:', error.message);
     res.status(500).json({ error: 'Failed to delete person' });
+  }
+});
+
+// Who can log in at all (Settings -> Team's "Can log in" toggle, plus a
+// small standalone list for access not tied to any team member row).
+// Same trust model as the rest of this internal team tool: anyone who can
+// already log in can grant/revoke login for someone else - there's no
+// separate admin role anywhere else in this app either.
+app.get('/api/allowed-emails', requireAuth, async (req, res) => {
+  try {
+    const emails = await listAllowedEmails();
+    res.json({ emails });
+  } catch (error) {
+    console.error('Failed to list allowed emails:', error.message);
+    res.status(500).json({ error: 'Failed to list allowed emails' });
+  }
+});
+
+app.post('/api/allowed-emails', requireAuth, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'email is required' });
+    }
+    await allowEmailLogin(email.trim().toLowerCase());
+    res.status(201).json({ success: true });
+  } catch (error) {
+    console.error('Failed to allow email:', error.message);
+    res.status(500).json({ error: 'Failed to allow email' });
+  }
+});
+
+app.delete('/api/allowed-emails/:email', requireAuth, async (req, res) => {
+  try {
+    const ok = await revokeEmailLogin(req.params.email.toLowerCase());
+    if (!ok) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to revoke email:', error.message);
+    res.status(500).json({ error: 'Failed to revoke email' });
   }
 });
 
