@@ -158,6 +158,7 @@ function Improvements() {
                     <div className="imp-card-meta">
                       {item.reporterName || item.reporterEmail || 'Unknown'} · {timeAgo(item.createdAt)}
                     </div>
+                    {item.pageUrl && <div className="imp-card-page">{item.pageUrl}</div>}
                   </div>
                 </div>
               ))}
@@ -190,56 +191,60 @@ function ImprovementModal({ item, onClose, onSave, onDelete }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
-        <div className="imp-modal-body">
-          {item.screenshot && (
-            <div className="imp-modal-screenshot">
-              <img src={item.screenshot} alt="Screenshot" />
-            </div>
-          )}
-          <div className="imp-modal-fields">
-            <label>
-              Title
-              <input value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => title !== item.title && onSave({ title })} />
-            </label>
-            <label>
-              Note
-              <textarea rows={4} value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => note !== item.note && onSave({ note })} />
-            </label>
-            <label>
-              Kind
-              <select value={item.kind || ''} onChange={(e) => onSave({ kind: e.target.value || null })}>
-                <option value="">Unclassified</option>
-                <option value="bug">🐛 Bug</option>
-                <option value="feature">✨ Feature</option>
-              </select>
-            </label>
-            <label>
-              Status
-              <select value={item.status} onChange={(e) => onSave({ status: e.target.value })}>
-                {COLUMNS.map((c) => (
-                  <option key={c.id} value={c.id}>{c.title}</option>
-                ))}
-              </select>
-            </label>
-            {item.classificationNote && (
-              <div className="imp-classification-note">
-                <strong>Triage notes:</strong> {item.classificationNote}
+        <div className="modal-body">
+          <div className="imp-modal-body">
+            {item.screenshot && (
+              <div className="imp-modal-screenshot">
+                <img src={item.screenshot} alt="Screenshot" />
               </div>
             )}
-            {item.prUrl && (
-              <div className="imp-classification-note">
-                <strong>Fix pushed:</strong> <a href={item.prUrl} target="_blank" rel="noreferrer">{item.prUrl}</a>
+            <div className="imp-modal-fields">
+              <label>
+                Title
+                <input value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => title !== item.title && onSave({ title })} />
+              </label>
+              <label>
+                Note
+                <textarea rows={4} value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => note !== item.note && onSave({ note })} />
+              </label>
+              <label>
+                Kind
+                <select value={item.kind || ''} onChange={(e) => onSave({ kind: e.target.value || null })}>
+                  <option value="">Unclassified</option>
+                  <option value="bug">🐛 Bug</option>
+                  <option value="feature">✨ Feature</option>
+                </select>
+              </label>
+              <label>
+                Status
+                <select value={item.status} onChange={(e) => onSave({ status: e.target.value })}>
+                  {COLUMNS.map((c) => (
+                    <option key={c.id} value={c.id}>{c.title}</option>
+                  ))}
+                </select>
+              </label>
+              {item.classificationNote && (
+                <div className="imp-classification-note">
+                  <strong>Triage notes:</strong> {item.classificationNote}
+                </div>
+              )}
+              {item.prUrl && (
+                <div className="imp-classification-note">
+                  <strong>Fix pushed:</strong> <a href={item.prUrl} target="_blank" rel="noreferrer">{item.prUrl}</a>
+                </div>
+              )}
+              <div className="imp-modal-meta">
+                Reported by {item.reporterName || item.reporterEmail || 'Unknown'} on {new Date(item.createdAt).toLocaleString()}
+                {item.pageUrl && <> · from <code>{item.pageUrl}</code></>}
               </div>
-            )}
-            <div className="imp-modal-meta">
-              Reported by {item.reporterName || item.reporterEmail || 'Unknown'} on {new Date(item.createdAt).toLocaleString()}
-              {item.pageUrl && <> · from <code>{item.pageUrl}</code></>}
             </div>
           </div>
         </div>
-        <div className="imp-modal-actions">
-          <button className="btn-remove-action" onClick={onDelete}>Delete</button>
-          <button className="btn-primary" onClick={onClose}>Done</button>
+        <div className="modal-footer">
+          <div className="imp-modal-actions">
+            <button className="btn-remove-action" onClick={onDelete}>Delete</button>
+            <button className="btn-primary" onClick={onClose}>Done</button>
+          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,13 @@
 .snap-fab {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  /* App.css already has a bottom-right cluster here: .devtools-toggle
+     (bottom:20/right:20, global, every page) and .trash-toggle
+     (bottom:20/right:88, board pages only), both 48px. Stacking above
+     them (rather than right of them) stays clear of both regardless of
+     which page/board is showing, with a clean 24px gap above their top
+     edge (20+48=68px up, so this button's bottom at 92px up leaves 24px). */
+  bottom: 92px;
+  right: 20px;
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -33,13 +39,25 @@
   margin: -4px 0 12px;
 }
 
+/* This box is the SCROLL container only - it must not also be the
+   canvas's positioned ancestor (see .snap-canvas-inner below) or the
+   canvas's height:100% resolves against this box's own capped/visible
+   height instead of the full scrollable content, and markup below
+   whatever was visible on load gets silently clipped. */
 .snap-canvas-wrap {
-  position: relative;
   max-height: 55vh;
   overflow: auto;
   border: 1px solid #ddd;
   border-radius: 6px;
   line-height: 0;
+}
+
+/* Sized purely by its content (the image) via a normal, non-scrolling,
+   non-height-constrained box - so height:100% on the canvas below
+   always matches the image's full rendered height, scrolled into view
+   or not. */
+.snap-canvas-inner {
+  position: relative;
 }
 
 .snap-base-image {

@@ -101,11 +101,19 @@
   color: #888;
 }
 
+.imp-card-page {
+  font-size: 11px;
+  color: #aaa;
+  font-family: 'Courier New', monospace;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .imp-modal-body {
   display: flex;
   gap: 20px;
-  max-height: 70vh;
-  overflow-y: auto;
 }
 
 .imp-modal-screenshot {

@@ -101,39 +101,47 @@ function AnnotateModal({ imageDataUrl, onClose, onSubmit }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
-        <h3>Report a bug or idea</h3>
-        <p className="snap-hint">Click and drag on the screenshot to circle or mark up what you're pointing at.</p>
-        <div className="snap-canvas-wrap">
-          {/* eslint-disable-next-line jsx-a11y/alt-text */}
-          <img ref={imgRef} src={imageDataUrl} onLoad={handleImageLoad} className="snap-base-image" alt="Screenshot" />
-          {dims && (
-            <canvas
-              ref={canvasRef}
-              width={dims.width}
-              height={dims.height}
-              className="snap-draw-canvas"
-              onMouseDown={startDraw}
-              onMouseMove={moveDraw}
-              onMouseUp={endDraw}
-              onMouseLeave={endDraw}
-            />
-          )}
+        <div className="modal-header">
+          <h3>Report a bug or idea</h3>
         </div>
-        <div className="snap-toolbar">
-          <button className="btn-secondary" onClick={clearDrawing} type="button">Clear markup</button>
+        <div className="modal-body">
+          <p className="snap-hint">Click and drag on the screenshot to circle or mark up what you're pointing at.</p>
+          <div className="snap-canvas-wrap">
+            <div className="snap-canvas-inner">
+              {/* eslint-disable-next-line jsx-a11y/alt-text */}
+              <img ref={imgRef} src={imageDataUrl} onLoad={handleImageLoad} className="snap-base-image" alt="Screenshot" />
+              {dims && (
+                <canvas
+                  ref={canvasRef}
+                  width={dims.width}
+                  height={dims.height}
+                  className="snap-draw-canvas"
+                  onMouseDown={startDraw}
+                  onMouseMove={moveDraw}
+                  onMouseUp={endDraw}
+                  onMouseLeave={endDraw}
+                />
+              )}
+            </div>
+          </div>
+          <div className="snap-toolbar">
+            <button className="btn-secondary" onClick={clearDrawing} type="button">Clear markup</button>
+          </div>
+          <textarea
+            className="snap-note"
+            rows={3}
+            placeholder="What are you seeing, or what would you like to see?"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
         </div>
-        <textarea
-          className="snap-note"
-          rows={3}
-          placeholder="What are you seeing, or what would you like to see?"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-        <div className="imp-modal-actions">
-          <button className="btn-secondary" onClick={onClose} disabled={submitting}>Cancel</button>
-          <button className="btn-primary" onClick={handleSubmit} disabled={submitting || !dims}>
-            {submitting ? 'Submitting…' : 'Submit report'}
-          </button>
+        <div className="modal-footer">
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={onClose} disabled={submitting}>Cancel</button>
+            <button className="btn-primary" onClick={handleSubmit} disabled={submitting || !dims}>
+              {submitting ? 'Submitting…' : 'Submit report'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
