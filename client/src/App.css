@@ -404,6 +404,16 @@ body {
 
 .modal-footer .modal-actions {
   margin-top: 0;
+  /* .modal-footer isn't scoped to this file - OrgCharts.css defines its
+     own .modal-footer too, and CSS classes aren't module-scoped, so
+     whichever rule wins the cascade can make .modal-footer
+     display:flex/justify-content:space-between (OrgCharts.css's does).
+     Without width:100% here, .modal-actions just shrinks to fit Cancel/
+     Submit instead of stretching to fill the footer, so space-between
+     has no room to work and flex-end has nothing to push against -
+     the buttons end up sitting at the footer's left edge instead of
+     the right. */
+  width: 100%;
 }
 
 .modal-two-column {

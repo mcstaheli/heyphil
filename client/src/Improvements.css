@@ -177,8 +177,14 @@
   color: #888;
 }
 
+/* .modal-footer (App.css) is itself display:flex/space-between, meant
+   for exactly this "one thing on the left, buttons on the right" shape
+   - but that only works if ITS direct child actually fills the width.
+   Without width:100% here, this div just shrinks to fit Delete+Done,
+   leaving them bunched together with a big empty gap on the right
+   instead of pushed to opposite ends. */
 .imp-modal-actions {
   display: flex;
   justify-content: space-between;
-  margin-top: 16px;
+  width: 100%;
 }
