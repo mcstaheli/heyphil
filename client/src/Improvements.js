@@ -245,6 +245,11 @@ function ImprovementModal({ item, onClose, onSave, onDelete }) {
                 <strong>Auto-triage reasoning:</strong> {item.classificationNote}
               </div>
             )}
+            {item.prUrl && (
+              <div className="imp-classification-note">
+                <strong>Auto-fix pushed:</strong> <a href={item.prUrl} target="_blank" rel="noreferrer">{item.prUrl}</a>
+              </div>
+            )}
             <div className="imp-modal-meta">
               Reported by {item.reporterName || item.reporterEmail || 'Unknown'} on {new Date(item.createdAt).toLocaleString()}
               {item.pageUrl && <> · from <code>{item.pageUrl}</code></>}
