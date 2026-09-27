@@ -409,33 +409,25 @@ function OriginationBoard({ user, studioMode = false }) {
   useEffect(() => {
     if (cards.length === 0) return;
 
-    // Apply same filters as the board view
+    // Apply same filters as the board view - including section, which this
+    // block previously didn't: `cards` holds BOTH origination and studio
+    // cards together (only `columns`, used for the kanban display itself,
+    // was ever scoped by studioMode), so viewing the Project Board's
+    // metrics could pull in Studio-only stages like Spinout, and vice
+    // versa on the Studio Board.
     const filteredCards = cards.filter(c => {
       if (PRE_POST_COLUMN_IDS.includes(c.column)) return false;
+      if (Boolean(c.column?.startsWith('studio-')) !== studioMode) return false;
       if (filterOwner && c.owner !== filterOwner) return false;
       if (filterProjectType && c.projectType !== filterProjectType) return false;
       if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
-    
-    // Months to First Cash only means anything for cards still on the way
-    // to their first cash event (MONTHS_TO_FIRST_CASH_REQUIRED_STAGES) -
-    // averaging it across the whole pipeline (including Assets, where
-    // it's forced to 0, or Handoff/Build where it's often unset) would
-    // just dilute a genuinely useful "how far out is cash, on average,
-    // for deals still getting there" number into a meaningless one.
-    const cardsWithMonthsToFirstCash = filteredCards.filter(
-      (c) => MONTHS_TO_FIRST_CASH_REQUIRED_STAGES.includes(c.column) && c.monthsToFirstCash != null
-    );
-    const avgMonthsToFirstCash = cardsWithMonthsToFirstCash.length > 0
-      ? cardsWithMonthsToFirstCash.reduce((sum, c) => sum + c.monthsToFirstCash, 0) / cardsWithMonthsToFirstCash.length
-      : null;
 
     const newMetrics = {
       totalDeals: filteredCards.length,
       totalValue: filteredCards.reduce((sum, c) => sum + (c.annualValue || 0), 0),
       totalCapitalCommitted: filteredCards.reduce((sum, c) => sum + (c.capitalCommitted || 0), 0),
-      avgMonthsToFirstCash,
       byStage: {}
     };
 
@@ -448,7 +440,7 @@ function OriginationBoard({ user, studioMode = false }) {
     });
 
     setMetrics(newMetrics);
-  }, [cards, filterOwner, filterProjectType, searchQuery]);
+  }, [cards, filterOwner, filterProjectType, searchQuery, studioMode]);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
@@ -1354,10 +1346,6 @@ function OriginationBoard({ user, studioMode = false }) {
           <div className="metric-card">
             <h3>{formatCompactMoney(metrics.totalCapitalCommitted)}</h3>
             <p>Total Capital Committed</p>
-          </div>
-          <div className="metric-card">
-            <h3>{metrics.avgMonthsToFirstCash != null ? `${metrics.avgMonthsToFirstCash.toFixed(1)}mo` : '—'}</h3>
-            <p>Avg. Months to First Cash</p>
           </div>
           {Object.entries(metrics.byStage).map(([stage, data]) => (
             <div key={stage} className="metric-card">
