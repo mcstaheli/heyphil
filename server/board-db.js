@@ -803,23 +803,46 @@ export async function addLog(projectId, action, userName, details) {
 // ========== PEOPLE ==========
 
 export async function getAllPeople() {
-  const result = await pool.query('SELECT * FROM people');
+  const result = await pool.query('SELECT * FROM people ORDER BY name');
   const people = {};
   const ownerColors = {};
-  
+  const emails = {};
+
   result.rows.forEach(row => {
     if (row.photo_url) people[row.name] = row.photo_url;
     if (row.border_color) ownerColors[row.name] = row.border_color;
+    if (row.email) emails[row.name] = row.email;
   });
-  
-  return { people, ownerColors };
+
+  return { people, ownerColors, emails };
 }
 
-export async function createPerson(name, photoUrl, borderColor) {
+// Global (Settings page) team management wants the full row list, not the
+// three name-keyed maps above - those are shaped for the origination
+// board's own consumers (card avatar/border lookups), which this app has
+// several of already relying on that exact shape, so it stays as-is
+// rather than reshaping it and touching every call site.
+export async function listPeople() {
+  const result = await pool.query('SELECT name, email, photo_url, border_color FROM people ORDER BY name');
+  return result.rows.map(row => ({
+    name: row.name,
+    email: row.email,
+    photoUrl: row.photo_url,
+    borderColor: row.border_color
+  }));
+}
+
+export async function createPerson(name, photoUrl, borderColor, email) {
   await pool.query(
-    'INSERT INTO people (name, photo_url, border_color) VALUES ($1, $2, $3) ON CONFLICT (name) DO UPDATE SET photo_url = $2, border_color = $3',
-    [name, photoUrl, borderColor]
+    `INSERT INTO people (name, photo_url, border_color, email) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (name) DO UPDATE SET photo_url = $2, border_color = $3, email = $4`,
+    [name, photoUrl, borderColor, email || null]
   );
+}
+
+export async function deletePerson(name) {
+  const result = await pool.query('DELETE FROM people WHERE name = $1', [name]);
+  return result.rowCount > 0;
 }
 
 // ========== PROJECT TYPES ==========

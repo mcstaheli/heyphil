@@ -1236,12 +1236,14 @@ function OriginationBoard({ user, studioMode = false }) {
       const result = await response.json();
       console.log('Settings saved successfully:', result);
 
-      // Update local state
-      setPeople(settings.people);
-      setOwnerColors(settings.ownerColors);
+      // Update local state - people/ownerColors are no longer part of this
+      // payload (Settings.js only sends projectTypeColors now; team
+      // management moved to the global Settings page/`/api/people`), so
+      // don't overwrite them with undefined here - loadBoard below already
+      // re-fetches both fresh from the server regardless.
       setProjectTypeColors(settings.projectTypeColors);
       setShowSettings(false);
-      
+
       // Reload board to reflect changes
       await loadBoard(false);
       
@@ -1632,8 +1634,6 @@ function OriginationBoard({ user, studioMode = false }) {
 
       {showSettings && (
         <Settings
-          people={people}
-          ownerColors={_ownerColors}
           projectTypeColors={projectTypeColors}
           onClose={() => setShowSettings(false)}
           onSave={handleSaveSettings}

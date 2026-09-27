@@ -5,7 +5,10 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-width: 640px;
+  /* Wider than before (was 640px) - the Team card's rows (name, email,
+     photo URL, color, delete) need more room than Profile/Account ever
+     did, and there's no good reason to cap those at 640px too. */
+  max-width: 960px;
 }
 
 .settings-card {

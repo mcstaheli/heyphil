@@ -198,6 +198,14 @@ async function autoMigrate() {
   `));
 
   await runMigrationStep('improvements table', () => improvementsDb.createTables());
+
+  // Team management moved from the per-board Settings modal up to the
+  // global Settings page (per request - "govern them across Apps" rather
+  // than each board keeping its own separate team list) - email is the
+  // one new field that ask needed and the `people` table didn't have yet.
+  await runMigrationStep('people email column', () => pool.query(`
+    ALTER TABLE people ADD COLUMN IF NOT EXISTS email VARCHAR(255)
+  `));
 }
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
@@ -1669,6 +1677,46 @@ app.post('/api/origination/settings', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('❌ Failed to save settings:', error);
     res.status(500).json({ error: 'Failed to save settings', details: error.message });
+  }
+});
+
+// Team management (Settings page → Team) - global across every board/app,
+// not scoped to the origination board the way /api/origination/settings
+// is. The `people` table itself was already shared app-wide; this is just
+// the first dedicated CRUD surface for it, rather than continuing to only
+// reach it through that board-specific bulk-save route.
+app.get('/api/people', requireAuth, async (req, res) => {
+  try {
+    const people = await boardDb.listPeople();
+    res.json({ people });
+  } catch (error) {
+    console.error('Failed to list people:', error.message);
+    res.status(500).json({ error: 'Failed to list people' });
+  }
+});
+
+app.post('/api/people', requireAuth, async (req, res) => {
+  try {
+    const { name, email, photoUrl, borderColor } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    await boardDb.createPerson(name.trim(), photoUrl || null, borderColor || null, email || null);
+    res.status(201).json({ success: true });
+  } catch (error) {
+    console.error('Failed to save person:', error.message);
+    res.status(500).json({ error: 'Failed to save person' });
+  }
+});
+
+app.delete('/api/people/:name', requireAuth, async (req, res) => {
+  try {
+    const ok = await boardDb.deletePerson(req.params.name);
+    if (!ok) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete person:', error.message);
+    res.status(500).json({ error: 'Failed to delete person' });
   }
 });
 
