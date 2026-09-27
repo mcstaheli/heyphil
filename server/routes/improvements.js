@@ -1,7 +1,6 @@
 import express from 'express';
 import { requireAuth } from '../auth-middleware.js';
 import * as improvementsDb from '../improvements-db.js';
-import { runClassificationSweep } from '../improvements-classify.js';
 
 const router = express.Router();
 
@@ -73,19 +72,6 @@ router.delete('/:id', async (req, res) => {
   } catch (error) {
     console.error('Failed to delete improvement:', error.message);
     res.status(500).json({ error: 'Failed to delete improvement' });
-  }
-});
-
-// Manual trigger - lets a person re-run triage on the current backlog
-// without waiting for the next scheduled sweep (e.g. right after adding
-// ANTHROPIC_API_KEY for the first time).
-router.post('/classify-now', async (req, res) => {
-  try {
-    const result = await runClassificationSweep();
-    res.json(result);
-  } catch (error) {
-    console.error('Failed to run classification sweep:', error.message);
-    res.status(500).json({ error: 'Failed to run classification sweep' });
   }
 });
 

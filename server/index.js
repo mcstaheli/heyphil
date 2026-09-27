@@ -16,7 +16,6 @@ import * as boardDb from './board-db.js';
 import * as orgchartDb from './orgchart-db.js';
 import * as cashflowDb from './cashflow-db.js';
 import * as improvementsDb from './improvements-db.js';
-import { runClassificationSweep } from './improvements-classify.js';
 import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
 import { JWT_SECRET, requireAuth } from './auth-middleware.js';
@@ -384,14 +383,6 @@ app.get('/api/access/:appKey', requireAuth, async (req, res) => {
 
 app.use('/api/cashflow', cashflowRouter);
 app.use('/api/improvements', improvementsRouter);
-
-// Classification sweep for the Improvements board - see
-// improvements-classify.js for exactly what this does (and deliberately
-// doesn't do). Runs once shortly after boot, then every 3 hours; a missing
-// ANTHROPIC_API_KEY just logs and no-ops each time rather than failing.
-const IMPROVEMENTS_SWEEP_INTERVAL_MS = 3 * 60 * 60 * 1000;
-setTimeout(() => runClassificationSweep().catch((e) => console.error('⚠️  Improvements sweep failed:', e.message)), 30 * 1000);
-setInterval(() => runClassificationSweep().catch((e) => console.error('⚠️  Improvements sweep failed:', e.message)), IMPROVEMENTS_SWEEP_INTERVAL_MS);
 
 // Google Sheets API with Service Account
 const getSheets = () => {

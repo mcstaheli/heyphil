@@ -18,23 +18,17 @@ Root `.env` (copy from `.env.example` — **but the example is missing `DATABASE
 - `DATABASE_URL` — Postgres connection string (not in `.env.example`)
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`
 - `ORIGINATION_SHEET_ID` — only used by legacy/setup scripts, not the running app
-- Optional: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (chat notifications), `DEBUG_SQL` (logs every query), `ANTHROPIC_API_KEY` (Improvements board auto-triage sweep - classifies new reports as bug/feature every 3h; no-ops without it)
+- Optional: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (chat notifications), `DEBUG_SQL` (logs every query)
 
 `client/.env`: `REACT_APP_API_URL` (localhost:3002 in dev; api.heyphil.bot in the production env file)
 
-GitHub repo secrets (Settings → Secrets and variables → Actions), for `.github/workflows/auto-fix-bugs.yml`:
-- `ANTHROPIC_API_KEY` — same key as the server's, lets headless Claude Code run
-- `DATABASE_URL` — same production Postgres connection string as the server's, so the workflow can read/update the `improvements` table directly
-- Without both set, the workflow just fails at that step once a day — safe, but means auto-fix isn't running
+### Improvements board (Labs → Improvements)
 
-### Auto-fix pipeline (Improvements board bugs)
+A floating 📸 button on every page captures the current tab, lets you circle/annotate it and add a note, and creates a card in **Intake**. From there, sorting and fixing is deliberately interactive, not automated — say these to a live Claude Code session (an earlier version had an automatic classify sweep and a scheduled GitHub Actions auto-fix pipeline; both were removed as unnecessary and costly - see git history):
+- **"Triage"** — reads everything in Intake (note + screenshot + which page it came from), sorts each into **Triaged - Bugs** or **Triaged - Features**, and returns two numbered lists with brief descriptions.
+- **"Fix bugs 1-4"** / **"Implement feature 1,2,4"** — referencing the last list given, investigates and fixes/implements each one with full rigor (tests, browser-check if UI-facing), commits, pushes straight to `main` (justified here since it's an explicit per-batch human go-ahead, not an unattended job), and moves it to **Shipped** with the commit link attached.
 
-Runs once a day (`.github/workflows/auto-fix-bugs.yml`), picks at most one classified bug, and **pushes straight to `main` with no human review** — Railway deploys it immediately. Three independent gates have to pass first, in order:
-1. `auto-fix-implement-prompt.md` — a headless Claude Code run investigates and writes a fix (or backs off and leaves a note on the improvement instead), left uncommitted; runs `npm test` itself.
-2. `npm run smoke` — boots the fixed server against the real DB.
-3. `auto-fix-verify-prompt.md` — a **separate** headless Claude Code run, no memory of step 1, independently re-fetches the bug report and adversarially reviews the actual diff before approving.
-
-Only if all three pass does `scripts/auto-fix/finalize.mjs` commit and push (approve) or discard the diff and record why (any rejection). That script is also the only thing that writes the improvement's final `status`/`prUrl` — every branch in the workflow YAML funnels through it rather than duplicating the DB-write logic per outcome.
+Columns (`server/improvements-db.js`'s `IMPROVEMENT_COLUMNS`): `intake`, `triaged-bugs`, `triaged-features`, `shipped`, `abandoned`. No forward-only restriction, same as the origination board.
 
 ## Conventions
 

@@ -6,11 +6,14 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 // Mirrors server/improvements-db.js's IMPROVEMENT_COLUMNS - keep in sync.
 // No forward-only restriction (same house style as the origination board -
 // see boardStages.js): a card can move to any column in either direction.
+// Sorting Intake into the two Triaged columns, and fixing/implementing
+// from there, is something a person asks an interactive Claude Code
+// session to do ("triage", "fix bugs 1-4") - see CLAUDE.md - not anything
+// automated in this codebase.
 const COLUMNS = [
-  { id: 'new', title: 'New' },
-  { id: 'triaged', title: 'Triaged' },
-  { id: 'queued', title: 'Queued for Adoption' },
-  { id: 'in-progress', title: 'In Progress' },
+  { id: 'intake', title: 'Intake' },
+  { id: 'triaged-bugs', title: 'Triaged - Bugs' },
+  { id: 'triaged-features', title: 'Triaged - Features' },
   { id: 'shipped', title: 'Shipped' },
   { id: 'abandoned', title: 'Abandoned' },
 ];
@@ -40,7 +43,6 @@ function Improvements() {
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
   const [draggedId, setDraggedId] = useState(null);
-  const [sweeping, setSweeping] = useState(false);
 
   const load = useCallback(() => {
     fetch(`${API_BASE_URL}/api/improvements`, { headers: authHeaders() })
@@ -62,7 +64,7 @@ function Improvements() {
   const byColumn = useMemo(() => {
     const grouped = Object.fromEntries(COLUMNS.map((c) => [c.id, []]));
     for (const item of items) {
-      (grouped[item.status] || grouped.new).push(item);
+      (grouped[item.status] || grouped.intake).push(item);
     }
     return grouped;
   }, [items]);
@@ -95,25 +97,6 @@ function Improvements() {
     }
   }
 
-  async function runSweepNow() {
-    setSweeping(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/improvements/classify-now`, {
-        method: 'POST',
-        headers: authHeaders(),
-      });
-      const result = await res.json();
-      if (result.error) {
-        window.alert(result.error);
-      } else if (result.classified === 0 && result.failed === 0) {
-        window.alert('Nothing to classify right now (no unclassified items in New, or ANTHROPIC_API_KEY is not set).');
-      }
-      load();
-    } finally {
-      setSweeping(false);
-    }
-  }
-
   function handleDragStart(id) {
     setDraggedId(id);
   }
@@ -137,10 +120,8 @@ function Improvements() {
         <h2>Improvements</h2>
         <p className="imp-subtitle">
           Bug reports and feature requests captured with the snapshot button, anywhere in the app.
+          Ask a Claude Code session to "triage" to sort Intake, then "fix bugs 1-4" or "implement feature 2".
         </p>
-        <button className="btn-secondary" onClick={runSweepNow} disabled={sweeping}>
-          {sweeping ? 'Classifying…' : '🏷️ Classify new items now'}
-        </button>
       </div>
 
       <div className="imp-board">
@@ -242,12 +223,12 @@ function ImprovementModal({ item, onClose, onSave, onDelete }) {
             </label>
             {item.classificationNote && (
               <div className="imp-classification-note">
-                <strong>Auto-triage reasoning:</strong> {item.classificationNote}
+                <strong>Triage notes:</strong> {item.classificationNote}
               </div>
             )}
             {item.prUrl && (
               <div className="imp-classification-note">
-                <strong>Auto-fix pushed:</strong> <a href={item.prUrl} target="_blank" rel="noreferrer">{item.prUrl}</a>
+                <strong>Fix pushed:</strong> <a href={item.prUrl} target="_blank" rel="noreferrer">{item.prUrl}</a>
               </div>
             )}
             <div className="imp-modal-meta">

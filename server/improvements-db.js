@@ -1,9 +1,19 @@
 // Database queries for the Improvements Labs app - user-submitted bug
 // reports / feature requests, each with an annotated screenshot, moving
-// through their own Kanban board (New -> Triaged -> Queued/In Progress ->
-// Shipped, or Abandoned at any point). No forward-only restriction here,
-// same as the origination board post-restructure - see board-db.js's
-// assertSameBoardFamily comment for why that was removed.
+// through their own Kanban board: Intake (new submissions, untouched) ->
+// Triaged - Bugs / Triaged - Features (sorted by a person asking a Claude
+// Code session to "triage", which reads each Intake item's note+screenshot
+// and moves it) -> Shipped, or Abandoned at any point. No forward-only
+// restriction here, same as the origination board post-restructure - see
+// board-db.js's assertSameBoardFamily comment for why that was removed.
+//
+// Deliberately no automated classification or auto-fix in this codebase -
+// both "triage" and "fix bugs N"/"implement feature N" are things a person
+// asks an interactive Claude Code session to do (see CLAUDE.md's
+// Improvements board section), not a scheduled job. An earlier version of
+// this board had a 3-hourly auto-classify sweep and a scheduled GitHub
+// Actions auto-fix pipeline; both were removed in favor of this - see git
+// history if reviving either is ever worth it.
 import { randomUUID } from 'crypto';
 import pool from './db.js';
 
@@ -41,7 +51,7 @@ export async function createTables() {
 }
 
 const VALID_KINDS = ['bug', 'feature'];
-export const IMPROVEMENT_COLUMNS = ['new', 'triaged', 'queued', 'in-progress', 'shipped', 'abandoned'];
+export const IMPROVEMENT_COLUMNS = ['intake', 'triaged-bugs', 'triaged-features', 'shipped', 'abandoned'];
 
 function mapRow(row) {
   if (!row) return null;
@@ -66,7 +76,7 @@ export async function createImprovement({ title, note, screenshot, pageUrl, repo
   const id = randomUUID();
   const { rows } = await pool.query(
     `INSERT INTO improvements (id, title, note, screenshot, page_url, reporter_email, reporter_name, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'new')
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'intake')
      RETURNING *`,
     [id, title, note || '', screenshot || null, pageUrl || null, reporterEmail || null, reporterName || null]
   );
@@ -88,9 +98,7 @@ export async function getImprovementById(id) {
   return mapRow(rows[0]);
 }
 
-// Fields a caller may patch through the generic update route. kind/status
-// are also the fields the classification sweep writes - same column set,
-// different caller.
+// Fields a caller may patch through the generic update route.
 const PATCHABLE_FIELDS = {
   title: 'title',
   note: 'note',
@@ -132,15 +140,4 @@ export async function softDeleteImprovement(id) {
     [id]
   );
   return rows.length > 0;
-}
-
-// Picked up by the classification sweep (server/improvements-classify.js) -
-// unclassified items sitting in New, oldest first so a backlog drains in
-// order instead of the newest items jumping the queue.
-export async function getUnclassified(limit = 20) {
-  const { rows } = await pool.query(
-    `SELECT * FROM improvements WHERE status = 'new' AND kind IS NULL AND deleted_at IS NULL ORDER BY created_at ASC LIMIT $1`,
-    [limit]
-  );
-  return rows.map(mapRow);
 }
