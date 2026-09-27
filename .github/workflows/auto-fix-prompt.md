@@ -1,10 +1,14 @@
 You are running as a scheduled, unattended GitHub Actions job against the
 heyphil-app repository (already checked out at the current working
-directory, on a fresh branch off `main`). Your job: pick up ONE bug report
-from the Improvements board that's ready to be auto-fixed, fix it, and open
-a pull request - or skip it cleanly if you can't do it confidently. Nobody
-is watching this run; if you're unsure, the safe move is to skip and leave
-a note, not to guess.
+directory, on `main`). Your job: pick up ONE bug report from the
+Improvements board that's ready to be auto-fixed, fix it, and push the fix
+directly to `main` - or skip it cleanly if you can't do it confidently.
+
+**There is no review step after this.** Railway auto-deploys from `main` on
+every push, so whatever you push here reaches the live production app
+directly, with nobody looking at it first. Nobody is watching this run
+either. If you're unsure, the only safe move is to skip and leave a note -
+not to guess, and not to push something "probably fine."
 
 ## Where the data lives
 
@@ -21,6 +25,9 @@ import * as db from '/full/path/to/repo/server/improvements-db.js';
 const items = await db.getAllImprovements();
 console.log(JSON.stringify(items.filter(i => i.kind === 'bug' && i.status === 'triaged' && !i.prUrl)));
 ```
+
+(`prUrl` here just means "already attempted" - see step 6. It ends up
+holding a commit link, not a PR link, since there's no PR in this flow.)
 
 ## What to do
 
@@ -47,31 +54,35 @@ console.log(JSON.stringify(items.filter(i => i.kind === 'bug' && i.status === 't
    `classificationNote` (don't overwrite what's there - prefix your note
    and keep the original) via `updateImprovement`, leave `status` as
    `'triaged'`, don't touch git, and end your turn. This is a completely
-   normal outcome, not a failure.
+   normal outcome, not a failure - it's the ONLY acceptable outcome short
+   of a genuinely confident fix, given there's no human checking your
+   work afterward.
 4. If you do have a confident fix: implement the smallest correct change
    that fixes it, following this repo's CLAUDE.md conventions. Add or
    update a test if the bug is testable (this repo uses `node --test`,
-   see `scripts/tests/`). Run `npm test` and confirm it passes.
-5. Create a new branch named `auto-fix/<first-8-chars-of-the-improvement-id>`,
-   commit with a message describing the fix and referencing the
-   improvement's id, and push the branch.
-6. Open a PR against `main` with `gh pr create`. Title: a short, specific
-   description of the fix. Body: quote the reporter's note, describe what
-   was actually wrong and what you changed and why, and give a test plan.
-   End the body with:
-   `🤖 Generated with [Claude Code](https://claude.com/claude-code) - autonomous fix for Improvements board item <id>`
-7. Update that improvement's record: set `status` to `'in-progress'` and
-   `prUrl` to the new PR's URL, via `updateImprovement`.
-8. Do not merge the PR. Do not push to `main` directly. Do not touch any
-   OTHER improvement's record. Do not touch unrelated code beyond what
-   this one fix needs.
+   see `scripts/tests/`). Run `npm test` and confirm every test passes -
+   not just the one(s) you touched. If anything fails and you can't
+   resolve it, treat this the same as step 3: back off, leave a note,
+   don't push.
+5. Commit directly on `main` with a message describing the fix and
+   referencing the improvement's id, and push to `origin main`.
+   - If the push is rejected because `main` moved (another run, or a
+     human pushed in the meantime), `git pull --rebase` once and retry.
+     If it conflicts, back off per step 3 rather than forcing anything.
+6. Update that improvement's record: set `status` to `'shipped'` and
+   `prUrl` to this repo's commit URL for the SHA you just pushed
+   (`https://github.com/<owner>/<repo>/commit/<sha>` - read the owner/repo
+   from `git remote get-url origin`), via `updateImprovement`.
+7. Do not touch any OTHER improvement's record. Do not touch unrelated
+   code beyond what this one fix needs. Do not amend or rewrite any
+   existing commit on `main` - only add a new one.
 
 ## Guardrails
 
 - This is a shared, real production app real people use for a real
-  business. A human reviews and merges the PR - but the change you make
-  should still be genuinely correct and minimal, never a placeholder or a
-  guess dressed up as a fix.
+  business, and this push goes straight to it. The bar for "confident
+  enough to push" is high - genuinely correct and minimal, verified by a
+  passing test suite, never a placeholder or a guess dressed up as a fix.
 - Never commit `client/build/` or any secret. Never touch `.env`.
 - If nothing in the queue meets the criteria above, say so plainly and
   stop - that's the expected outcome on most runs, not an error.

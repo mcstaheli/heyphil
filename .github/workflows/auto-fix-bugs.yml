@@ -2,10 +2,11 @@ name: Auto-fix triaged bugs (Improvements board)
 
 # Picks up at most one bug report per run that the Improvements board's
 # classification sweep has already labeled kind=bug, status=triaged, and
-# investigates/fixes/opens a PR for it - see auto-fix-prompt.md for exactly
-# what it's told to do (and when it's told to back off instead of guessing).
-# Deliberately opens a PR rather than pushing to main - a human still
-# reviews and merges every change before it reaches production.
+# investigates/fixes/pushes the fix directly to main - see
+# auto-fix-prompt.md for exactly what it's told to do (and when it's told
+# to back off instead of guessing). Per explicit instruction, this pushes
+# straight to main - Railway auto-deploys from main on every push, so a
+# pushed fix here reaches production with no human review step at all.
 on:
   schedule:
     - cron: '23 */6 * * *'
@@ -13,7 +14,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   auto-fix:
@@ -43,7 +43,6 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           claude -p "$(cat .github/workflows/auto-fix-prompt.md)" \
             --permission-mode bypassPermissions \

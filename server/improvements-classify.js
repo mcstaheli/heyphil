@@ -3,16 +3,16 @@
 // report or a feature request, and move it to Triaged with that kind and a
 // one-line reasoning note attached.
 //
-// Deliberately stops there - this module never touches code, opens a PR,
-// or pushes anything. Following up on a classified bug (investigating,
-// fixing, testing, opening a PR) is handled entirely separately by
-// .github/workflows/auto-fix-bugs.yml, a scheduled GitHub Actions job
-// running headless Claude Code - not by this in-process sweep. That's a
-// deliberate split: this file runs inside the deployed server on every
-// boot, so it stays to the narrow, cheap, always-safe-to-retry task of
-// labeling a card. Investigating and editing the actual codebase warrants
-// its own dedicated, auditable job (with its own PR trail) rather than
-// living inside the app process itself.
+// Deliberately stops there - this module never touches code or pushes
+// anything. Following up on a classified bug (investigating, fixing,
+// testing, pushing the fix straight to main) is handled entirely
+// separately by .github/workflows/auto-fix-bugs.yml, a scheduled GitHub
+// Actions job running headless Claude Code - not by this in-process
+// sweep. That's a deliberate split: this file runs inside the deployed
+// server on every boot, so it stays to the narrow, cheap, always-safe-to-
+// retry task of labeling a card. Investigating and editing the actual
+// codebase warrants its own dedicated job rather than living inside the
+// app process itself.
 import Anthropic from '@anthropic-ai/sdk';
 import * as improvementsDb from './improvements-db.js';
 
