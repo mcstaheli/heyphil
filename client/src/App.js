@@ -20,11 +20,11 @@ import { formatCompactMoney } from './formatMoney';
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 
-// Board restructure Stage 3: months-to-first-cash is only meaningful (and
-// required in the form) before operations start - Assets is "producing
-// now" so it's forced to 0 there instead (see board-db.js's auto-zero
-// hook). Build/Operate/Exited are left alone: not required, not zeroed.
-const MONTHS_TO_FIRST_CASH_REQUIRED_STAGES = ['on-deck', 'diligence', 'capitalize', 'handoff'];
+// Board restructure Stage 3: months-to-first-cash is only meaningful
+// before operations start - Assets is "producing now" so it's forced to 0
+// there instead (see board-db.js's auto-zero hook). No longer edited or
+// required-checked in this modal - moved to Project Detail (per request),
+// which still respects the same auto-zero-on-Assets server behavior.
 
 function hasLeafItems(items) {
   return (items || []).some((i) => !i.isHeading);
@@ -1925,17 +1925,11 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
     }
   };
 
-  const monthsToFirstCashRequired = MONTHS_TO_FIRST_CASH_REQUIRED_STAGES.includes(formData.column);
-
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.title || !formData.title.trim()) {
       alert('Please enter a title for the project');
       setEditingTitle(true);
-      return;
-    }
-    if (monthsToFirstCashRequired && formData.monthsToFirstCash === '') {
-      alert('Months to First Cash is required for On Deck, Diligence, Capitalize, and Handoff cards.');
       return;
     }
     onSave(formData, pendingActions);
@@ -1964,10 +1958,6 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
         if (!formData.title || !formData.title.trim()) {
           alert('Please enter a title for the project');
           setEditingTitle(true);
-          return;
-        }
-        if (MONTHS_TO_FIRST_CASH_REQUIRED_STAGES.includes(formData.column) && formData.monthsToFirstCash === '') {
-          alert('Months to First Cash is required for On Deck, Diligence, Capitalize, and Handoff cards.');
           return;
         }
         onSave(formData, pendingActions);
@@ -2106,50 +2096,13 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               ))}
             </select>
           </div>
-          <div className="form-group">
-            <label>Annual Value ($)</label>
-            <input
-              type="text"
-              value={formData.annualValue ? formData.annualValue.toLocaleString() : ''}
-              onChange={(e) => {
-                const numericValue = e.target.value.replace(/,/g, '');
-                setFormData({ ...formData, annualValue: parseFloat(numericValue) || 0 });
-              }}
-              placeholder="e.g., 500,000 - expected annual cash to Philo"
-            />
-          </div>
-          <div className="form-group">
-            <label>Capital Committed ($)</label>
-            <input
-              type="text"
-              value={formData.capitalCommitted ? formData.capitalCommitted.toLocaleString() : ''}
-              onChange={(e) => {
-                const numericValue = e.target.value.replace(/,/g, '');
-                setFormData({ ...formData, capitalCommitted: parseFloat(numericValue) || 0 });
-              }}
-              placeholder="e.g., 2,000,000"
-            />
-          </div>
-          <div className="form-group">
-            <label>
-              Months to First Cash
-              {monthsToFirstCashRequired && <span className="required-asterisk"> *</span>}
-              {formData.column === 'assets' && <span className="field-hint"> (producing now - always 0)</span>}
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={formData.column === 'assets' ? 0 : formData.monthsToFirstCash}
-              disabled={formData.column === 'assets'}
-              required={monthsToFirstCashRequired}
-              onChange={(e) => setFormData({
-                ...formData,
-                monthsToFirstCash: e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0)
-              })}
-              placeholder="e.g., 12"
-            />
-          </div>
+          {/* Annual Value, Capital Committed, and Months to First Cash
+              moved to Project Detail (ProjectDetail.js) - per request,
+              since Value/Budget there already track the same concepts in
+              more detail, and this quick-edit modal doesn't need to
+              duplicate them. formData still carries these fields through
+              unchanged on save (nothing here mutates them), so View
+              Project Detail is the only way to edit them now. */}
           <div className="form-group">
             <label>Notes</label>
             <textarea

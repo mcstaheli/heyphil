@@ -117,7 +117,10 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
         budget: proj.budget || [],
         budgetLocks: proj.budget_locks || [],
         timeline: proj.timeline || [],
-        timelineLocks: proj.timeline_locks || []
+        timelineLocks: proj.timeline_locks || [],
+        annualValue: proj.annual_value,
+        capitalCommitted: proj.capital_committed,
+        monthsToFirstCash: proj.months_to_first_cash
       });
     } catch (error) {
       console.error('Failed to fetch project:', error);
@@ -143,6 +146,24 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
       } : prev));
     } catch (error) {
       console.error('Failed to sync timeline:', error);
+    }
+  };
+
+  // Annual Value/Capital Committed/Months to First Cash moved here from
+  // the quick-edit CardModal (App.js) - saves individually on blur, same
+  // as this page's other fields, since there's no page-level Save button.
+  const saveField = async (field, value) => {
+    setProject((prev) => ({ ...prev, [field]: value }));
+    try {
+      const token = localStorage.getItem('authToken');
+      await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value })
+      });
+    } catch (error) {
+      console.error(`Failed to save ${field}:`, error);
     }
   };
 
@@ -200,6 +221,48 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
         {/* Dashboard Overview */}
         <div className="project-dashboard">
+          {/* Deal Terms - moved here from the quick-edit card modal
+              (App.js) per request: Value/Budget below already track the
+              same annual-cash/capital concepts in more itemized detail. */}
+          <div className="detail-section">
+            <h3 className="section-heading">📋 Deal Terms</h3>
+            <div className="deal-terms-fields">
+              <label className="deal-terms-field">
+                Annual Value ($)
+                <input
+                  type="number"
+                  min="0"
+                  defaultValue={project.annualValue ?? ''}
+                  onBlur={(e) => saveField('annualValue', e.target.value === '' ? null : Number(e.target.value))}
+                  placeholder="e.g., 500000 - expected annual cash to Philo"
+                />
+              </label>
+              <label className="deal-terms-field">
+                Capital Committed ($)
+                <input
+                  type="number"
+                  min="0"
+                  defaultValue={project.capitalCommitted ?? ''}
+                  onBlur={(e) => saveField('capitalCommitted', e.target.value === '' ? null : Number(e.target.value))}
+                  placeholder="e.g., 2000000"
+                />
+              </label>
+              <label className="deal-terms-field">
+                Months to First Cash
+                {project.stage === 'assets' && <span className="field-hint"> (producing now - always 0)</span>}
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  disabled={project.stage === 'assets'}
+                  defaultValue={project.stage === 'assets' ? 0 : (project.monthsToFirstCash ?? '')}
+                  onBlur={(e) => saveField('monthsToFirstCash', e.target.value === '' ? null : parseInt(e.target.value, 10))}
+                  placeholder="e.g., 12"
+                />
+              </label>
+            </div>
+          </div>
+
           {/* Value - Full Width, defaults collapsed */}
           <div className="detail-section">
             <h3 className="section-heading">📈 Value</h3>
