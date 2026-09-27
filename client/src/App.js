@@ -2364,30 +2364,23 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
 }
 
 
+// Audited per request ("which of these work, which don't, which are
+// worth having") - removed three things that didn't hold up:
+// - "Railway Logs"/"Cloudflare Pages" opened the generic dashboard
+//   homepages, not this project's actual logs/deploys - a bookmark with
+//   an extra login/navigation step, not a real shortcut.
+// - "Hey_Phil Spreadsheet" linked to the legacy Google Sheets "database"
+//   CLAUDE.md itself documents as stale and off the live data path -
+//   actively misleading to leave in a tool meant for debugging the real
+//   (Postgres) one.
+// - The Console Logs panel only captured what was logged AFTER opening
+//   DevTools (patches console.log/error on mount), so it was already
+//   missing anything from page load - and the browser's own devtools
+//   console, one keypress away, has full history plus search/filtering
+//   this never came close to. Kept Auth Info, API Status, and Clear
+//   Storage - all three actually do what they say with no caveats.
 function DevTools({ user, onClose }) {
-  const [logs, setLogs] = useState([]);
   const [apiStatus, setApiStatus] = useState(null);
-
-  useEffect(() => {
-    // Capture console logs
-    const originalLog = console.log;
-    const originalError = console.error;
-    
-    console.log = (...args) => {
-      setLogs(prev => [...prev.slice(-50), { type: 'log', msg: args.join(' '), time: new Date().toLocaleTimeString() }]);
-      originalLog(...args);
-    };
-    
-    console.error = (...args) => {
-      setLogs(prev => [...prev.slice(-50), { type: 'error', msg: args.join(' '), time: new Date().toLocaleTimeString() }]);
-      originalError(...args);
-    };
-
-    return () => {
-      console.log = originalLog;
-      console.error = originalError;
-    };
-  }, []);
 
   const checkAPIStatus = async () => {
     try {
@@ -2442,28 +2435,6 @@ function DevTools({ user, onClose }) {
         <div className="devtools-section">
           <h4>Quick Actions</h4>
           <button className="devtools-btn" onClick={clearStorage}>Clear Storage</button>
-          <button className="devtools-btn" onClick={() => window.open('https://railway.app/', '_blank')}>
-            Railway Logs
-          </button>
-          <button className="devtools-btn" onClick={() => window.open('https://dash.cloudflare.com/', '_blank')}>
-            Cloudflare Pages
-          </button>
-          <button className="devtools-btn" onClick={() => window.open('https://docs.google.com/spreadsheets/d/1bdXv9eA4fbNDj4vGGZf2kU6v24yYaLow2BVVHWtZaYQ', '_blank')}>
-            Hey_Phil Spreadsheet
-          </button>
-        </div>
-
-        <div className="devtools-section">
-          <h4>Console Logs ({logs.length})</h4>
-          <div className="devtools-logs">
-            {logs.slice(-10).map((log, i) => (
-              <div key={i} className={`devtools-log ${log.type}`}>
-                <span className="devtools-log-time">{log.time}</span>
-                <span className="devtools-log-msg">{log.msg}</span>
-              </div>
-            ))}
-            {logs.length === 0 && <div className="devtools-log">No logs yet...</div>}
-          </div>
         </div>
       </div>
     </div>
