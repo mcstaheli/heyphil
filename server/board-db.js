@@ -14,6 +14,15 @@ export const ORIGINATION_STAGE_ORDER = [
   'abandoned', 'exited'
 ];
 
+// Mirrors client/src/boardStages.js's PRE_POST_COLUMN_IDS - keep both in
+// sync. Server-side use so far is just the standup-reminder query below
+// (excluded there for the same reason the client excludes these from
+// active-project metrics: a card sitting in Ideation/Abandoned/Exited
+// isn't "active work" a lead needs pinged about).
+export const PRE_POST_COLUMN_IDS = [
+  'ideation', 'abandoned', 'exited', 'studio-ideation', 'studio-exited', 'studio-abandoned'
+];
+
 export class ForwardOnlyViolationError extends Error {
   constructor(fromStatus, toStatus) {
     super(`Cannot move a card from "${fromStatus}" to "${toStatus}" - the origination board and the Studio board are separate systems.`);
@@ -845,7 +854,8 @@ export async function getOpenTasksByLead() {
       SELECT id, title, owner, tasks
       FROM projects
       WHERE deleted_at IS NULL
-    `),
+        AND NOT (status = ANY($1))
+    `, [PRE_POST_COLUMN_IDS]),
     listPeople()
   ]);
 

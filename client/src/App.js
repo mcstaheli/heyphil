@@ -1111,7 +1111,15 @@ function OriginationBoard({ user, studioMode = false }) {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to send reminders');
-      const failedNote = result.failed?.length ? `\nFailed: ${result.failed.map((f) => f.to).join(', ')}` : '';
+      const describeFailure = (f) => {
+        try {
+          const parsed = JSON.parse(f.error);
+          return `${f.to}: ${parsed.message || f.error}`;
+        } catch {
+          return `${f.to}: ${f.error}`;
+        }
+      };
+      const failedNote = result.failed?.length ? `\nFailed:\n${result.failed.map(describeFailure).join('\n')}` : '';
       window.alert(`Sent ${result.sent.length} reminder email(s)${result.sent.length ? ':\n' + result.sent.join('\n') : '.'}${failedNote}`);
       setShowReminderModal(false);
     } catch (error) {
