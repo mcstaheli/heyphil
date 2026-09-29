@@ -20,6 +20,7 @@ import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
 import { JWT_SECRET, requireAuth } from './auth-middleware.js';
 import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin } from './permissions.js';
+import { sendStandupReminders } from './reminders.js';
 import cashflowRouter from './routes/cashflow.js';
 import improvementsRouter from './routes/improvements.js';
 import { initRealtime } from './realtime.js';
@@ -1784,6 +1785,16 @@ app.delete('/api/allowed-emails/:email', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to revoke email:', error.message);
     res.status(500).json({ error: 'Failed to revoke email' });
+  }
+});
+
+app.post('/api/send-reminders', requireAuth, async (req, res) => {
+  try {
+    const result = await sendStandupReminders({ dryRun: req.body?.dryRun === true });
+    res.json(result);
+  } catch (error) {
+    console.error('Failed to send reminders:', error.message);
+    res.status(500).json({ error: 'Failed to send reminders' });
   }
 });
 

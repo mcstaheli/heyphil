@@ -832,6 +832,53 @@ export async function listPeople() {
   }));
 }
 
+// Standup-reminder email data: every currently-open (non-completed) task,
+// grouped by the project it's on, grouped again by that project's owner -
+// only for owners who both have an email on file and have at least one open
+// task (a lead with nothing open gets no entry here, and so no email).
+// `skipped` reports why every OTHER owner of an active project was left out,
+// for a useful summary on the "Send Reminder" button - not required for the
+// send itself, just observability.
+export async function getOpenTasksByLead() {
+  const [projectsResult, people] = await Promise.all([
+    pool.query(`
+      SELECT id, title, owner, tasks
+      FROM projects
+      WHERE deleted_at IS NULL
+    `),
+    listPeople()
+  ]);
+
+  const emailByName = new Map(people.filter((p) => p.email).map((p) => [p.name, p.email]));
+  const byLead = new Map(); // owner name -> { email, projects: [{ title, tasks: [text, ...] }] }
+  const openCountByOwner = new Map();
+
+  for (const project of projectsResult.rows) {
+    if (!project.owner) continue;
+    const openTasks = (project.tasks || [])
+      .filter((t) => !t.completedOn)
+      .map((t) => t.text);
+    openCountByOwner.set(project.owner, (openCountByOwner.get(project.owner) || 0) + openTasks.length);
+
+    const email = emailByName.get(project.owner);
+    if (!email || openTasks.length === 0) continue;
+
+    if (!byLead.has(project.owner)) {
+      byLead.set(project.owner, { name: project.owner, email, projects: [] });
+    }
+    byLead.get(project.owner).projects.push({ title: project.title, tasks: openTasks });
+  }
+
+  const skipped = [...openCountByOwner.entries()]
+    .filter(([owner]) => !byLead.has(owner))
+    .map(([owner, openCount]) => ({
+      name: owner,
+      reason: !emailByName.get(owner) ? 'no email on file' : 'no open items'
+    }));
+
+  return { leads: [...byLead.values()], skipped };
+}
+
 export async function createPerson(name, photoUrl, borderColor, email) {
   await pool.query(
     `INSERT INTO people (name, photo_url, border_color, email) VALUES ($1, $2, $3, $4)

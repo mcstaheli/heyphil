@@ -345,6 +345,7 @@ function OriginationBoard({ user, studioMode = false }) {
   const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // action ids mid-"just checked off" flash
   const [editingCardActionId, setEditingCardActionId] = useState(null); // action id being text-edited inline on the card face
   const [editingCardActionText, setEditingCardActionText] = useState('');
+  const [sendingReminders, setSendingReminders] = useState(false);
   const [draggedCard, setDraggedCard] = useState(null);
   // The "isPrePost" columns (see PRE_POST_COLUMN_IDS) default to minimized.
   const [minimizedColumns, setMinimizedColumns] = useState(() => new Set(PRE_POST_COLUMN_IDS));
@@ -1082,6 +1083,29 @@ function OriginationBoard({ user, studioMode = false }) {
     }
   };
   
+  const sendReminders = async () => {
+    if (!window.confirm('Send standup-reminder emails to every lead with open items?')) return;
+    setSendingReminders(true);
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/send-reminders`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({})
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to send reminders');
+      const failedNote = result.failed?.length ? `\nFailed: ${result.failed.map((f) => f.to).join(', ')}` : '';
+      const skippedNote = result.skipped?.length
+        ? `\n\nSkipped:\n${result.skipped.map((s) => `${s.name} (${s.reason})`).join('\n')}`
+        : '';
+      window.alert(`Sent ${result.sent.length} reminder email(s)${result.sent.length ? ':\n' + result.sent.join('\n') : '.'}${failedNote}${skippedNote}`);
+    } catch (error) {
+      window.alert(`Failed to send reminders: ${error.message}`);
+    } finally {
+      setSendingReminders(false);
+    }
+  };
+
   const addAction = async (cardId, cardTitle, text) => {
     try {
       const response = await apiFetch(`${API_BASE_URL}/api/origination/action`, {
@@ -1333,6 +1357,9 @@ function OriginationBoard({ user, studioMode = false }) {
           </button>
           <button className="btn-secondary" onClick={exportToCSV}>
             📥 Export CSV
+          </button>
+          <button className="btn-secondary" onClick={sendReminders} disabled={sendingReminders}>
+            📧 {sendingReminders ? 'Sending...' : 'Send Reminder'}
           </button>
         </div>
       </div>
