@@ -860,14 +860,14 @@ export async function getOpenTasksByLead() {
   ]);
 
   const emailByName = new Map(people.filter((p) => p.email).map((p) => [p.name, p.email]));
-  const byLead = new Map(); // owner name -> { email, projects: [{ title, tasks: [text, ...] }] }
+  const byLead = new Map(); // owner name -> { email, projects: [{ title, tasks: [{text, starred}, ...] }] }
   const openCountByOwner = new Map();
 
   for (const project of projectsResult.rows) {
     if (!project.owner) continue;
     const openTasks = (project.tasks || [])
       .filter((t) => !t.completedOn)
-      .map((t) => t.text);
+      .map((t) => ({ text: t.text, starred: !!t.starred }));
     openCountByOwner.set(project.owner, (openCountByOwner.get(project.owner) || 0) + openTasks.length);
 
     const email = emailByName.get(project.owner);

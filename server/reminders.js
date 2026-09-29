@@ -15,9 +15,9 @@ function escapeHtml(str) {
 export function buildReminderEmail(lead, appUrl) {
   const projectsHtml = lead.projects
     .map((project) => `
-      <p style="margin: 16px 0 4px;"><b>${escapeHtml(project.title)}</b></p>
+      <p style="margin: 16px 0 4px;"><b><u>${escapeHtml(project.title)}</u></b></p>
       <ul style="margin: 0 0 0 4px; padding-left: 20px;">
-        ${project.tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join('')}
+        ${project.tasks.map((task) => `<li>${task.starred ? '★ ' : ''}${escapeHtml(task.text)}</li>`).join('')}
       </ul>
     `)
     .join('');
