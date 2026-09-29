@@ -346,6 +346,8 @@ function OriginationBoard({ user, studioMode = false }) {
   const [editingCardActionId, setEditingCardActionId] = useState(null); // action id being text-edited inline on the card face
   const [editingCardActionText, setEditingCardActionText] = useState('');
   const [sendingReminders, setSendingReminders] = useState(false);
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderPreview, setReminderPreview] = useState(null); // { leads: [{name,email,projectCount,itemCount}], skipped }
   const [draggedCard, setDraggedCard] = useState(null);
   // The "isPrePost" columns (see PRE_POST_COLUMN_IDS) default to minimized.
   const [minimizedColumns, setMinimizedColumns] = useState(() => new Set(PRE_POST_COLUMN_IDS));
@@ -1083,22 +1085,35 @@ function OriginationBoard({ user, studioMode = false }) {
     }
   };
   
-  const sendReminders = async () => {
-    if (!window.confirm('Send standup-reminder emails to every lead with open items?')) return;
+  const openReminderModal = async () => {
+    setShowReminderModal(true);
+    setReminderPreview(null);
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/send-reminders/preview`, {
+        headers: getAuthHeaders()
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to load reminder preview');
+      setReminderPreview(result);
+    } catch (error) {
+      window.alert(`Failed to load reminder preview: ${error.message}`);
+      setShowReminderModal(false);
+    }
+  };
+
+  const sendSelectedReminders = async (emails) => {
     setSendingReminders(true);
     try {
       const response = await apiFetch(`${API_BASE_URL}/api/send-reminders`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({})
+        body: JSON.stringify({ onlyEmails: emails })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to send reminders');
       const failedNote = result.failed?.length ? `\nFailed: ${result.failed.map((f) => f.to).join(', ')}` : '';
-      const skippedNote = result.skipped?.length
-        ? `\n\nSkipped:\n${result.skipped.map((s) => `${s.name} (${s.reason})`).join('\n')}`
-        : '';
-      window.alert(`Sent ${result.sent.length} reminder email(s)${result.sent.length ? ':\n' + result.sent.join('\n') : '.'}${failedNote}${skippedNote}`);
+      window.alert(`Sent ${result.sent.length} reminder email(s)${result.sent.length ? ':\n' + result.sent.join('\n') : '.'}${failedNote}`);
+      setShowReminderModal(false);
     } catch (error) {
       window.alert(`Failed to send reminders: ${error.message}`);
     } finally {
@@ -1358,8 +1373,8 @@ function OriginationBoard({ user, studioMode = false }) {
           <button className="btn-secondary" onClick={exportToCSV}>
             📥 Export CSV
           </button>
-          <button className="btn-secondary" onClick={sendReminders} disabled={sendingReminders}>
-            📧 {sendingReminders ? 'Sending...' : 'Send Reminder'}
+          <button className="btn-secondary" onClick={openReminderModal}>
+            📧 Send Reminder
           </button>
         </div>
       </div>
@@ -1708,6 +1723,15 @@ function OriginationBoard({ user, studioMode = false }) {
         />
       )}
 
+      {showReminderModal && (
+        <ReminderModal
+          preview={reminderPreview}
+          sending={sendingReminders}
+          onClose={() => setShowReminderModal(false)}
+          onSend={sendSelectedReminders}
+        />
+      )}
+
       {/* Floating action buttons */}
       <button 
         className="trash-toggle" 
@@ -1825,6 +1849,116 @@ function TrashModal({ deletedCards, onClose, onRestore, people, projectTypeColor
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// "Send Reminder" confirmation - every lead with open items is checked by
+// default, but any of them can be unchecked before the real send goes out
+// (per request, since the plain confirm() this replaced couldn't exclude
+// individual people).
+function ReminderModal({ preview, sending, onClose, onSend }) {
+  const [checked, setChecked] = useState(() => new Set());
+
+  useEffect(() => {
+    if (preview) {
+      setChecked(new Set(preview.leads.map((lead) => lead.email)));
+    }
+  }, [preview]);
+
+  const toggle = (email) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email); else next.add(email);
+      return next;
+    });
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Send Reminder</h2>
+          <button type="button" className="modal-icon-btn" onClick={onClose} title="Close">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div className="modal-body">
+          {!preview ? (
+            <p>Loading who has open items...</p>
+          ) : preview.leads.length === 0 ? (
+            <p>Nobody has open items right now - nothing to send.</p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>
+                  Unchecking someone skips their email this time only.
+                </p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setChecked(new Set(preview.leads.map((l) => l.email)))}>
+                    Select all
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => setChecked(new Set())}>
+                    Select none
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {preview.leads.map((lead) => (
+                  <label
+                    key={lead.email}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '10px 12px',
+                      border: '1px solid #e0e0e0',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked.has(lead.email)}
+                      onChange={() => toggle(lead.email)}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600 }}>{lead.name}</div>
+                      <div style={{ fontSize: '13px', color: '#666' }}>{lead.email}</div>
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#666', whiteSpace: 'nowrap' }}>
+                      {lead.itemCount} item{lead.itemCount === 1 ? '' : 's'} · {lead.projectCount} project{lead.projectCount === 1 ? '' : 's'}
+                    </div>
+                  </label>
+                ))}
+              </div>
+              {preview.skipped.length > 0 && (
+                <p style={{ marginTop: '16px', fontSize: '13px', color: '#888' }}>
+                  Not listed (no open items, or no email on file): {preview.skipped.map((s) => s.name).join(', ')}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+        <div className="modal-footer">
+          <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={sending}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!preview || checked.size === 0 || sending}
+              onClick={() => onSend([...checked])}
+            >
+              {sending ? 'Sending...' : `Send Reminder (${checked.size})`}
+            </button>
+          </div>
         </div>
       </div>
     </div>

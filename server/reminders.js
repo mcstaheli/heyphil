@@ -41,21 +41,36 @@ export function buildReminderEmail(lead, appUrl) {
   };
 }
 
-// dryRun computes exactly what would be sent without calling Resend - used
-// to verify the grouping/query logic without risking a real send to the team.
-export async function sendStandupReminders({ dryRun = false } = {}) {
+// Every lead currently eligible for a reminder (has an email + open items),
+// with just enough detail for a "pick who to send to" checklist - no need
+// to ship the full task text/HTML for that.
+export async function previewStandupReminders() {
+  const { leads, skipped } = await getOpenTasksByLead();
+  return {
+    leads: leads.map((lead) => ({
+      name: lead.name,
+      email: lead.email,
+      projectCount: lead.projects.length,
+      itemCount: lead.projects.reduce((sum, p) => sum + p.tasks.length, 0)
+    })),
+    skipped
+  };
+}
+
+// onlyEmails, when given, restricts the actual send to that subset of
+// otherwise-eligible leads (the "Send Reminder" modal's unchecked boxes) -
+// eligible leads left out this way are reported separately from `skipped`
+// (which is leads that were never eligible at all - no email or no open
+// items), so the summary can distinguish "nothing to send" from "chose not to".
+export async function sendStandupReminders({ onlyEmails = null } = {}) {
   const { leads, skipped } = await getOpenTasksByLead();
   const appUrl = process.env.APP_URL || 'https://heyphil.bot';
-  const emails = leads.map((lead) => buildReminderEmail(lead, appUrl));
 
-  if (dryRun) {
-    return {
-      sent: [],
-      skipped,
-      dryRun: true,
-      wouldSend: emails.map((e) => ({ to: e.to, subject: e.subject, html: e.html }))
-    };
-  }
+  const onlySet = onlyEmails ? new Set(onlyEmails.map((e) => e.toLowerCase())) : null;
+  const excluded = onlySet ? leads.filter((l) => !onlySet.has(l.email.toLowerCase())).map((l) => l.email) : [];
+  const toSend = onlySet ? leads.filter((l) => onlySet.has(l.email.toLowerCase())) : leads;
+
+  const emails = toSend.map((lead) => buildReminderEmail(lead, appUrl));
 
   const sent = [];
   const failed = [];
@@ -76,5 +91,5 @@ export async function sendStandupReminders({ dryRun = false } = {}) {
     }
   }
 
-  return { sent, failed, skipped };
+  return { sent, failed, skipped, excluded };
 }
