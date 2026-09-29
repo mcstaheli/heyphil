@@ -343,6 +343,8 @@ function OriginationBoard({ user, studioMode = false }) {
   const [quickAddTaskFor, setQuickAddTaskFor] = useState(null); // card id whose inline "+" quick-add input is open
   const [quickAddTaskText, setQuickAddTaskText] = useState({}); // card id -> draft text
   const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // action ids mid-"just checked off" flash
+  const [editingCardActionId, setEditingCardActionId] = useState(null); // action id being text-edited inline on the card face
+  const [editingCardActionText, setEditingCardActionText] = useState('');
   const [draggedCard, setDraggedCard] = useState(null);
   // The "isPrePost" columns (see PRE_POST_COLUMN_IDS) default to minimized.
   const [minimizedColumns, setMinimizedColumns] = useState(() => new Set(PRE_POST_COLUMN_IDS));
@@ -1552,7 +1554,36 @@ function OriginationBoard({ user, studioMode = false }) {
                                 toggleActionStar(action.id, !action.starred, action.cardId);
                               }}
                             >{action.starred ? '★' : '☆'}</span>
-                            <span>{action.text}</span>
+                            {editingCardActionId === action.id ? (
+                              <input
+                                type="text"
+                                value={editingCardActionText}
+                                onChange={(e) => setEditingCardActionText(e.target.value)}
+                                onBlur={() => {
+                                  if (editingCardActionText.trim() && editingCardActionText !== action.text) {
+                                    updateAction(action.id, editingCardActionText.trim(), action.cardId);
+                                  }
+                                  setEditingCardActionId(null);
+                                  setEditingCardActionText('');
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') { e.target.blur(); }
+                                  if (e.key === 'Escape') { setEditingCardActionId(null); setEditingCardActionText(''); }
+                                }}
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ flex: 1, padding: '2px 4px', border: '1px solid #2196f3' }}
+                              />
+                            ) : (
+                              <span
+                                style={{ cursor: 'text' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingCardActionId(action.id);
+                                  setEditingCardActionText(action.text);
+                                }}
+                              >{action.text}</span>
+                            )}
                           </div>
                         ))}
                       </div>
