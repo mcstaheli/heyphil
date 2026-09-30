@@ -2208,7 +2208,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content wide card-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           {editingTitle ? (
             <input
@@ -2281,7 +2281,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
         </div>
         <form onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div className="modal-body">
-          <div className="modal-two-column">
+          <div className="modal-three-column">
             <div className="modal-left-column">
           <div className="form-group">
             <label>Description</label>
@@ -2341,52 +2341,6 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               duplicate them. formData still carries these fields through
               unchanged on save (nothing here mutates them), so View
               Project Detail is the only way to edit them now. */}
-          <div className="form-group">
-            <label>Notes</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              rows="2"
-              placeholder="Additional notes..."
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Activity Log</label>
-            {card && card.log && card.log.length > 0 && (
-              <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '8px' }}>
-                {card.log.map((entry) => (
-                  <div key={entry.id} style={{ padding: '6px 0', borderBottom: '1px solid #eee', fontSize: '13px' }}>
-                    <div style={{ color: '#888', fontSize: '11px' }}>
-                      {entry.action}{entry.user ? ` by ${entry.user}` : ''} · {new Date(entry.timestamp).toLocaleString()}
-                    </div>
-                    <div>{entry.details}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {card && (
-              <div>
-                <textarea
-                  value={newLogText}
-                  onChange={(e) => setNewLogText(e.target.value)}
-                  rows="2"
-                  placeholder="Add a note (e.g. called Brian, he said...)"
-                  style={{ width: '100%', marginBottom: '4px' }}
-                />
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={handleAddLog}
-                  disabled={!newLogText.trim() || addingLog}
-                  style={{ width: '100%' }}
-                >
-                  {addingLog ? 'Adding...' : '+ Add Note'}
-                </button>
-              </div>
-            )}
-          </div>
-
           <div className="form-group">
             <label>Links</label>
             {card && card.links && card.links.length > 0 && (
@@ -2585,6 +2539,52 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                 </button>
               </div>
           </div>
+            </div>
+            <div className="modal-activity-column">
+              <h3>Activity Log</h3>
+          <div className="form-group">
+            <label>Notes</label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              rows="2"
+              placeholder="Additional notes..."
+            />
+          </div>
+          {card && (
+            <div className="activity-log-list">
+              {card.log && card.log.length > 0 ? card.log.map((entry) => (
+                <div key={entry.id} style={{ padding: '6px 0', borderBottom: '1px solid #eee', fontSize: '13px' }}>
+                  <div style={{ color: '#888', fontSize: '11px' }}>
+                    {entry.action}{entry.user ? ` by ${entry.user}` : ''} · {new Date(entry.timestamp).toLocaleString()}
+                  </div>
+                  <div>{entry.details}</div>
+                </div>
+              )) : (
+                <div style={{ color: '#999', fontSize: '13px' }}>No activity yet.</div>
+              )}
+            </div>
+          )}
+          {card && (
+            <div className="activity-log-add">
+              <textarea
+                value={newLogText}
+                onChange={(e) => setNewLogText(e.target.value)}
+                rows="2"
+                placeholder="Add a note (e.g. called Brian, he said...)"
+                style={{ width: '100%', marginBottom: '4px' }}
+              />
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleAddLog}
+                disabled={!newLogText.trim() || addingLog}
+                style={{ width: '100%' }}
+              >
+                {addingLog ? 'Adding...' : '+ Add Note'}
+              </button>
+            </div>
+          )}
             </div>
           </div>
           </div>
