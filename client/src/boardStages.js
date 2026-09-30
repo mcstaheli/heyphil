@@ -6,7 +6,7 @@
 // list). Mirrors board-db.js's ORIGINATION_STAGE_ORDER server-side; keep
 // both copies in sync.
 export const ORIGINATION_STAGE_ORDER = [
-  'ideation', 'on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets',
+  'ideation', 'on-deck', 'diligence', 'capitalize', 'build', 'operate', 'assets',
   'abandoned', 'exited'
 ];
 

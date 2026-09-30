@@ -19,7 +19,7 @@ test('cards move freely in either direction within the origination pipeline', ()
   assertAllowed('on-deck', 'diligence');
   assertAllowed('ideation', 'on-deck');
   assertAllowed('diligence', 'on-deck');
-  assertAllowed('operate', 'handoff');
+  assertAllowed('operate', 'capitalize');
   assertAllowed('assets', 'on-deck');
 });
 
@@ -39,4 +39,8 @@ test('crossing between the origination pipeline and Studio/unknown statuses is s
 test('Studio-board statuses (both sides unranked) move freely', () => {
   assertAllowed('studio-launch', 'studio-diligence');
   assertAllowed('studio-exited', 'studio-abandoned');
+});
+
+test('handoff is a state now, not a stage - it is no longer a valid status', () => {
+  assertBlocked('capitalize', 'handoff');
 });

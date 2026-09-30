@@ -110,8 +110,8 @@ function getInitialsColor(name) {
 }
 
 // Shared photo-or-initials avatar, used both for a card's normal owner
-// avatar and (Stage 2) the smaller stacked operator avatar on a Handoff
-// card - same visual language at two different sizes.
+// avatar and the smaller stacked handoff-lead avatar on a card that's in
+// handoff - same visual language at two different sizes.
 function renderAvatar(name, people, size) {
   if (!name) return null;
   if (people[name]) {
@@ -145,8 +145,8 @@ function renderAvatar(name, people, size) {
   );
 }
 
-// Board restructure Stage 2: the alarm for a card sitting in Handoff too
-// long - 14 days is a starting default, easy to change in one place.
+// The alarm for a card that's been in handoff too long - 14 days is a
+// starting default, easy to change in one place.
 const HANDOFF_ALARM_DAYS = 14;
 
 function daysSince(isoString) {
@@ -154,6 +154,46 @@ function daysSince(isoString) {
   const ms = new Date() - new Date(isoString);
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
+
+// A project IS a card (they're the same row) - converts the raw project
+// shape (snake_case fields) that /api/projects/* routes return and
+// broadcast (project:created/updated, e.g. from CustomTimeline's PUT, or
+// the Begin/End/Cancel Handoff routes) into the board's card shape.
+const mapProjectToCard = (project) => ({
+  id: project.id,
+  title: project.title || 'Untitled',
+  description: project.description || '',
+  column: project.status || 'backlog',
+  owner: project.owner || '',
+  notes: project.notes || '',
+  annualValue: parseFloat(project.annual_value) || 0,
+  dateCreated: project.date_created || new Date(),
+  projectType: project.project_type || '',
+  needsIc: project.needs_ic || false,
+  project_id: project.id, // Self-reference, same as getBoardData - the card modal's "View Project" button and debug check both key off this.
+  // Same fields getBoardData exposes for the mini card's metric chips -
+  // without these, a project:updated broadcast (e.g. from editing
+  // Budget/Value/Timeline) would wipe the card's chips back to nothing
+  // until reload, since this whole object gets spread over the old card.
+  budget: project.budget || [],
+  budgetLocks: project.budget_locks || [],
+  value: project.value || [],
+  valueLocks: project.value_locks || [],
+  timeline: project.timeline || [],
+  timelineLocks: project.timeline_locks || [],
+  handoff: project.handoff || null,
+  capitalCommitted: parseFloat(project.capital_committed) || 0,
+  monthsToFirstCash: project.months_to_first_cash !== null && project.months_to_first_cash !== undefined
+    ? project.months_to_first_cash
+    : null,
+  metricSnapshots: project.metric_snapshots || [],
+  // Tasks/links from the raw project row carry no cardId (see addTask/
+  // addLink) - inject it the same way getBoardData does, or a
+  // project:updated broadcast (e.g. from the Timeline editor) silently
+  // strips cardId back off every action/link on this card until reload.
+  actions: (project.tasks || []).map(task => ({ ...task, cardId: project.id })),
+  links: (project.links || []).map(link => ({ ...link, cardId: project.id }))
+});
 
 // Wrapper component for project detail route
 function ProjectDetailRoute({ user }) {
@@ -372,9 +412,9 @@ function OriginationBoard({ user, studioMode = false }) {
   const [showTrash, setShowTrash] = useState(false);
   const [deletedCards, setDeletedCards] = useState([]);
 
-  // Board restructure Stage 1: Origination (blue ramp) -> Handoff (amber,
-  // deliberately off-ramp - a caution/transition state, not a rung on
-  // either ladder) -> Execution (green ramp). Display/color order only -
+  // Board restructure Stage 1: Origination (blue ramp) -> Execution (green
+  // ramp). Handoff used to be an amber column between them; it's now a
+  // state a card in any stage can be in (see HandoffPanel). Display/color order only -
   // cards can move to any of these in either direction (forward-only
   // enforcement removed per request). Keep in sync with boardStages.js's
   // ORIGINATION_STAGE_ORDER (used for Strategy Grid scope) and board-db.js's
@@ -386,7 +426,6 @@ function OriginationBoard({ user, studioMode = false }) {
     { id: 'on-deck', title: 'On Deck', color: '#90caf9', section: 'origination' },
     { id: 'diligence', title: 'Diligence', color: '#42a5f5', section: 'origination' },
     { id: 'capitalize', title: 'Capitalize', color: '#1565c0', section: 'origination' },
-    { id: 'handoff', title: 'Handoff', color: '#ffa000', section: 'origination' },
     { id: 'build', title: 'Build', color: '#a5d6a7', section: 'origination' },
     { id: 'operate', title: 'Operate', color: '#66bb6a', section: 'origination' },
     { id: 'assets', title: 'Assets', color: '#388e3c', section: 'origination' },
@@ -609,47 +648,8 @@ function OriginationBoard({ user, studioMode = false }) {
       setCards(prevCards => prevCards.filter(c => c.id !== id));
     });
 
-    // A project IS a card (they're the same row) - these mirror the
-    // card:* handlers above but carry the raw project shape (snake_case
-    // fields, e.g. from CustomTimeline's PUT /api/projects/:id), which
-    // /api/projects/* broadcasts but nothing used to listen for, so a
-    // second person viewing the same project's timeline never saw the
-    // other's edits without a manual reload.
-    const mapProjectToCard = (project) => ({
-      id: project.id,
-      title: project.title || 'Untitled',
-      description: project.description || '',
-      column: project.status || 'backlog',
-      owner: project.owner || '',
-      notes: project.notes || '',
-      annualValue: parseFloat(project.annual_value) || 0,
-      dateCreated: project.date_created || new Date(),
-      projectType: project.project_type || '',
-      needsIc: project.needs_ic || false,
-      project_id: project.id, // Self-reference, same as getBoardData - the card modal's "View Project" button and debug check both key off this.
-      // Same fields getBoardData exposes for the mini card's metric chips -
-      // without these, a project:updated broadcast (e.g. from editing
-      // Budget/Value/Timeline) would wipe the card's chips back to nothing
-      // until reload, since this whole object gets spread over the old card.
-      budget: project.budget || [],
-      budgetLocks: project.budget_locks || [],
-      value: project.value || [],
-      valueLocks: project.value_locks || [],
-      timeline: project.timeline || [],
-      timelineLocks: project.timeline_locks || [],
-      handoff: project.handoff || null,
-      capitalCommitted: parseFloat(project.capital_committed) || 0,
-      monthsToFirstCash: project.months_to_first_cash !== null && project.months_to_first_cash !== undefined
-        ? project.months_to_first_cash
-        : null,
-      metricSnapshots: project.metric_snapshots || [],
-      // Tasks/links from the raw project row carry no cardId (see addTask/
-      // addLink) - inject it the same way getBoardData does, or a
-      // project:updated broadcast (e.g. from the Timeline editor) silently
-      // strips cardId back off every action/link on this card until reload.
-      actions: (project.tasks || []).map(task => ({ ...task, cardId: project.id })),
-      links: (project.links || []).map(link => ({ ...link, cardId: project.id }))
-    });
+    // mapProjectToCard (module level, above) converts the raw project rows
+    // these /api/projects/* broadcasts carry.
 
     socketRef.current.on('project:created', ({ project }) => {
       console.log('📨 Project created:', project.id);
@@ -896,52 +896,30 @@ function OriginationBoard({ user, studioMode = false }) {
     }
   };
 
-  // Board restructure Stage 2: partial edit of a Handoff card's
-  // operator/checklist - saves immediately (no pending state to lose if
-  // the modal closes without a generic Save), same as the IC flag toggle.
-  const updateHandoff = async (cardId, partial) => {
+  // Begin / End / Cancel Handoff - handoff is a state, not a stage (see
+  // server/handoff.js). Each returns the updated project, applied here
+  // straight away; the project:updated broadcast that follows is the same
+  // data. Returns true on success so the panel can reset its own state.
+  const runHandoffAction = async (cardId, action, body = {}) => {
     try {
-      const response = await apiFetch(`${API_BASE_URL}/api/projects/${cardId}/handoff`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(partial)
-      });
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        alert(`Failed to update handoff:\n\n${result.error || 'Unknown error'}`);
-        return;
-      }
-      const data = await response.json();
-      setCards(prevCards => prevCards.map(c => (c.id === cardId ? { ...c, handoff: data.handoff } : c)));
-      setEditingCard(prev => (prev && prev.id === cardId ? { ...prev, handoff: data.handoff } : prev));
-    } catch (error) {
-      console.error('Failed to update handoff:', error);
-      alert('Failed to update handoff - check console for details');
-    }
-  };
-
-  // Operator becomes sole owner, card advances to nextStatus, handoff
-  // clears - see acceptHandoff in board-db.js for the full transition.
-  const acceptHandoff = async (cardId, nextStatus) => {
-    try {
-      const response = await apiFetch(`${API_BASE_URL}/api/projects/${cardId}/handoff/accept`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/projects/${cardId}/handoff/${action}`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ nextStatus })
+        body: JSON.stringify(body)
       });
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        alert(`Could not accept handoff:\n\n${result.error || 'Unknown error'}`);
-        return;
+        alert(`Could not ${action} handoff:\n\n${result.error || 'Unknown error'}`);
+        return false;
       }
-      const { project } = await response.json();
-      setCards(prevCards => prevCards.map(c => (c.id === cardId
-        ? { ...c, column: project.status, owner: project.owner, handoff: project.handoff }
-        : c)));
-      setEditingCard(null);
+      setCards(prevCards => prevCards.map(c => (
+        c.id === cardId ? { ...c, ...mapProjectToCard(result.project) } : c
+      )));
+      return true;
     } catch (error) {
-      console.error('Failed to accept handoff:', error);
-      alert('Failed to accept handoff - check console for details');
+      console.error(`Failed to ${action} handoff:`, error);
+      alert(`Failed to ${action} handoff - check console for details`);
+      return false;
     }
   };
 
@@ -1031,16 +1009,9 @@ function OriginationBoard({ user, studioMode = false }) {
   const handleDrop = (e, columnId) => {
     e.preventDefault();
     if (draggedCard) {
-      // Cards move freely in either direction now (forward-only enforcement
-      // removed per request). The only remaining drag guard: the sole way
-      // out of Handoff is Accept Handoff (names an operator, requires the
-      // checklist complete) - the server rejects any other exit regardless
-      // of direction, so this just avoids the round-trip/flicker for it.
-      if (!studioMode && draggedCard.column === 'handoff' && columnId !== 'handoff') {
-        window.alert('Leaving Handoff requires accepting it - open the card and use Accept Handoff.');
-        handleDragEnd();
-        return;
-      }
+      // Cards move freely in either direction (forward-only enforcement
+      // removed per request) - including while in handoff, which is a
+      // state rather than a stage.
       moveCard(draggedCard.id, columnId);
     }
     handleDragEnd();
@@ -1557,8 +1528,8 @@ function OriginationBoard({ user, studioMode = false }) {
               {filteredCards.map(card => {
                 const isPrePost = PRE_POST_COLUMN_IDS.includes(column.id);
                 const metricChips = isPrePost ? [] : getCardMetricChips(card);
-                const isHandoff = column.id === 'handoff';
-                const handoffDays = isHandoff ? daysSince(card.handoff?.enteredAt) : null;
+                const isHandoff = !studioMode && !!card.handoff;
+                const handoffDays = isHandoff ? daysSince(card.handoff.startedAt) : null;
                 return (
                   <div
                     key={card.id}
@@ -1576,9 +1547,9 @@ function OriginationBoard({ user, studioMode = false }) {
                     {isHandoff && handoffDays !== null && (
                       <div
                         className={`handoff-days-badge ${handoffDays >= HANDOFF_ALARM_DAYS ? 'handoff-days-alarm' : ''}`}
-                        title={`In Handoff for ${handoffDays} day${handoffDays === 1 ? '' : 's'}`}
+                        title={`Handing off to ${card.handoff.lead} - ${handoffDays} day${handoffDays === 1 ? '' : 's'} so far`}
                       >
-                        ⏳ {handoffDays}d in Handoff
+                        ⏳ {handoffDays}d in handoff
                       </div>
                     )}
                     {metricChips.length > 0 && (
@@ -1606,12 +1577,12 @@ function OriginationBoard({ user, studioMode = false }) {
                       {card.owner && (
                         <div className={`card-photo ${isHandoff ? 'card-photo-stacked' : ''}`}>
                           {renderAvatar(card.owner, people, 60)}
-                          {/* Handoff: originator (existing avatar, unchanged position/size)
-                              plus the incoming operator as a smaller offset avatar - both
-                              come from the same people list, no separate operator roster. */}
-                          {isHandoff && card.handoff?.operator && (
-                            <div className="card-photo-operator" title={`Operator: ${card.handoff.operator}`}>
-                              {renderAvatar(card.handoff.operator, people, 28)}
+                          {/* In handoff: the current lead (existing avatar, unchanged
+                              position/size) plus the incoming handoff lead as a smaller
+                              offset avatar - both from the same people list. */}
+                          {isHandoff && card.handoff.lead && (
+                            <div className="card-photo-operator" title={`Handoff lead: ${card.handoff.lead}`}>
+                              {renderAvatar(card.handoff.lead, people, 28)}
                             </div>
                           )}
                         </div>
@@ -1797,8 +1768,7 @@ function OriginationBoard({ user, studioMode = false }) {
           studioMode={studioMode}
           onViewProject={(projectId) => navigate(`/labs/board/projects/${projectId}`)}
           currentUser={user}
-          onUpdateHandoff={updateHandoff}
-          onAcceptHandoff={acceptHandoff}
+          onHandoffAction={runHandoffAction}
         />
       )}
 
@@ -2062,86 +2032,100 @@ function ReminderModal({ preview, sending, onClose, onSend }) {
   );
 }
 
-const HANDOFF_CHECKLIST_ITEMS = [
-  { key: 'operatorAccepted', label: 'Operator named and accepted' },
-  { key: 'budgetTimelineRestated', label: 'Budget and timeline restated by the operator' },
-  { key: 'diligenceTransferred', label: 'Open diligence items transferred' },
-  { key: 'first90DaysAgreed', label: 'First 90 days agreed' }
-];
+// Handoff inside CardModal (existing origination cards only). Handoff is a
+// state, not a stage: Begin names who's taking over and starts the
+// days-in-handoff clock; End makes them the owner (the originating lead is
+// removed); Cancel drops it with the owner unchanged. Each click saves
+// immediately via its own route, not the modal's generic Save.
+function HandoffPanel({ card, sortedPeople, onHandoffAction }) {
+  const handoff = card.handoff;
+  const [choosing, setChoosing] = useState(false);
+  const [lead, setLead] = useState('');
+  const [busy, setBusy] = useState(false);
 
-// Board restructure Stage 2: shown inside CardModal only for a card
-// currently sitting in Handoff. Every edit here saves immediately via its
-// own PUT /handoff (not the modal's generic Save), same convention as the
-// IC flag toggle elsewhere on the board - there's no "pending" state to
-// lose if the modal is closed without hitting Save.
-function HandoffPanel({ card, sortedPeople, onUpdateHandoff, onAcceptHandoff }) {
-  const handoff = card.handoff || {};
-  const checklist = handoff.checklist || {};
-  const [nextStatus, setNextStatus] = useState('operate');
-  const [accepting, setAccepting] = useState(false);
-
-  const allChecked = HANDOFF_CHECKLIST_ITEMS.every((item) => checklist[item.key]);
-  const canAccept = !!handoff.operator && allChecked;
-  const daysIn = daysSince(handoff.enteredAt);
-
-  const handleAccept = async () => {
-    setAccepting(true);
+  const run = async (action, body) => {
+    setBusy(true);
     try {
-      await onAcceptHandoff(card.id, nextStatus);
+      const ok = await onHandoffAction(card.id, action, body);
+      if (ok) {
+        setChoosing(false);
+        setLead('');
+      }
     } finally {
-      setAccepting(false);
+      setBusy(false);
     }
   };
 
+  if (!handoff) {
+    return (
+      <div className="handoff-panel handoff-panel-idle">
+        {!choosing ? (
+          <button type="button" className="btn-secondary" onClick={() => setChoosing(true)}>
+            🤝 Begin Handoff
+          </button>
+        ) : (
+          <div className="handoff-begin">
+            <label>Who's taking over?</label>
+            <div className="handoff-begin-row">
+              <select value={lead} onChange={(e) => setLead(e.target.value)} autoFocus>
+                <option value="">Choose the handoff lead...</option>
+                {sortedPeople.filter((person) => person !== card.owner).map((person) => (
+                  <option key={person} value={person}>{person}</option>
+                ))}
+              </select>
+              <button type="button" className="btn-primary" disabled={!lead || busy} onClick={() => run('begin', { lead })}>
+                Begin
+              </button>
+              <button type="button" className="btn-secondary" disabled={busy} onClick={() => { setChoosing(false); setLead(''); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const daysIn = daysSince(handoff.startedAt);
+  const from = card.owner || 'Unassigned';
   return (
     <div className="handoff-panel">
-      <h3>🤝 Handoff</h3>
+      <h3>🤝 In handoff</h3>
+      <div className="handoff-panel-summary">
+        {from} → <strong>{handoff.lead}</strong>
+      </div>
       {daysIn !== null && (
         <div className={`handoff-panel-days ${daysIn >= HANDOFF_ALARM_DAYS ? 'handoff-days-alarm' : ''}`}>
-          In Handoff for {daysIn} day{daysIn === 1 ? '' : 's'}
+          {daysIn} day{daysIn === 1 ? '' : 's'} in handoff
         </div>
       )}
-      <div className="form-group">
-        <label>Operator (incoming owner)</label>
-        <select
-          value={handoff.operator || ''}
-          onChange={(e) => onUpdateHandoff(card.id, { operator: e.target.value || null })}
+      <div className="handoff-actions">
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={busy}
+          onClick={() => {
+            if (window.confirm(`End handoff? ${handoff.lead} becomes the lead and ${from} is removed.`)) run('end');
+          }}
         >
-          <option value="">Not yet named</option>
-          {sortedPeople.map((person) => (
-            <option key={person} value={person}>{person}</option>
-          ))}
-        </select>
-      </div>
-      <div className="handoff-checklist">
-        {HANDOFF_CHECKLIST_ITEMS.map((item) => (
-          <label key={item.key} className="handoff-checklist-item">
-            <input
-              type="checkbox"
-              checked={!!checklist[item.key]}
-              onChange={(e) => onUpdateHandoff(card.id, { checklist: { [item.key]: e.target.checked } })}
-            />
-            {item.label}
-          </label>
-        ))}
-      </div>
-      <div className="handoff-accept-row">
-        <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
-          <option value="build">Move to Build</option>
-          <option value="operate">Move to Operate</option>
-        </select>
-        <button type="button" className="btn-primary" disabled={!canAccept || accepting} onClick={handleAccept}>
-          ✅ Accept Handoff
+          ✅ End Handoff
+        </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={busy}
+          onClick={() => {
+            if (window.confirm(`Cancel the handoff to ${handoff.lead}? ${from} stays the lead.`)) run('cancel');
+          }}
+        >
+          Cancel Handoff
         </button>
       </div>
-      {!canAccept && (
-        <p className="handoff-hint">Name an operator and complete the checklist to accept.</p>
-      )}
     </div>
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, onAddLog, onUpdateLog, onDeleteLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onUpdateHandoff, onAcceptHandoff }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, onAddLog, onUpdateLog, onDeleteLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onHandoffAction }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -2182,15 +2166,19 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
     [projectTypeColors]
   );
 
-  // Cards can move to any column in either direction now (forward-only
-  // enforcement removed per request). A card already in Handoff still
-  // locks to just Handoff in this picker - the only way out is Accept
-  // Handoff (the server rejects a plain status change out of it too).
-  const availableColumns = useMemo(() => {
-    if (studioMode || !card) return columns;
-    if (card.column === 'handoff') return columns.filter((col) => col.id === 'handoff');
-    return columns;
-  }, [columns, card, studioMode]);
+  // Cards can move to any column in either direction (forward-only
+  // enforcement removed per request).
+  const availableColumns = columns;
+
+  // Ending a handoff changes the owner server-side while this modal is
+  // open - follow it here, or a later Save would quietly put the old lead
+  // back. Also picks up an owner change someone else made meanwhile.
+  const cardOwner = card?.owner;
+  useEffect(() => {
+    if (cardOwner !== undefined) {
+      setFormData((prev) => ({ ...prev, owner: cardOwner || '' }));
+    }
+  }, [cardOwner]);
 
   const handleAddAction = async () => {
     if (!newActionText.trim()) return;
@@ -2404,12 +2392,11 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               ))}
             </select>
           </div>
-          {!studioMode && card?.column === 'handoff' && (
+          {!studioMode && card && onHandoffAction && (
             <HandoffPanel
               card={card}
               sortedPeople={sortedPeople}
-              onUpdateHandoff={onUpdateHandoff}
-              onAcceptHandoff={onAcceptHandoff}
+              onHandoffAction={onHandoffAction}
             />
           )}
           <div className="form-group">

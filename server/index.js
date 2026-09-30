@@ -155,11 +155,9 @@ async function autoMigrate() {
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS value_locks JSONB NOT NULL DEFAULT '[]'::jsonb
   `));
 
-  // Board restructure Stage 2: transient state for a card sitting in
-  // Handoff - operator, the four-item exit checklist, and enteredAt (for
-  // the "how long has this been sitting here" alarm). Null once the card
-  // isn't in Handoff (never entered, or already accepted past it) - see
-  // acceptHandoff/board-db.js's own comments for the full lifecycle.
+  // Handoff state - { lead, originator, startedAt, startedBy } while a card
+  // is in handoff (startedAt drives the days-in-handoff alarm), null
+  // otherwise. See server/handoff.js for the Begin/End/Cancel lifecycle.
   await runMigrationStep('projects handoff column', () => pool.query(`
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS handoff JSONB
   `));
@@ -180,10 +178,9 @@ async function autoMigrate() {
     }
   });
 
-  // Capital committed (kept as-is, was never tracked as its own field
-  // before) and months to first cash (required in the UI for On
-  // Deck/Diligence/Capitalize/Handoff; forced to 0 on entering Assets -
-  // see the assets auto-zero hook in board-db.js).
+  // Capital committed and months to first cash - no longer written or
+  // shown (the Strategy Grid derives both, see grid-inputs.js); the
+  // columns are kept only to avoid a schema change.
   await runMigrationStep('projects capital_committed column', () => pool.query(`
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS capital_committed DECIMAL(15, 2)
   `));
@@ -574,13 +571,12 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
       }
     }
 
-    // handoff and metricSnapshots are system-managed (the whole point of
-    // Handoff's checklist gate is that it can't be skipped) - unlike every
-    // other field here, this route forwards `updates` to boardDb.updateProject
-    // unfiltered, so without stripping these two, a raw PUT could fabricate
-    // or wipe Handoff state, or the audit trail, bypassing updateProjectHandoff/
-    // acceptHandoff's validation entirely. Neither client route ever needs
-    // to set them here - they go through their own dedicated endpoints.
+    // handoff and metricSnapshots are system-managed - unlike every other
+    // field here, this route forwards `updates` to boardDb.updateProject
+    // unfiltered, so without stripping these two, a raw PUT (or a stale
+    // browser tab) could fabricate or wipe handoff state, or the audit
+    // trail, bypassing the Begin/End/Cancel Handoff routes' rules. Neither
+    // client route ever needs to set them here.
     delete updates.handoff;
     delete updates.metricSnapshots;
 
@@ -694,58 +690,65 @@ app.post('/api/projects/:id/timeline/lock', requireAuth, async (req, res) => {
   }
 });
 
-// Edit the operator/checklist while a card sits in Handoff (partial -
-// only the fields sent are changed)
-app.put('/api/projects/:id/handoff', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { operator, checklist } = req.body;
-    const project = await boardDb.updateProjectHandoff(id, { operator, checklist });
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
+// Handoff is a state, not a stage (server/handoff.js): Begin names the
+// person taking over and starts the days-in-handoff clock, End makes them
+// the owner (the originating lead is removed), Cancel drops it with the
+// owner unchanged. None of these move the card between stages.
+function handoffRoute(action, run) {
+  return async (req, res) => {
+    try {
+      const actor = noteAuthorName(req.user);
+      const result = await run(req, actor);
+      if (!result) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      // The handoff change has already committed at this point - a failed
+      // log write shouldn't turn that into an error response (the client
+      // would show "Could not ..." for something that happened) or skip
+      // the broadcast other open boards need.
+      try {
+        await boardDb.addLog(req.params.id, result.logAction, actor, result.logDetails);
+      } catch (logError) {
+        console.error(`Handoff ${action} succeeded but its activity log entry failed:`, logError);
+      }
+      broadcastChange('project:updated', { project: result.project });
+      res.json({ project: result.project });
+    } catch (error) {
+      if (error instanceof boardDb.HandoffNotReadyError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error(`Failed to ${action} handoff:`, error);
+      res.status(500).json({ error: `Failed to ${action} handoff` });
     }
-    broadcastChange('project:updated', { project });
-    res.json({ handoff: project.handoff });
-  } catch (error) {
-    if (error instanceof boardDb.HandoffNotReadyError) {
-      return res.status(400).json({ error: error.message });
-    }
-    console.error('Failed to update handoff:', error);
-    res.status(500).json({ error: 'Failed to update handoff' });
-  }
-});
+  };
+}
 
-// Accept a Handoff: operator becomes sole owner, card advances to
-// nextStatus (Build or Operate), handoff clears - see acceptHandoff.
-app.post('/api/projects/:id/handoff/accept', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { nextStatus } = req.body;
-    if (!nextStatus) {
-      return res.status(400).json({ error: 'nextStatus is required' });
-    }
-    const result = await boardDb.acceptHandoff(id, req.user.name || req.user.email, nextStatus);
-    if (!result) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
+app.post('/api/projects/:id/handoff/begin', requireAuth, handoffRoute('begin', async (req, actor) => {
+  const result = await boardDb.beginHandoff(req.params.id, req.body.lead, actor);
+  return result && {
+    project: result.project,
+    logAction: 'Handoff Begun',
+    logDetails: `Handing off from ${result.originator || 'Unassigned'} to ${result.lead}`
+  };
+}));
 
-    await boardDb.addLog(
-      id,
-      'Handoff Accepted',
-      req.user.name || req.user.email,
-      `${result.operator} accepted handoff from ${result.originator || 'Unassigned'} - now in ${nextStatus}`
-    );
+app.post('/api/projects/:id/handoff/end', requireAuth, handoffRoute('end', async (req) => {
+  const result = await boardDb.endHandoff(req.params.id);
+  return result && {
+    project: result.project,
+    logAction: 'Handoff Ended',
+    logDetails: `${result.lead} took over from ${result.originator || 'Unassigned'}`
+  };
+}));
 
-    broadcastChange('project:updated', { project: result.project });
-    res.json({ project: result.project });
-  } catch (error) {
-    if (error instanceof boardDb.HandoffNotReadyError || error instanceof boardDb.ForwardOnlyViolationError) {
-      return res.status(400).json({ error: error.message });
-    }
-    console.error('Failed to accept handoff:', error);
-    res.status(500).json({ error: 'Failed to accept handoff' });
-  }
-});
+app.post('/api/projects/:id/handoff/cancel', requireAuth, handoffRoute('cancel', async (req) => {
+  const result = await boardDb.cancelHandoff(req.params.id);
+  return result && {
+    project: result.project,
+    logAction: 'Handoff Cancelled',
+    logDetails: `Handoff to ${result.lead} cancelled`
+  };
+}));
 
 // Delete project
 app.delete('/api/projects/:id', requireAuth, async (req, res) => {

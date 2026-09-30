@@ -2,6 +2,9 @@
 import { randomUUID } from 'crypto';
 import pool from './db.js';
 import { deriveGridInputs } from './grid-inputs.js';
+import { HandoffNotReadyError, planBeginHandoff, planEndHandoff, planCancelHandoff } from './handoff.js';
+
+export { HandoffNotReadyError };
 
 // Origination pipeline stages, in their display/ramp order (board restructure
 // Stage 1). Cards can move freely between any of these in either direction -
@@ -11,9 +14,11 @@ import { deriveGridInputs } from './grid-inputs.js';
 // opposed to a Studio-board `studio-*` status) - see assertSameBoardFamily
 // below - and for column display order/coloring elsewhere.
 export const ORIGINATION_STAGE_ORDER = [
-  'ideation', 'on-deck', 'diligence', 'capitalize', 'handoff', 'build', 'operate', 'assets',
+  'ideation', 'on-deck', 'diligence', 'capitalize', 'build', 'operate', 'assets',
   'abandoned', 'exited'
 ];
+// (Handoff used to be a stage between Capitalize and Build; it's now a
+// state a card in any stage can be in - see handoff.js.)
 
 // Mirrors client/src/boardStages.js's PRE_POST_COLUMN_IDS - keep both in
 // sync. Server-side use so far is just the standup-reminder query below
@@ -84,12 +89,14 @@ export async function getProjectById(id) {
 }
 
 export async function createProject(project) {
-  const initialStatus = project.status || project.column || 'on-deck';
-  // A card created directly into Handoff (the "New Card" flow lets you pick
-  // any initial column) needs the same fresh checklist/enteredAt stamp a
-  // normal transition into Handoff gets - this is the one creation path,
-  // separate from updateProjectWithStatusCheck's own entering-Handoff hook.
-  const initialHandoff = initialStatus === 'handoff' ? (project.handoff || freshHandoff()) : (project.handoff || null);
+  // 'handoff' stopped being a stage (it's a state now - handoff.js); a
+  // browser tab still running the old client could still ask to create a
+  // card in that column, which no board would ever show. Land it in the
+  // stage right before where Handoff used to sit instead.
+  const requestedStatus = project.status || project.column || 'on-deck';
+  const initialStatus = requestedStatus === 'handoff' ? 'capitalize' : requestedStatus;
+  // New cards never start in handoff - that only happens via Begin Handoff.
+  const initialHandoff = null;
 
   const result = await pool.query(`
     INSERT INTO projects (
@@ -157,32 +164,6 @@ async function updateProjectWithStatusCheck(id, updates, newStatus) {
       assertSameBoardFamily(currentRow.status, newStatus);
     }
 
-    // The generic status/column update (this path) is also how drag-and-drop
-    // and the Status dropdown move a card - without this check, either one
-    // could carry a card straight out of Handoff without ever naming an
-    // operator or completing the checklist, since neither goes through
-    // acceptHandoff. The only way out of Handoff is Accept Handoff.
-    if (currentRow?.status === 'handoff' && newStatus !== 'handoff') {
-      throw new HandoffNotReadyError(
-        'Leaving Handoff requires accepting it - name an operator and complete the checklist, then use Accept Handoff.'
-      );
-    }
-
-    // Newly entering Handoff (not already there - editing operator/checklist
-    // while sitting in Handoff re-sends the same status, which skips this)
-    // always starts a fresh checklist and stamps enteredAt, the source of
-    // the "how long has this card been sitting in Handoff" alarm - this
-    // unconditionally overrides any handoff value the caller sent: a
-    // drag-and-drop move (moveCard) spreads the ENTIRE card back at the
-    // server, including whatever handoff it already had, so "only fill in
-    // if the caller omitted it" would never actually fire for that path.
-    if (newStatus === 'handoff' && currentRow?.status !== 'handoff') {
-      updates = { ...updates, handoff: freshHandoff() };
-    }
-
-    // (Assets counting as 0 months to first cash is now handled by
-    // deriveGridInputs itself, so nothing to force here.)
-
     // Snapshot annual value / capital committed / months to first cash on
     // every stage change - same "append, never overwrite" pattern as
     // budget_locks/value_locks/timeline_locks, so a project's numbers over
@@ -211,22 +192,8 @@ async function updateProjectWithStatusCheck(id, updates, newStatus) {
   }
 }
 
-// Single source of truth for the four exit-criteria keys - freshHandoff's
-// blank checklist and acceptHandoff's completeness check both derive from
-// this instead of each hand-listing the four keys separately.
-const HANDOFF_CHECKLIST_KEYS = ['operatorAccepted', 'budgetTimelineRestated', 'diligenceTransferred', 'first90DaysAgreed'];
-
-function freshHandoff() {
-  return {
-    operator: null,
-    checklist: Object.fromEntries(HANDOFF_CHECKLIST_KEYS.map((key) => [key, false])),
-    enteredAt: new Date().toISOString()
-  };
-}
-
-// Shared by both places a stage transition happens (the generic path in
-// updateProjectWithStatusCheck, and acceptHandoff, which bypasses it) - a
-// single place to keep the snapshot shape and, critically, the numeric
+// Used by updateProjectWithStatusCheck on every stage change - a single
+// place to keep the snapshot shape and, critically, the numeric
 // coercion consistent. Without the explicit Number(...) here, a value that
 // came from a fresh `updates` payload (a JS number) and one read back from
 // a DECIMAL(15,2) column (node-pg returns those as strings, e.g. "500000.00")
@@ -338,117 +305,62 @@ async function updateProjectFields(id, updates, client = pool) {
   return result.rows[0];
 }
 
-export class HandoffNotReadyError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'HandoffNotReadyError';
-  }
-}
-
-// Partial update of the operator/checklist while a card sits in Handoff -
-// merges onto whatever's already there rather than requiring the caller to
-// resend the whole object (checklist keys not mentioned stay as they were).
-// Locked the same way acceptHandoff is - without it, two edits landing
-// close together (two checklist boxes ticked in quick succession, or this
-// racing an in-flight acceptHandoff) each read the pre-edit handoff and
-// whichever write commits last wins, silently reverting the other one.
-export async function updateProjectHandoff(id, { operator, checklist } = {}) {
+// Begin / End / Cancel Handoff (handoff.js has the rules). Each locks the
+// row so two clicks landing together (Begin twice, or End racing Cancel)
+// can't both read "not in handoff" / "in handoff" and both write. None of
+// them change the card's stage.
+async function withLockedProjectRow(id, fn) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const current = await client.query('SELECT status, handoff FROM projects WHERE id = $1 FOR UPDATE', [id]);
-    if (!current.rows[0]) {
-      await client.query('ROLLBACK');
-      return null;
-    }
-    if (current.rows[0].status !== 'handoff') {
-      await client.query('ROLLBACK');
-      throw new HandoffNotReadyError('This project is not in Handoff.');
-    }
-
-    const existing = current.rows[0].handoff || freshHandoff();
-    const updated = {
-      ...existing,
-      operator: operator !== undefined ? operator : existing.operator,
-      checklist: checklist !== undefined ? { ...existing.checklist, ...checklist } : existing.checklist
-    };
-
-    const result = await client.query(
-      'UPDATE projects SET handoff = $2::jsonb WHERE id = $1 RETURNING *',
-      [id, JSON.stringify(updated)]
-    );
-    await client.query('COMMIT');
-    return result.rows[0];
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-// The compound "Accept Handoff" action: operator becomes the sole owner,
-// the card advances out of Handoff (to Build or Operate), and the handoff
-// object clears. Requires an operator named and all four checklist items
-// done - same rule the card's own UI gates the Accept button on, enforced
-// again here since this is the one place that actually performs the
-// transition.
-// Handoff only ever exits to Build or Operate (Build is skippable) - not
-// straight to Assets/Exited. This is the ONLY way out of Handoff at all
-// (the generic status-change path blocks leaving Handoff by any other
-// route - see the Handoff-exit-lock above), so this whitelist is doing
-// real work, independent of assertSameBoardFamily.
-const HANDOFF_NEXT_STATUSES = ['build', 'operate'];
-
-export async function acceptHandoff(id, acceptedBy, nextStatus) {
-  if (!HANDOFF_NEXT_STATUSES.includes(nextStatus)) {
-    throw new HandoffNotReadyError(`Handoff can only advance to Build or Operate, not "${nextStatus}".`);
-  }
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const current = await client.query(
-      'SELECT status, owner, handoff, value, value_locks, budget, budget_locks, timeline, metric_snapshots FROM projects WHERE id = $1 FOR UPDATE',
-      [id]
-    );
+    const current = await client.query('SELECT status, owner, handoff FROM projects WHERE id = $1 FOR UPDATE', [id]);
     const row = current.rows[0];
     if (!row) {
       await client.query('ROLLBACK');
       return null;
     }
-    if (row.status !== 'handoff') {
-      await client.query('ROLLBACK');
-      throw new HandoffNotReadyError('This project is not in Handoff.');
-    }
-    const handoff = row.handoff || {};
-    const checklist = handoff.checklist || {};
-    if (!handoff.operator) {
-      await client.query('ROLLBACK');
-      throw new HandoffNotReadyError('Name an operator before accepting the handoff.');
-    }
-    if (!HANDOFF_CHECKLIST_KEYS.every((key) => checklist[key])) {
-      await client.query('ROLLBACK');
-      throw new HandoffNotReadyError('The handoff checklist is not complete yet.');
-    }
-
-    const originator = row.owner;
-    const operator = handoff.operator;
-    // Same snapshot-on-transition as the generic path (updateProjectWithStatusCheck)
-    // - this route bypasses that path entirely, so it has to do it here too.
-    const snapshot = buildMetricSnapshot(nextStatus, deriveGridInputs({ ...row, status: nextStatus }));
-    const metricSnapshots = [...(row.metric_snapshots || []), snapshot];
-    const result = await client.query(
-      'UPDATE projects SET status = $2, owner = $3, handoff = NULL, metric_snapshots = $4::jsonb WHERE id = $1 RETURNING *',
-      [id, nextStatus, operator, JSON.stringify(metricSnapshots)]
-    );
+    const result = await fn(row, client);
     await client.query('COMMIT');
-    return { project: result.rows[0], originator, operator };
+    return result;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
   }
+}
+
+export async function beginHandoff(id, lead, startedBy) {
+  return withLockedProjectRow(id, async (row, client) => {
+    const { handoff } = planBeginHandoff(row, lead, startedBy);
+    const result = await client.query(
+      'UPDATE projects SET handoff = $2::jsonb WHERE id = $1 RETURNING *',
+      [id, JSON.stringify(handoff)]
+    );
+    return { project: result.rows[0], lead: handoff.lead, originator: handoff.originator };
+  });
+}
+
+export async function endHandoff(id) {
+  return withLockedProjectRow(id, async (row, client) => {
+    const plan = planEndHandoff(row);
+    const result = await client.query(
+      'UPDATE projects SET owner = $2, handoff = NULL WHERE id = $1 RETURNING *',
+      [id, plan.owner]
+    );
+    return { project: result.rows[0], lead: plan.lead, originator: plan.originator };
+  });
+}
+
+export async function cancelHandoff(id) {
+  return withLockedProjectRow(id, async (row, client) => {
+    const plan = planCancelHandoff(row);
+    const result = await client.query(
+      'UPDATE projects SET handoff = NULL WHERE id = $1 RETURNING *',
+      [id]
+    );
+    return { project: result.rows[0], lead: plan.lead };
+  });
 }
 
 // Sum of a heading's direct child line items, for both budget and actual.
@@ -985,8 +897,8 @@ export async function getBoardData() {
     valueLocks: project.value_locks || [],
     timeline: project.timeline || [],
     timelineLocks: project.timeline_locks || [],
-    // Dual-avatar/checklist/enteredAt state while a card sits in Handoff -
-    // null the rest of the time (see acceptHandoff/freshHandoff).
+    // { lead, originator, startedAt, startedBy } while the card is in
+    // handoff (dual avatar + days badge), null otherwise - see handoff.js.
     handoff: project.handoff || null,
     capitalCommitted: parseFloat(project.capital_committed) || 0,
     monthsToFirstCash: project.months_to_first_cash !== null && project.months_to_first_cash !== undefined
