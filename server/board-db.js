@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import pool from './db.js';
 import { deriveGridInputs } from './grid-inputs.js';
 import { HandoffNotReadyError, planBeginHandoff, planEndHandoff, planCancelHandoff } from './handoff.js';
+import { groupReminderRecipients } from './reminder-recipients.js';
 
 export { HandoffNotReadyError };
 
@@ -536,7 +537,9 @@ export async function restoreProject(id) {
 
 // ========== TASKS (JSONB in projects.tasks) ==========
 
-export async function addTask(projectId, text) {
+// assignee: a team member's name (people.name) the task is assigned to,
+// via the "@" picker - or null. See setTaskAssignee to change it later.
+export async function addTask(projectId, text, assignee = null) {
   // Same bare-parameter bug as toggleTask/updateTask: jsonb_build_object's
   // variadic "any" args can't resolve $2's type without a cast. This broke
   // adding ANY new checklist item to ANY card - not a latent/edge-case bug,
@@ -551,12 +554,13 @@ export async function addTask(projectId, text) {
         'completed', false,
         'completedOn', null,
         'completedBy', null,
-        'starred', false
+        'starred', false,
+        'assignee', $3::text
       )
     )
     WHERE id = $1
     RETURNING tasks
-  `, [projectId, text]);
+  `, [projectId, text, assignee || null]);
   return result.rows[0];
 }
 
@@ -589,6 +593,31 @@ export async function toggleTask(projectId, taskId, completed, userName) {
     )
     WHERE id = $1
   `, [projectId, taskId, completed, completed ? new Date().toISOString() : null, completed ? userName : null]);
+}
+
+// null unassigns. Two COALESCEs: jsonb_set is strict (a NULL replacement
+// value makes the whole expression NULL, which would wipe the task), and
+// jsonb_agg over an empty array is NULL, not [] (which would null the whole
+// tasks column and break every later addTask - see deleteTask). Returns
+// whether the task existed (it may have been deleted in another tab).
+export async function setTaskAssignee(projectId, taskId, assignee) {
+  const result = await pool.query(`
+    UPDATE projects
+    SET tasks = COALESCE((
+      SELECT jsonb_agg(
+        CASE
+          WHEN (task->>'id')::int = $2
+          THEN jsonb_set(task, '{assignee}', COALESCE(to_jsonb($3::text), 'null'::jsonb))
+          ELSE task
+        END
+      )
+      FROM jsonb_array_elements(tasks) task
+    ), '[]'::jsonb)
+    WHERE id = $1
+    RETURNING tasks
+  `, [projectId, taskId, assignee || null]);
+  const tasks = result.rows[0]?.tasks || [];
+  return tasks.some((t) => Number(t.id) === taskId);
 }
 
 export async function toggleTaskStar(projectId, taskId, starred) {
@@ -740,6 +769,9 @@ export async function getAllPeople() {
   const people = {};
   const ownerColors = {};
   const emails = {};
+  // Every team member's name - `people` above only has the ones with a
+  // photo, which isn't everyone (e.g. for the "@" task-assignment picker).
+  const names = result.rows.map(row => row.name);
 
   result.rows.forEach(row => {
     if (row.photo_url) people[row.name] = row.photo_url;
@@ -747,7 +779,7 @@ export async function getAllPeople() {
     if (row.email) emails[row.name] = row.email;
   });
 
-  return { people, ownerColors, emails };
+  return { people, ownerColors, emails, names };
 }
 
 // Global (Settings page) team management wants the full row list, not the
@@ -772,6 +804,9 @@ export async function listPeople() {
 // `skipped` reports why every OTHER owner of an active project was left out,
 // for a useful summary on the "Send Reminder" button - not required for the
 // send itself, just observability.
+// Standup-reminder recipients: each project's lead (all open tasks) plus
+// anyone with tasks assigned on a project they don't lead (just those) -
+// grouping rules in reminder-recipients.js. `leads` is every recipient.
 export async function getOpenTasksByLead() {
   const [projectsResult, people] = await Promise.all([
     pool.query(`
@@ -782,35 +817,8 @@ export async function getOpenTasksByLead() {
     `, [PRE_POST_COLUMN_IDS]),
     listPeople()
   ]);
-
-  const emailByName = new Map(people.filter((p) => p.email).map((p) => [p.name, p.email]));
-  const byLead = new Map(); // owner name -> { email, projects: [{ title, tasks: [{text, starred}, ...] }] }
-  const openCountByOwner = new Map();
-
-  for (const project of projectsResult.rows) {
-    if (!project.owner) continue;
-    const openTasks = (project.tasks || [])
-      .filter((t) => !t.completedOn)
-      .map((t) => ({ text: t.text, starred: !!t.starred }));
-    openCountByOwner.set(project.owner, (openCountByOwner.get(project.owner) || 0) + openTasks.length);
-
-    const email = emailByName.get(project.owner);
-    if (!email || openTasks.length === 0) continue;
-
-    if (!byLead.has(project.owner)) {
-      byLead.set(project.owner, { name: project.owner, email, projects: [] });
-    }
-    byLead.get(project.owner).projects.push({ title: project.title, tasks: openTasks });
-  }
-
-  const skipped = [...openCountByOwner.entries()]
-    .filter(([owner]) => !byLead.has(owner))
-    .map(([owner, openCount]) => ({
-      name: owner,
-      reason: !emailByName.get(owner) ? 'no email on file' : 'no open items'
-    }));
-
-  return { leads: [...byLead.values()], skipped };
+  const { recipients, skipped } = groupReminderRecipients(projectsResult.rows, people);
+  return { leads: recipients, skipped };
 }
 
 export async function createPerson(name, photoUrl, borderColor, email) {
@@ -919,6 +927,7 @@ export async function getBoardData() {
     cards,
     people: peopleData.people,
     ownerColors: peopleData.ownerColors,
+    teamMembers: peopleData.names,
     projectTypeColors
   };
 }

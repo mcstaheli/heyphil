@@ -18,6 +18,7 @@ import { PRE_POST_COLUMN_IDS } from './boardStages';
 import { formatCompactMoney } from './formatMoney';
 import { isNoteEntry, canModifyNote, noteAuthorName } from './activityLog';
 import { deriveGridInputs } from './strategyGridMath';
+import AssigneeInput from './AssigneeInput';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -377,6 +378,9 @@ function OriginationBoard({ user, studioMode = false }) {
   const [people, setPeople] = useState({});
   const [, setOwnerColors] = useState({});
   const [projectTypeColors, setProjectTypeColors] = useState({});
+  // Every team member's name (people above only has those with a photo) -
+  // for the "@" task-assignment pickers.
+  const [teamMembers, setTeamMembers] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showNewCard, setShowNewCard] = useState(false);
@@ -384,6 +388,7 @@ function OriginationBoard({ user, studioMode = false }) {
   const [editingCard, setEditingCard] = useState(null);
   const [quickAddTaskFor, setQuickAddTaskFor] = useState(null); // card id whose inline "+" quick-add input is open
   const [quickAddTaskText, setQuickAddTaskText] = useState({}); // card id -> draft text
+  const [quickAddAssignee, setQuickAddAssignee] = useState({}); // card id -> "@" assignee for that draft
   const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // action ids mid-"just checked off" flash
   const [editingCardActionId, setEditingCardActionId] = useState(null); // action id being text-edited inline on the card face
   const [editingCardActionText, setEditingCardActionText] = useState('');
@@ -561,6 +566,7 @@ function OriginationBoard({ user, studioMode = false }) {
       const data = await res.json();
       setCards(data.cards || []);
       setPeople(data.people || {});
+      setTeamMembers(data.teamMembers || Object.keys(data.people || {}));
       setOwnerColors(data.ownerColors || {});
       setProjectTypeColors(data.projectTypeColors || {});
       setMetrics(data.metrics || null);
@@ -672,7 +678,7 @@ function OriginationBoard({ user, studioMode = false }) {
     });
 
     // Listen for action changes
-    socketRef.current.on('action:created', ({ actionId, cardId, text }) => {
+    socketRef.current.on('action:created', ({ actionId, cardId, text, assignee }) => {
       console.log('📨 Action created:', actionId, 'for card:', cardId);
       setCards(prevCards => prevCards.map(c => {
         if (c.id === cardId) {
@@ -684,7 +690,8 @@ function OriginationBoard({ user, studioMode = false }) {
               text,
               completedOn: null,
               completedBy: null,
-              starred: false
+              starred: false,
+              assignee: assignee || null
             }]
           };
         }
@@ -782,6 +789,14 @@ function OriginationBoard({ user, studioMode = false }) {
       }));
     });
 
+    socketRef.current.on('action:assigned', ({ actionId, cardId, assignee }) => {
+      setCards(prevCards => prevCards.map(c => (
+        c.id === cardId
+          ? { ...c, actions: (c.actions || []).map(a => (a.id === actionId ? { ...a, assignee } : a)) }
+          : c
+      )));
+    });
+
     socketRef.current.on('log:created', ({ cardId, log }) => {
       console.log('📨 Log entry created for card:', cardId);
       setCards(prevCards => prevCards.map(c => {
@@ -856,8 +871,8 @@ function OriginationBoard({ user, studioMode = false }) {
       
       // Add pending actions if any (now using correct server ID)
       if (pendingActions.length > 0) {
-        for (const actionText of pendingActions) {
-          await addAction(serverCardId, cardData.title, actionText);
+        for (const pending of pendingActions) {
+          await addAction(serverCardId, cardData.title, pending.text, pending.assignee);
         }
       }
       
@@ -1138,20 +1153,44 @@ function OriginationBoard({ user, studioMode = false }) {
     }
   };
 
-  const addAction = async (cardId, cardTitle, text) => {
+  // assignee: a team member's name from the "@" picker, or null. Returns
+  // true on success, so callers only clear the typed draft once it's saved.
+  const addAction = async (cardId, cardTitle, text, assignee = null) => {
     try {
       const response = await apiFetch(`${API_BASE_URL}/api/origination/action`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ cardId, cardTitle, text })
+        body: JSON.stringify({ cardId, cardTitle, text, assignee })
       });
-      
-      if (response.ok) {
-        // State will be updated via Socket.io event
-        // No need to manually update here anymore
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        alert(`Could not add task:\n\n${result.error || 'Unknown error'}`);
+        return false;
       }
+      // State will be updated via Socket.io event (action:created)
+      return true;
     } catch (error) {
       console.error('Failed to add action:', error);
+      alert('Failed to add task - check console for details');
+      return false;
+    }
+  };
+
+  // Reassign or unassign (null) an existing task. State updates via the
+  // action:assigned broadcast, same as the other task edits.
+  const setActionAssignee = async (actionId, cardId, assignee) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/action/assign`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ actionId, cardId, assignee })
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        alert(`Could not assign task:\n\n${result.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to assign action:', error);
     }
   };
 
@@ -1606,21 +1645,24 @@ function OriginationBoard({ user, studioMode = false }) {
                     )}
                     {quickAddTaskFor === card.id && (
                       <div className="card-quick-add-row" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="text"
+                        <AssigneeInput
                           autoFocus
                           className="card-quick-add-input"
-                          placeholder="Add a task..."
+                          placeholder="Add a task... (@ to assign)"
                           value={quickAddTaskText[card.id] || ''}
-                          onChange={(e) => setQuickAddTaskText(prev => ({ ...prev, [card.id]: e.target.value }))}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              const text = (quickAddTaskText[card.id] || '').trim();
-                              if (text) {
-                                addAction(card.id, card.title, text);
-                                setQuickAddTaskText(prev => ({ ...prev, [card.id]: '' }));
-                              }
+                          onChange={(text) => setQuickAddTaskText(prev => ({ ...prev, [card.id]: text }))}
+                          assignee={quickAddAssignee[card.id] || null}
+                          onAssigneeChange={(name) => setQuickAddAssignee(prev => ({ ...prev, [card.id]: name }))}
+                          people={teamMembers}
+                          renderAvatar={(name, size) => renderAvatar(name, people, size)}
+                          onSubmit={async () => {
+                            const text = (quickAddTaskText[card.id] || '').trim();
+                            if (text && await addAction(card.id, card.title, text, quickAddAssignee[card.id] || null)) {
+                              setQuickAddTaskText(prev => ({ ...prev, [card.id]: '' }));
+                              setQuickAddAssignee(prev => ({ ...prev, [card.id]: null }));
                             }
+                          }}
+                          onKeyDown={(e) => {
                             if (e.key === 'Escape') {
                               setQuickAddTaskFor(null);
                             }
@@ -1660,6 +1702,11 @@ function OriginationBoard({ user, studioMode = false }) {
                                 toggleActionStar(action.id, !action.starred, action.cardId);
                               }}
                             >{action.starred ? '★' : '☆'}</span>
+                            {action.assignee && (
+                              <span className="task-assignee-avatar" title={`Assigned to ${action.assignee}`}>
+                                {renderAvatar(action.assignee, people, 18)}
+                              </span>
+                            )}
                             {editingCardActionId === action.id ? (
                               <input
                                 type="text"
@@ -1710,6 +1757,7 @@ function OriginationBoard({ user, studioMode = false }) {
             setNewCardColumn(null);
           }}
           onSave={createCard}
+          teamMembers={teamMembers}
           columns={columns}
           initialColumn={newCardColumn}
           toggleAction={toggleAction}
@@ -1758,6 +1806,8 @@ function OriginationBoard({ user, studioMode = false }) {
           onAddAction={addAction}
           onUpdateAction={updateAction}
           onDeleteAction={deleteAction}
+          onSetActionAssignee={setActionAssignee}
+          teamMembers={teamMembers}
           onAddLink={addLink}
           onDeleteLink={deleteLink}
           onAddLog={addLogEntry}
@@ -2125,7 +2175,7 @@ function HandoffPanel({ card, sortedPeople, onHandoffAction }) {
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, onAddLog, onUpdateLog, onDeleteLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onHandoffAction }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onSetActionAssignee, teamMembers, onAddLink, onDeleteLink, onAddLog, onUpdateLog, onDeleteLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onHandoffAction }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -2142,7 +2192,9 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
     projectType: card?.projectType || ''
   });
   const [newActionText, setNewActionText] = useState('');
-  const [pendingActions, setPendingActions] = useState([]);
+  const [newActionAssignee, setNewActionAssignee] = useState(null); // from the "@" picker
+  const [assigningActionId, setAssigningActionId] = useState(null); // task whose reassign picker is open
+  const [pendingActions, setPendingActions] = useState([]); // new card only: [{ text, assignee }]
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLogText, setNewLogText] = useState('');
@@ -2161,6 +2213,10 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
     [people]
   );
   
+  // Everyone on the team for the "@" assignment pickers (falls back to the
+  // photo-only people list where the full list wasn't passed).
+  const assignablePeople = teamMembers && teamMembers.length ? teamMembers : sortedPeople;
+
   const sortedProjectTypes = useMemo(() =>
     projectTypeColors ? Object.keys(projectTypeColors) : [],
     [projectTypeColors]
@@ -2185,14 +2241,15 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
     
     if (card) {
       // Existing card - add directly
-      if (onAddAction) {
-        await onAddAction(card.id, card.title, newActionText.trim());
+      if (onAddAction && await onAddAction(card.id, card.title, newActionText.trim(), newActionAssignee)) {
         setNewActionText('');
+        setNewActionAssignee(null);
       }
     } else {
       // New card - add to pending list
-      setPendingActions([...pendingActions, newActionText.trim()]);
+      setPendingActions([...pendingActions, { text: newActionText.trim(), assignee: newActionAssignee }]);
       setNewActionText('');
+      setNewActionAssignee(null);
     }
   };
 
@@ -2528,6 +2585,38 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                         }
                       }}
                     >{action.starred ? '★' : '☆'}</span>
+                    {onSetActionAssignee && (
+                      assigningActionId === action.id ? (
+                        <select
+                          className="task-assignee-select"
+                          autoFocus
+                          value={action.assignee || ''}
+                          onChange={(e) => {
+                            onSetActionAssignee(action.id, action.cardId, e.target.value || null);
+                            setAssigningActionId(null);
+                          }}
+                          onBlur={() => setAssigningActionId(null)}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <option value="">Unassigned</option>
+                          {[...new Set([...assignablePeople, ...(action.assignee ? [action.assignee] : [])])].map((person) => (
+                            <option key={person} value={person}>{person}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <button
+                          type="button"
+                          className={`task-assignee-btn ${action.assignee ? 'assigned' : ''}`}
+                          title={action.assignee ? `Assigned to ${action.assignee} - click to change` : 'Assign to someone'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAssigningActionId(action.id);
+                          }}
+                        >
+                          {action.assignee ? renderAvatar(action.assignee, people, 20) : '@'}
+                        </button>
+                      )
+                    )}
                     {editingActionId === action.id ? (
                       <input
                         type="text"
@@ -2591,9 +2680,14 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
             )}
             {!card && pendingActions.length > 0 && (
               <div className="modal-actions-list">
-                {[...pendingActions].reverse().map((text, idx) => (
+                {[...pendingActions].reverse().map((pending, idx) => (
                   <div key={idx} className="modal-action-item">
-                    <span className="action-text">{text}</span>
+                    {pending.assignee && (
+                      <span className="task-assignee-avatar" title={`Assigned to ${pending.assignee}`}>
+                        {renderAvatar(pending.assignee, people, 20)}
+                      </span>
+                    )}
+                    <span className="action-text">{pending.text}</span>
                     <button 
                       type="button"
                       className="btn-remove-action"
@@ -2606,17 +2700,15 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               </div>
             )}
             <div className="add-action-input">
-                <input
-                  type="text"
-                  placeholder="Add a next action..."
+                <AssigneeInput
+                  placeholder="Add a next action... (@ to assign)"
                   value={newActionText}
-                  onChange={(e) => setNewActionText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddAction();
-                    }
-                  }}
+                  onChange={setNewActionText}
+                  assignee={newActionAssignee}
+                  onAssigneeChange={setNewActionAssignee}
+                  people={assignablePeople}
+                  renderAvatar={(name, size) => renderAvatar(name, people, size)}
+                  onSubmit={handleAddAction}
                 />
                 <button 
                   type="button" 

@@ -1487,11 +1487,133 @@ body {
 
 .card-quick-add-input {
   width: 100%;
+}
+
+.card-quick-add-input input {
+  width: 100%;
   border: 1px solid #2196f3;
   border-radius: 4px;
   padding: 4px 6px;
   font-size: 13px;
   box-sizing: border-box;
+}
+
+/* "@" task assignment (AssigneeInput.js): chip for the chosen assignee in
+   front of the input, and the team-member list under it while typing @. */
+.assignee-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.assignee-input input {
+  flex: 1;
+  min-width: 0;
+}
+
+.assignee-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 2px 4px 2px 2px;
+  border-radius: 12px;
+  background: #e8f0fe;
+  font-size: 12px;
+  color: #1a3d8f;
+}
+
+.assignee-chip .avatar-initials,
+.assignee-chip img,
+.task-assignee-avatar .avatar-initials,
+.task-assignee-avatar img,
+.task-assignee-btn .avatar-initials,
+.task-assignee-btn img,
+.assignee-mention-list .avatar-initials,
+.assignee-mention-list img {
+  border-width: 1px !important;
+  flex-shrink: 0;
+}
+
+.assignee-chip-clear {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  color: #5f6b85;
+  cursor: pointer;
+}
+
+.assignee-mention-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  min-width: 180px;
+  margin: 4px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.assignee-mention-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.assignee-mention-list li.active {
+  background: #e8f0fe;
+}
+
+/* Assignee avatar at the start of a task (board card + modal list) */
+.task-assignee-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.task-assignee-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  padding: 0;
+  border: 1px dashed #c5cad6;
+  border-radius: 50%;
+  background: none;
+  color: #9aa3b5;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.task-assignee-btn.assigned {
+  border: none;
+}
+
+.task-assignee-btn:hover {
+  border-color: #2196f3;
+  color: #2196f3;
+}
+
+.task-assignee-select {
+  flex-shrink: 0;
+  max-width: 130px;
+  margin-right: 4px;
+  font-size: 12px;
 }
 
 /* Modal actions list */

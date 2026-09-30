@@ -944,6 +944,7 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
       cards: data.cards,
       people: data.people,
       ownerColors: data.ownerColors,
+      teamMembers: data.teamMembers,
       projectTypeColors: data.projectTypeColors,
       metrics
     });
@@ -1411,12 +1412,72 @@ app.post('/api/origination/action/star', requireAuth, async (req, res) => {
   }
 });
 
+// Assignees are team members (people.name) - checked so a task can't be
+// assigned to a name nobody on the board has. Resolves to the exact stored
+// name, or null for "unassigned"; throws a 400-able message otherwise.
+async function resolveAssignee(assignee) {
+  if (assignee === undefined || assignee === null || assignee === '') return null;
+  const people = await boardDb.listPeople();
+  const match = people.find((p) => p.name === assignee);
+  if (!match) {
+    const err = new Error(`"${assignee}" isn't on the team list`);
+    err.status = 400;
+    throw err;
+  }
+  return match.name;
+}
+
+// Assign / reassign / unassign a task (assignee: a team member's name, or
+// null to unassign).
+app.post('/api/origination/action/assign', requireAuth, async (req, res) => {
+  try {
+    const { actionId, cardId } = req.body;
+    if (!cardId || actionId === undefined) {
+      return res.status(400).json({ error: 'Project ID and task ID are required' });
+    }
+    const assignee = await resolveAssignee(req.body.assignee);
+    const taskId = parseInt(actionId, 10);
+    const found = await boardDb.setTaskAssignee(cardId, taskId, assignee);
+    if (!found) {
+      return res.status(404).json({ error: 'That task no longer exists - it may have been deleted.' });
+    }
+
+    const project = await boardDb.getProjectById(cardId);
+    const task = (project?.tasks || []).find((t) => t.id === taskId);
+    if (task) {
+      try {
+        await boardDb.addLog(
+          cardId,
+          assignee ? 'Task Assigned' : 'Task Unassigned',
+          noteAuthorName(req.user),
+          assignee ? `${task.text} → ${assignee}` : task.text
+        );
+      } catch (logError) {
+        console.error('Task assignment saved but its activity log entry failed:', logError);
+      }
+    }
+
+    broadcastChange('action:assigned', { actionId: taskId, cardId, assignee });
+    res.json({ success: true, assignee });
+  } catch (error) {
+    if (error.status === 400) return res.status(400).json({ error: error.message });
+    console.error('Failed to assign action:', error);
+    res.status(500).json({ error: 'Failed to assign action' });
+  }
+});
+
 // Add new action item (now adds to JSONB tasks)
 app.post('/api/origination/action', requireAuth, async (req, res) => {
   try {
     const { cardId, text } = req.body;
     
     // Input validation
+    let assignee;
+    try {
+      assignee = await resolveAssignee(req.body.assignee);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
     if (!cardId) {
       return res.status(400).json({ error: 'Project ID is required' });
     }
@@ -1428,7 +1489,7 @@ app.post('/api/origination/action', requireAuth, async (req, res) => {
     }
     
     // Add task to project
-    await boardDb.addTask(cardId, text);
+    await boardDb.addTask(cardId, text, assignee);
     
     // Get the new task ID
     const project = await boardDb.getProjectById(cardId);
@@ -1438,7 +1499,8 @@ app.post('/api/origination/action', requireAuth, async (req, res) => {
     broadcastChange('action:created', {
       actionId: newTask.id,
       cardId,
-      text
+      text,
+      assignee
     });
     
     res.json({ success: true, action: newTask });

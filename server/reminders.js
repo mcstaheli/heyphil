@@ -1,6 +1,8 @@
 // Standup-reminder emails ("Send Reminder" button on the Project Board) -
-// one email per lead who has at least one open task, listing their
-// projects (bold) and the open tasks under each, via Resend.
+// one email per person, via Resend: the projects they lead (every open
+// task, noting who each is assigned to) plus any project they don't lead
+// but have tasks assigned on (just those tasks). Who gets what:
+// reminder-recipients.js.
 import { getOpenTasksByLead } from './board-db.js';
 
 const FROM = 'HeyPhil <noreply@heyphil.bot>';
@@ -12,20 +14,35 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;');
 }
 
+const MUTED = 'style="color: #888;"';
+
 export function buildReminderEmail(lead, appUrl) {
+  const taskHtml = (task) => {
+    // Show who it's assigned to - unless that's the person reading it.
+    const assignee = task.assignee && task.assignee !== lead.name
+      ? ` <span ${MUTED}>→ ${escapeHtml(task.assignee)}</span>`
+      : '';
+    return `<li>${task.starred ? '★ ' : ''}${escapeHtml(task.text)}${assignee}</li>`;
+  };
   const projectsHtml = lead.projects
-    .map((project) => `
-      <p style="margin: 16px 0 4px;"><b><u>${escapeHtml(project.title)}</u></b></p>
+    .map((project) => {
+      // A project they don't lead (only here because of tasks assigned to them)
+      const ledBy = project.role === 'assigned' && project.lead
+        ? ` <span ${MUTED}>· led by ${escapeHtml(project.lead)}</span>`
+        : '';
+      return `
+      <p style="margin: 16px 0 4px;"><b><u>${escapeHtml(project.title)}</u></b>${ledBy}</p>
       <ul style="margin: 0 0 0 4px; padding-left: 20px;">
-        ${project.tasks.map((task) => `<li>${task.starred ? '★ ' : ''}${escapeHtml(task.text)}</li>`).join('')}
+        ${project.tasks.map(taskHtml).join('')}
       </ul>
-    `)
+    `;
+    })
     .join('');
 
   const html = `
     <div style="font-family: -apple-system, sans-serif; color: #222; max-width: 560px;">
       <p>Hi ${escapeHtml(lead.name)},</p>
-      <p>Here are the remaining standup items on your projects:</p>
+      <p>Here are your remaining standup items:</p>
       ${projectsHtml}
       <p style="margin-top: 24px;">
         <a href="${appUrl}" style="color: #2196f3;">Go update these in HeyPhil</a>
@@ -41,7 +58,8 @@ export function buildReminderEmail(lead, appUrl) {
   };
 }
 
-// Every lead currently eligible for a reminder (has an email + open items),
+// Everyone currently eligible for a reminder (has an email + open items -
+// as a lead or an assignee),
 // with just enough detail for a "pick who to send to" checklist - no need
 // to ship the full task text/HTML for that.
 export async function previewStandupReminders() {
