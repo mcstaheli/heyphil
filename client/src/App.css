@@ -512,6 +512,54 @@ body {
   border-top: 1px solid #eee;
 }
 
+/* Activity Log entries: system activity stays compact and gray; notes a
+   person wrote (see activityLog.js) get a soft message bubble so they're
+   what the eye lands on when scanning a card. */
+.log-entry {
+  font-size: 13px;
+}
+
+.log-system {
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.log-system-meta {
+  color: #888;
+  font-size: 11px;
+}
+
+.log-system-text {
+  color: #555;
+  white-space: pre-wrap;
+}
+
+.log-note {
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: #eef1fd;
+  border: 1px solid #dde3fb;
+  border-radius: 10px 10px 10px 2px;
+}
+
+.log-note-meta {
+  color: #6b7280;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.log-note-author {
+  color: #4f5bd5;
+  font-weight: 600;
+}
+
+.log-note-text {
+  color: #1f2937;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
 .modal-activity-column .activity-log-add {
   flex-shrink: 0;
 }

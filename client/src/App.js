@@ -16,6 +16,7 @@ import Layout from './Layout';
 import { summarizeLedger, computeTimelineMetrics } from './projectMetrics';
 import { PRE_POST_COLUMN_IDS } from './boardStages';
 import { formatCompactMoney } from './formatMoney';
+import { isNoteEntry } from './activityLog';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -2552,12 +2553,25 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
           {card && (
             <div className="activity-log-list">
               {card.log && card.log.length > 0 ? card.log.map((entry) => (
-                <div key={entry.id} style={{ padding: '6px 0', borderBottom: '1px solid #eee', fontSize: '13px' }}>
-                  <div style={{ color: '#888', fontSize: '11px' }}>
-                    {entry.action}{entry.user ? ` by ${entry.user}` : ''} · {new Date(entry.timestamp).toLocaleString()}
+                isNoteEntry(entry) ? (
+                  // Notes a person wrote get a message-bubble treatment so
+                  // they stand out from the system activity around them.
+                  <div key={entry.id} className="log-entry log-note">
+                    <div className="log-note-meta">
+                      <span className="log-note-author">{entry.user || 'Note'}</span>
+                      {' · '}{new Date(entry.timestamp).toLocaleString()}
+                      {entry.action === 'Notes (migrated)' && ' · from the old Notes field'}
+                    </div>
+                    <div className="log-note-text">{entry.details}</div>
                   </div>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{entry.details}</div>
-                </div>
+                ) : (
+                  <div key={entry.id} className="log-entry log-system">
+                    <div className="log-system-meta">
+                      {entry.action}{entry.user ? ` by ${entry.user}` : ''} · {new Date(entry.timestamp).toLocaleString()}
+                    </div>
+                    <div className="log-system-text">{entry.details}</div>
+                  </div>
+                )
               )) : (
                 <div style={{ color: '#999', fontSize: '13px' }}>No activity yet.</div>
               )}
