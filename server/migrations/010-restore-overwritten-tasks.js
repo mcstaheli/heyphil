@@ -6,8 +6,8 @@
 //
 // Only rewrites a task if it STILL has the overwritten text, so a task
 // someone has since fixed by hand is left alone. Wasatch (Christensen)
-// task #1 was also overwritten, but its original isn't visible in any
-// snapshot - not restored here.
+// task #1 was also overwritten; its original had no text at all (per the
+// card's owner), so that one is removed rather than rewritten.
 //
 // Dry run by default; --apply to write. Idempotent.
 //
@@ -28,6 +28,8 @@ const RESTORES = [
   { title: 'Red Lion', taskId: 2, overwritten: 'Lock up series brand', original: 'Hyatt pitch deck completed' },
   { title: 'Stillbrook Management', taskId: 1, overwritten: 'Button up equity raise', original: 'Draft Proposal for SV' },
   { title: 'Stillbrook Management', taskId: 2, overwritten: 'Lock up series brand', original: 'Conduct talent conversations' },
+  // original: null -> the task had no text; remove it
+  { title: 'Wasatch (Christensen)', taskId: 1, overwritten: 'Button up equity raise', original: null },
 ];
 
 async function main() {
@@ -47,6 +49,22 @@ async function main() {
       const task = (rows[0].tasks || []).find((t) => Number(t.id) === r.taskId);
       if (!task || task.text !== r.overwritten) {
         console.log(`  SKIP ${r.title} #${r.taskId}: now "${task ? task.text : '(no such task)'}" - not the overwritten text`);
+        continue;
+      }
+      if (r.original === null) {
+        console.log(`  ${apply ? 'REMOVE' : 'would remove'} ${r.title} #${r.taskId}: ${JSON.stringify(task)}`);
+        if (apply) {
+          // COALESCE: jsonb_agg over zero rows is NULL, not [] (see deleteTask)
+          await client.query(`
+            UPDATE projects
+            SET tasks = COALESCE((
+              SELECT jsonb_agg(task) FROM jsonb_array_elements(tasks) task
+              WHERE (task->>'id')::int <> $2
+            ), '[]'::jsonb)
+            WHERE id = $1
+          `, [rows[0].id, r.taskId]);
+        }
+        changed += 1;
         continue;
       }
       console.log(`  ${apply ? 'RESTORE' : 'would restore'} ${r.title} #${r.taskId}: "${r.overwritten}" -> "${r.original}"`);
