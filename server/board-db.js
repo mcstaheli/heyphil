@@ -1,6 +1,7 @@
 // Database queries for Project Board (unified projects table)
 import { randomUUID } from 'crypto';
 import pool from './db.js';
+import { deriveGridInputs } from './grid-inputs.js';
 
 // Origination pipeline stages, in their display/ramp order (board restructure
 // Stage 1). Cards can move freely between any of these in either direction -
@@ -155,7 +156,7 @@ async function updateProjectWithStatusCheck(id, updates, newStatus) {
   try {
     await client.query('BEGIN');
     const current = await client.query(
-      'SELECT status, annual_value, capital_committed, months_to_first_cash, metric_snapshots FROM projects WHERE id = $1 FOR UPDATE',
+      'SELECT status, value, value_locks, budget, budget_locks, timeline, metric_snapshots FROM projects WHERE id = $1 FOR UPDATE',
       [id]
     );
     const currentRow = current.rows[0];
@@ -198,15 +199,17 @@ async function updateProjectWithStatusCheck(id, updates, newStatus) {
     // Snapshot annual value / capital committed / months to first cash on
     // every stage change - same "append, never overwrite" pattern as
     // budget_locks/value_locks/timeline_locks, so a project's numbers over
-    // its life stay visible even as they change. Uses the EFFECTIVE values
-    // (this same request's own updates, if it's changing a number and the
-    // stage together, else whatever's already committed).
+    // its life stay visible even as they change. The numbers are derived
+    // from Value/Budget/Timeline exactly as the Strategy Grid derives them
+    // (grid-inputs.js), using this request's own budget/timeline if it's
+    // changing them together with the stage, else what's already stored.
     if (currentRow && newStatus !== currentRow.status) {
-      const snapshot = buildMetricSnapshot(newStatus, {
-        annualValue: updates.annualValue !== undefined ? updates.annualValue : currentRow.annual_value,
-        capitalCommitted: updates.capitalCommitted !== undefined ? updates.capitalCommitted : currentRow.capital_committed,
-        monthsToFirstCash: updates.monthsToFirstCash !== undefined ? updates.monthsToFirstCash : currentRow.months_to_first_cash
-      });
+      const snapshot = buildMetricSnapshot(newStatus, deriveGridInputs({
+        ...currentRow,
+        status: newStatus,
+        budget: updates.budget !== undefined ? updates.budget : currentRow.budget,
+        timeline: updates.timeline !== undefined ? updates.timeline : currentRow.timeline
+      }));
       updates = { ...updates, metricSnapshots: [...(currentRow.metric_snapshots || []), snapshot] };
     }
 
@@ -424,7 +427,7 @@ export async function acceptHandoff(id, acceptedBy, nextStatus) {
   try {
     await client.query('BEGIN');
     const current = await client.query(
-      'SELECT status, owner, handoff, annual_value, capital_committed, months_to_first_cash, metric_snapshots FROM projects WHERE id = $1 FOR UPDATE',
+      'SELECT status, owner, handoff, value, value_locks, budget, budget_locks, timeline, metric_snapshots FROM projects WHERE id = $1 FOR UPDATE',
       [id]
     );
     const row = current.rows[0];
@@ -451,11 +454,7 @@ export async function acceptHandoff(id, acceptedBy, nextStatus) {
     const operator = handoff.operator;
     // Same snapshot-on-transition as the generic path (updateProjectWithStatusCheck)
     // - this route bypasses that path entirely, so it has to do it here too.
-    const snapshot = buildMetricSnapshot(nextStatus, {
-      annualValue: row.annual_value,
-      capitalCommitted: row.capital_committed,
-      monthsToFirstCash: row.months_to_first_cash
-    });
+    const snapshot = buildMetricSnapshot(nextStatus, deriveGridInputs({ ...row, status: nextStatus }));
     const metricSnapshots = [...(row.metric_snapshots || []), snapshot];
     const result = await client.query(
       'UPDATE projects SET status = $2, owner = $3, handoff = NULL, metric_snapshots = $4::jsonb WHERE id = $1 RETURNING *',

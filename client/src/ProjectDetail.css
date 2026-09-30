@@ -147,35 +147,6 @@
   color: #212529;
 }
 
-.deal-terms-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-}
-
-.deal-terms-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #444;
-}
-
-.deal-terms-field input {
-  font-weight: 400;
-  font-family: inherit;
-  font-size: 14px;
-  padding: 8px 10px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-}
-
-.deal-terms-field input:disabled {
-  background: #f5f5f5;
-  color: #999;
-}
-
 .budget-module-header {
   display: flex;
   align-items: center;

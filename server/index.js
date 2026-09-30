@@ -20,6 +20,7 @@ import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
 import { JWT_SECRET, requireAuth } from './auth-middleware.js';
 import { canModifyNote, noteAuthorName } from './note-permissions.js';
+import { deriveGridInputs } from './grid-inputs.js';
 import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin } from './permissions.js';
 import { sendStandupReminders, previewStandupReminders } from './reminders.js';
 import cashflowRouter from './routes/cashflow.js';
@@ -911,6 +912,11 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
     const INACTIVE_STATUSES = new Set(['ideation', 'abandoned', 'exited', 'closed', 'backlog']);
     const filteredCards = data.cards.filter(c => !INACTIVE_STATUSES.has(c.column));
 
+    // Annual value comes from each card's Value ledger (deriveGridInputs,
+    // same as the Strategy Grid) - the old annual_value column is no longer
+    // editable anywhere.
+    const annualValueOf = (card) => deriveGridInputs(card).annualValue || 0;
+
     // Group by stage for detailed metrics
     const byStage = {};
     filteredCards.forEach(card => {
@@ -918,13 +924,14 @@ app.get('/api/origination/board', requireAuth, async (req, res) => {
         byStage[card.column] = { count: 0, value: 0 };
       }
       byStage[card.column].count++;
-      byStage[card.column].value += parseFloat(card.annualValue) || 0;
+      byStage[card.column].value += annualValueOf(card);
     });
 
+    const totalValue = filteredCards.reduce((sum, c) => sum + annualValueOf(c), 0);
     const metrics = {
       totalDeals: filteredCards.length,
-      totalValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.annualValue) || 0), 0),
-      totalDealValue: filteredCards.reduce((sum, c) => sum + (parseFloat(c.annualValue) || 0), 0),
+      totalValue,
+      totalDealValue: totalValue,
       totalProjects: filteredCards.length,
       activeProjects: filteredCards.length,
       byStage
@@ -1732,8 +1739,10 @@ app.get('/api/origination/export', requireAuth, async (req, res) => {
       'Title,Description,Stage,Owner,Notes,Card ID,Annual Value,Capital Committed,Months to First Cash,Date Created,Project Type'
     ];
 
-    // Add data rows
+    // Add data rows. The three deal numbers are derived from Value /
+    // Budget / Timeline exactly as the Strategy Grid shows them.
     cards.forEach(card => {
+      const grid = deriveGridInputs(card);
       csv.push([
         escapeCsv(card.title),
         escapeCsv(card.description),
@@ -1741,9 +1750,9 @@ app.get('/api/origination/export', requireAuth, async (req, res) => {
         escapeCsv(card.owner),
         escapeCsv(card.notes),
         escapeCsv(card.id),
-        escapeCsv(card.annualValue),
-        escapeCsv(card.capitalCommitted),
-        escapeCsv(card.monthsToFirstCash),
+        escapeCsv(grid.annualValue),
+        escapeCsv(grid.capitalCommitted),
+        escapeCsv(grid.monthsToFirstCash),
         escapeCsv(card.dateCreated),
         escapeCsv(card.projectType)
       ].join(','));

@@ -9,6 +9,7 @@ import {
   MONTHS_SPLIT,
   YIELD_SPLIT,
   computeYield,
+  deriveGridInputs,
   isOutOfMandate,
   isFlagged,
   percentCapitalInLeftHalf
@@ -61,8 +62,7 @@ function StrategyGrid() {
   }, []);
 
   // Only the origination pipeline is in scope here - the Studio board is a
-  // separate system with no annual-value/capital-committed/months-to-
-  // first-cash fields of its own. Ideation and Abandoned are excluded too
+  // separate system that doesn't feed this grid. Ideation and Abandoned are excluded too
   // (App.js's own active-metrics filter treats them the same way): an idea
   // not yet decided on, or a deal walked away from, shouldn't count toward
   // the committed-capital/yield math here.
@@ -73,25 +73,29 @@ function StrategyGrid() {
   );
 
   const points = useMemo(() => {
+    const today = new Date();
     return originationCards
+      // Each card's three numbers come from its Budget, Value and Timeline
+      // (see deriveGridInputs) rather than separately entered fields.
+      .map((c) => ({ card: c, ...deriveGridInputs(c, today) }))
       // Finite and non-negative - a card can't take a negative number of
       // months to first cash, and NaN/Infinity from any upstream bad data
       // has nowhere sensible to plot.
-      .filter((c) => Number.isFinite(c.capitalCommitted) && c.capitalCommitted > 0
-        && Number.isFinite(c.monthsToFirstCash) && c.monthsToFirstCash >= 0)
-      .map((c) => {
-        const yieldRatio = computeYield(c.annualValue, c.capitalCommitted) || 0;
+      .filter(({ capitalCommitted, monthsToFirstCash }) => Number.isFinite(capitalCommitted) && capitalCommitted > 0
+        && Number.isFinite(monthsToFirstCash) && monthsToFirstCash >= 0)
+      .map(({ card: c, annualValue, capitalCommitted, monthsToFirstCash }) => {
+        const yieldRatio = computeYield(annualValue, capitalCommitted) || 0;
         return {
           id: c.id,
           title: c.title,
           stage: c.column,
           projectType: c.projectType,
-          annualValue: c.annualValue || 0,
-          capitalCommitted: c.capitalCommitted,
-          monthsToFirstCash: c.monthsToFirstCash,
+          annualValue: annualValue || 0,
+          capitalCommitted,
+          monthsToFirstCash,
           yieldRatio,
-          outOfMandate: isOutOfMandate(c.monthsToFirstCash, yieldRatio),
-          flagged: isFlagged(c.monthsToFirstCash, c.column)
+          outOfMandate: isOutOfMandate(monthsToFirstCash, yieldRatio),
+          flagged: isFlagged(monthsToFirstCash, c.column)
         };
       });
   }, [originationCards]);
@@ -171,7 +175,7 @@ function StrategyGrid() {
         <h1>Strategy Grid</h1>
         <div className="portfolio-header-sub">
           {points.length} of {originationCards.length} origination projects plotted
-          (need capital committed and months to first cash entered)
+          (need Budget line items and a Timeline milestone marked "First cash")
         </div>
       </div>
 

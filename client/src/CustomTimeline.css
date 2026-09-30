@@ -650,6 +650,19 @@
   font-size: 14px;
 }
 
+.timeline-edit-panel .timeline-first-cash input[type="checkbox"] {
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+}
+
+.timeline-edit-panel .timeline-first-cash small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #6b7280;
+}
+
 .timeline-edit-panel input[type="range"] {
   width: calc(100% - 50px);
   margin-top: 6px;

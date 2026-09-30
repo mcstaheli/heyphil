@@ -17,6 +17,7 @@ import { summarizeLedger, computeTimelineMetrics } from './projectMetrics';
 import { PRE_POST_COLUMN_IDS } from './boardStages';
 import { formatCompactMoney } from './formatMoney';
 import { isNoteEntry, canModifyNote, noteAuthorName } from './activityLog';
+import { deriveGridInputs } from './strategyGridMath';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -433,10 +434,17 @@ function OriginationBoard({ user, studioMode = false }) {
       return true;
     });
 
+    // Annual value / capital committed come from each card's Value and
+    // Budget ledgers (deriveGridInputs, same as the Strategy Grid) - the
+    // old annualValue/capitalCommitted fields are no longer editable.
+    const today = new Date();
+    const derived = new Map(filteredCards.map(c => [c.id, deriveGridInputs(c, today)]));
+    const annualValueOf = (c) => derived.get(c.id).annualValue || 0;
+
     const newMetrics = {
       totalDeals: filteredCards.length,
-      totalValue: filteredCards.reduce((sum, c) => sum + (c.annualValue || 0), 0),
-      totalCapitalCommitted: filteredCards.reduce((sum, c) => sum + (c.capitalCommitted || 0), 0),
+      totalValue: filteredCards.reduce((sum, c) => sum + annualValueOf(c), 0),
+      totalCapitalCommitted: filteredCards.reduce((sum, c) => sum + (derived.get(c.id).capitalCommitted || 0), 0),
       byStage: {}
     };
 
@@ -445,7 +453,7 @@ function OriginationBoard({ user, studioMode = false }) {
         newMetrics.byStage[card.column] = { count: 0, value: 0 };
       }
       newMetrics.byStage[card.column].count++;
-      newMetrics.byStage[card.column].value += (card.annualValue || 0);
+      newMetrics.byStage[card.column].value += annualValueOf(card);
     });
 
     setMetrics(newMetrics);
@@ -1500,7 +1508,9 @@ function OriginationBoard({ user, studioMode = false }) {
           filteredCards.sort((a, b) => {
             if (sortBy === 'dateCreated') return new Date(b.dateCreated) - new Date(a.dateCreated);
             if (sortBy === 'title') return a.title.localeCompare(b.title);
-            if (sortBy === 'annualValue') return (b.annualValue || 0) - (a.annualValue || 0);
+            if (sortBy === 'annualValue') {
+              return (deriveGridInputs(b).annualValue || 0) - (deriveGridInputs(a).annualValue || 0);
+            }
             if (sortBy === 'daysInStage') return (b.daysInStage || 0) - (a.daysInStage || 0);
             return 0;
           });

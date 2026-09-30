@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './CustomTimeline.css';
+import { enforceSingleFirstCash } from './strategyGridMath';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -591,7 +592,12 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
   };
 
   const updateTask = (taskId, updates) => {
-    let updatedTasks = tasks.map(t => t.id === taskId ? { ...t, ...updates } : t);
+    // At most one "First cash" milestone per project (it drives the
+    // Strategy Grid's months-to-first-cash - see deriveGridInputs).
+    let updatedTasks = enforceSingleFirstCash(
+      tasks.map(t => t.id === taskId ? { ...t, ...updates } : t),
+      taskId
+    );
     
     // Enforce dependency constraints for any update
     const task = updatedTasks.find(t => t.id === taskId);
@@ -1753,6 +1759,14 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                     {task.type === 'milestone' && '🏁 '}
                     {task.type === 'event' && '💎 '}
                     {task.name}
+                    {task.type === 'milestone' && task.firstCash && (
+                      <span
+                        title="First cash - the Strategy Grid measures months to first cash to this milestone"
+                        style={{ marginLeft: '6px', fontSize: '11px' }}
+                      >
+                        💵
+                      </span>
+                    )}
                     {criticalPathIds.has(task.id) && (
                       <span
                         title="On the critical path - delaying this pushes back the final milestone"
@@ -2324,6 +2338,20 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                     ⚠️ Cannot occur before dependencies finish
                   </small>
                 )}
+              </label>
+            )}
+
+            {editingTask.type === 'milestone' && (
+              <label className="timeline-first-cash">
+                <input
+                  type="checkbox"
+                  checked={!!editingTask.firstCash}
+                  onChange={(e) => setEditingTask({ ...editingTask, firstCash: e.target.checked })}
+                />
+                💵 First cash
+                <small>
+                  The Strategy Grid measures months to first cash to this milestone. Only one per project.
+                </small>
               </label>
             )}
 
