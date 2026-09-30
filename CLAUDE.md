@@ -47,7 +47,11 @@ Columns (`server/improvements-db.js`'s `IMPROVEMENT_COLUMNS`): `intake`, `triage
 ## Workflow
 
 - Verify before claiming a task is done: run the actual verification command and show its output.
-- Chad verifies changes on production after pushing. Don't start the local server (`npm run dev`/`server`/`client` - it points at the live database) or do browser verification unless asked. Verification here means: the client compiles (`cd client && CI=false npx react-scripts build`) and `npm test` passes - then commit and push.
+- Don't start the local server (`npm run dev`/`server`/`client` - it points at the live database) or do browser verification unless asked.
+- Before pushing: make sure it compiles (`cd client && CI=false npx react-scripts build`) and `npm test` passes.
+- After every push: wait for the Railway deploy to finish, confirm it succeeded, check the deploy/runtime logs for errors, and confirm the production sign-in page loads. If anything fails, stop and report it immediately - don't push further fixes without saying so first.
+- Any database schema change, migration, or script that modifies existing data: stop and get explicit approval before running it - there is only one live database.
+- Finish with one line saying what to click on in production to confirm the change.
 - If a change touches more than two files, or the approach is uncertain, plan first and get approval before editing.
 - Write a failing test that reproduces a bug before fixing it, when the bug is testable.
 - After any non-trivial change, run `/code-review` on the diff and report correctness gaps only.
