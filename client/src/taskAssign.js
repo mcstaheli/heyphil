@@ -46,3 +46,16 @@ export function applyMention(text, mention) {
   const result = after === '' ? before.trimEnd() : before + after;
   return { text: result, caret: Math.min(before.length, result.length) };
 }
+
+// Where to draw the "@" list: it's rendered on top of the page
+// (position: fixed, portalled to <body>) because the add-task boxes sit
+// inside scrolling containers (the card modal's Next Actions column, the
+// board's card lists) that would otherwise clip it. Below the input when
+// it fits, else above it. rect = the input's getBoundingClientRect().
+export function mentionListPosition(rect, viewportHeight, listHeight, gap = 4) {
+  const base = { left: rect.left, minWidth: Math.max(rect.width, 180) };
+  if (viewportHeight - rect.bottom >= listHeight + gap * 2) {
+    return { left: base.left, top: rect.bottom + gap, minWidth: base.minWidth };
+  }
+  return { left: base.left, bottom: viewportHeight - rect.top + gap, minWidth: base.minWidth };
+}

@@ -1708,8 +1708,8 @@ function OriginationBoard({ user, studioMode = false }) {
                               }}
                             >{action.starred ? '★' : '☆'}</span>
                             {action.assignee && (
-                              <span className="task-assignee-avatar" title={`Assigned to ${action.assignee}`}>
-                                {renderAvatar(action.assignee, people, 18)}
+                              <span className="task-assignee-tag" title={`Assigned to ${action.assignee}`}>
+                                @{action.assignee}
                               </span>
                             )}
                             {editingCardActionId === taskKey(card.id, action.id) ? (
@@ -2538,7 +2538,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                             setAssigningActionId(action.id);
                           }}
                         >
-                          {action.assignee ? renderAvatar(action.assignee, people, 20) : '@'}
+                          {action.assignee ? `@${action.assignee}` : '@'}
                         </button>
                       )
                     )}
@@ -2608,8 +2608,8 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                 {[...pendingActions].reverse().map((pending, idx) => (
                   <div key={idx} className="modal-action-item">
                     {pending.assignee && (
-                      <span className="task-assignee-avatar" title={`Assigned to ${pending.assignee}`}>
-                        {renderAvatar(pending.assignee, people, 20)}
+                      <span className="task-assignee-tag" title={`Assigned to ${pending.assignee}`}>
+                        @{pending.assignee}
                       </span>
                     )}
                     <span className="action-text">{pending.text}</span>

@@ -1,5 +1,8 @@
-import React, { useRef, useState } from 'react';
-import { findMentionQuery, matchPeople, applyMention } from './taskAssign';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { findMentionQuery, matchPeople, applyMention, mentionListPosition } from './taskAssign';
+
+const ROW_HEIGHT = 32; // px per team member in the list, for flip-above sizing
 
 // A task text input with "@" assignment: typing "@" (at the start or after a
 // space) opens a list of team members; ↑/↓ + Enter/Tab or a click picks one,
@@ -29,6 +32,30 @@ function AssigneeInput({
 
   const matches = mention ? matchPeople(people, mention.query) : [];
   const listOpen = mention && matches.length > 0;
+
+  // The list is portalled to <body> and positioned against the input -
+  // the add-task boxes live inside scrolling containers (card modal's
+  // Next Actions column, the board's card lists) that clipped it when it
+  // was a plain absolutely-positioned child. Re-placed on scroll/resize.
+  const [listPos, setListPos] = useState(null);
+  useLayoutEffect(() => {
+    if (!listOpen) return undefined;
+    const place = () => {
+      if (!inputRef.current) return;
+      setListPos(mentionListPosition(
+        inputRef.current.getBoundingClientRect(),
+        window.innerHeight,
+        matches.length * ROW_HEIGHT + 8
+      ));
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [listOpen, matches.length]);
 
   const updateMention = (text, caret) => {
     const found = findMentionQuery(text, caret);
@@ -121,8 +148,8 @@ function AssigneeInput({
         }}
         onClick={(e) => e.stopPropagation()}
       />
-      {listOpen && (
-        <ul className="assignee-mention-list" role="listbox">
+      {listOpen && listPos && createPortal(
+        <ul className="assignee-mention-list" role="listbox" style={{ position: 'fixed', ...listPos }}>
           {matches.map((name, idx) => (
             <li
               key={name}
@@ -140,7 +167,8 @@ function AssigneeInput({
               <span>{name}</span>
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body
       )}
     </div>
   );

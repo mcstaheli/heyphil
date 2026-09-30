@@ -1528,10 +1528,6 @@ body {
 
 .assignee-chip .avatar-initials,
 .assignee-chip img,
-.task-assignee-avatar .avatar-initials,
-.task-assignee-avatar img,
-.task-assignee-btn .avatar-initials,
-.task-assignee-btn img,
 .assignee-mention-list .avatar-initials,
 .assignee-mention-list img {
   border-width: 1px !important;
@@ -1549,12 +1545,12 @@ body {
 }
 
 .assignee-mention-list {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 20;
-  min-width: 180px;
-  margin: 4px 0 0;
+  /* position/left/top-or-bottom come from AssigneeInput (fixed, portalled
+     to <body>); above the card modal (1000) and OrgCharts overlay (10000) */
+  z-index: 10500;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
   padding: 4px 0;
   list-style: none;
   background: white;
@@ -1576,32 +1572,51 @@ body {
   background: #e8f0fe;
 }
 
-/* Assignee avatar at the start of a task (board card + modal list) */
-.task-assignee-avatar {
-  display: inline-flex;
+/* Assignee at the start of a task (board card, modal list): a readable
+   "@Name" tag - the tiny avatar alone wasn't enough to tell who it was. */
+.task-assignee-tag {
+  display: inline-block;
   flex-shrink: 0;
-  margin-right: 4px;
+  max-width: 90px;
+  margin-right: 6px;
+  padding: 1px 6px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #e8f0fe;
+  color: #1a3d8f;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
+/* In the card modal the tag is a button (click to reassign); unassigned
+   tasks show a faint dashed "@". */
 .task-assignee-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  margin-right: 4px;
-  padding: 0;
+  max-width: 110px;
+  margin-right: 6px;
+  padding: 1px 7px;
+  overflow: hidden;
   border: 1px dashed #c5cad6;
-  border-radius: 50%;
+  border-radius: 10px;
   background: none;
   color: #9aa3b5;
-  font-size: 12px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .task-assignee-btn.assigned {
-  border: none;
+  border: 1px solid transparent;
+  background: #e8f0fe;
+  color: #1a3d8f;
 }
 
 .task-assignee-btn:hover {

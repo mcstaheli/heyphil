@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findMentionQuery, matchPeople, applyMention } from '../../client/src/taskAssign.js';
+import { findMentionQuery, matchPeople, applyMention, mentionListPosition } from '../../client/src/taskAssign.js';
 import { groupReminderRecipients } from '../../server/reminder-recipients.js';
 
 const PEOPLE = ['Chad', 'Greg', 'Tracy', 'Scott', 'Brett Jones'];
@@ -93,4 +93,13 @@ test('groupReminderRecipients: unowned projects still notify their assignees', (
   const projects = [{ title: 'Orphan', owner: null, tasks: [task(1, 'Do it', { assignee: 'Greg' })] }];
   const greg = groupReminderRecipients(projects, people).recipients.find((r) => r.name === 'Greg');
   assert.deepEqual(greg.projects.map((p) => [p.title, p.role, p.lead]), [['Orphan', 'assigned', null]]);
+});
+
+test('mentionListPosition: below the input when it fits, flips above when it would run off-screen', () => {
+  const rect = { left: 100, top: 200, bottom: 230, width: 300 };
+  // plenty of room below
+  assert.deepEqual(mentionListPosition(rect, 800, 150), { left: 100, top: 234, minWidth: 300 });
+  // input near the bottom of the window (e.g. the card modal's add box) -> above
+  const low = { left: 100, top: 700, bottom: 730, width: 300 };
+  assert.deepEqual(mentionListPosition(low, 800, 150), { left: 100, bottom: 104, minWidth: 300 });
 });
