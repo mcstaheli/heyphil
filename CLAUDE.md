@@ -51,6 +51,7 @@ Columns (`server/improvements-db.js`'s `IMPROVEMENT_COLUMNS`): `intake`, `triage
 - Before pushing: make sure it compiles (`cd client && CI=false npx react-scripts build`) and `npm test` passes.
 - After every push: wait for the Railway deploy to finish, confirm it succeeded, check the deploy/runtime logs for errors, and confirm the production sign-in page loads. If anything fails, stop and report it immediately - don't push further fixes without saying so first.
 - Any database schema change, migration, or script that modifies existing data: stop and get explicit approval before running it - there is only one live database.
+  - Exception: moving an Improvements card between columns and setting its triage note / commit link (`updateImprovement` status, kind, classificationNote, prUrl) is part of "triage" / "implement feature N" and doesn't need separate approval.
 - Finish with one line saying what to click on in production to confirm the change.
 - If a change touches more than two files, or the approach is uncertain, plan first and get approval before editing.
 - Write a failing test that reproduces a bug before fixing it, when the bug is testable.

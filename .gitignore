@@ -14,3 +14,6 @@ test
 
 # Auto-fix workflow scratch state (ephemeral per CI run - never meant to be committed)
 .auto-fix-state.json
+
+# Migration backups hold copies of live data (e.g. project notes) - keep them local
+server/migrations/backups/*.json

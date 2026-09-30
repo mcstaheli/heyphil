@@ -333,7 +333,7 @@ function OriginationBoard({ user, studioMode = false }) {
   const navigate = useNavigate();
   const [cards, setCards] = useState([]);
   const [people, setPeople] = useState({});
-  const [_ownerColors, setOwnerColors] = useState({});
+  const [, setOwnerColors] = useState({});
   const [projectTypeColors, setProjectTypeColors] = useState({});
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -405,8 +405,11 @@ function OriginationBoard({ user, studioMode = false }) {
     ? allColumns.filter(col => col.section === 'studio')
     : allColumns.filter(col => col.section !== 'studio');
 
+  // Initial load on mount only - loadBoard isn't memoized, so listing it
+  // as a dependency would re-run this every render.
   useEffect(() => {
     loadBoard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
   // Recalculate metrics based on filtered cards (exclude every pre/post
@@ -2099,7 +2102,6 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const [addingLog, setAddingLog] = useState(false);
   const [editingActionId, setEditingActionId] = useState(null);
   const [editingActionText, setEditingActionText] = useState('');
-  const [showActivity, setShowActivity] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   
   // Memoize sorted lists to prevent recomputing on every render
