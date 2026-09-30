@@ -402,6 +402,7 @@ function OriginationBoard({ user, studioMode = false }) {
   const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // taskKey()s mid-"just checked off" flash
   const [editingCardActionId, setEditingCardActionId] = useState(null); // taskKey() of the task being text-edited inline on a card face
   const [editingCardActionText, setEditingCardActionText] = useState('');
+  const [editingCardActionAssignee, setEditingCardActionAssignee] = useState(null); // "@" assignee while editing a task inline
   const [sendingReminders, setSendingReminders] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderPreview, setReminderPreview] = useState(null); // { leads: [{name,email,projectCount,itemCount}], skipped }
@@ -1707,30 +1708,37 @@ function OriginationBoard({ user, studioMode = false }) {
                                 toggleActionStar(action.id, !action.starred, action.cardId);
                               }}
                             >{action.starred ? '★' : '☆'}</span>
-                            {action.assignee && (
+                            {action.assignee && editingCardActionId !== taskKey(card.id, action.id) && (
                               <span className="task-assignee-tag" title={`Assigned to ${action.assignee}`}>
                                 @{action.assignee}
                               </span>
                             )}
                             {editingCardActionId === taskKey(card.id, action.id) ? (
-                              <input
-                                type="text"
+                              <AssigneeInput
+                                autoFocus
+                                className="task-edit-input"
                                 value={editingCardActionText}
-                                onChange={(e) => setEditingCardActionText(e.target.value)}
+                                onChange={setEditingCardActionText}
+                                assignee={editingCardActionAssignee}
+                                onAssigneeChange={setEditingCardActionAssignee}
+                                people={teamMembers}
+                                renderAvatar={(name, size) => renderAvatar(name, people, size)}
+                                // Saves on blur (Enter just blurs), same as before "@" editing
+                                onSubmit={(input) => input.blur()}
                                 onBlur={() => {
                                   if (editingCardActionText.trim() && editingCardActionText !== action.text) {
                                     updateAction(action.id, editingCardActionText.trim(), action.cardId);
                                   }
+                                  if ((editingCardActionAssignee || null) !== (action.assignee || null)) {
+                                    setActionAssignee(action.id, action.cardId, editingCardActionAssignee || null);
+                                  }
                                   setEditingCardActionId(null);
                                   setEditingCardActionText('');
+                                  setEditingCardActionAssignee(null);
                                 }}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') { e.target.blur(); }
-                                  if (e.key === 'Escape') { setEditingCardActionId(null); setEditingCardActionText(''); }
+                                  if (e.key === 'Escape') { setEditingCardActionId(null); setEditingCardActionText(''); setEditingCardActionAssignee(null); }
                                 }}
-                                autoFocus
-                                onClick={(e) => e.stopPropagation()}
-                                style={{ flex: 1, padding: '2px 4px', border: '1px solid #2196f3' }}
                               />
                             ) : (
                               <span
@@ -1739,6 +1747,7 @@ function OriginationBoard({ user, studioMode = false }) {
                                   e.stopPropagation();
                                   setEditingCardActionId(taskKey(card.id, action.id));
                                   setEditingCardActionText(action.text);
+                                  setEditingCardActionAssignee(action.assignee || null);
                                 }}
                               >{action.text}</span>
                             )}
@@ -2204,6 +2213,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const currentUserName = noteAuthorName(currentUser);
   const [editingActionId, setEditingActionId] = useState(null);
   const [editingActionText, setEditingActionText] = useState('');
+  const [editingActionAssignee, setEditingActionAssignee] = useState(null); // "@" assignee while editing a task
   const [editingTitle, setEditingTitle] = useState(false);
   
   // Memoize sorted lists to prevent recomputing on every render
@@ -2510,7 +2520,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                         }
                       }}
                     >{action.starred ? '★' : '☆'}</span>
-                    {onSetActionAssignee && (
+                    {onSetActionAssignee && editingActionId !== action.id && (
                       assigningActionId === action.id ? (
                         <select
                           className="task-assignee-select"
@@ -2543,29 +2553,35 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                       )
                     )}
                     {editingActionId === action.id ? (
-                      <input
-                        type="text"
+                      <AssigneeInput
+                        autoFocus
+                        className="task-edit-input"
                         value={editingActionText}
-                        onChange={(e) => setEditingActionText(e.target.value)}
+                        onChange={setEditingActionText}
+                        assignee={editingActionAssignee}
+                        onAssigneeChange={setEditingActionAssignee}
+                        people={assignablePeople}
+                        renderAvatar={(name, size) => renderAvatar(name, people, size)}
+                        // Saves on blur (Enter just blurs), same as before "@" editing
+                        onSubmit={(input) => input.blur()}
                         onBlur={() => {
                           if (editingActionText.trim() && editingActionText !== action.text) {
                             onUpdateAction(action.id, editingActionText.trim(), action.cardId);
                           }
+                          if (onSetActionAssignee && (editingActionAssignee || null) !== (action.assignee || null)) {
+                            onSetActionAssignee(action.id, action.cardId, editingActionAssignee || null);
+                          }
                           setEditingActionId(null);
                           setEditingActionText('');
+                          setEditingActionAssignee(null);
                         }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.target.blur();
-                          }
                           if (e.key === 'Escape') {
                             setEditingActionId(null);
                             setEditingActionText('');
+                            setEditingActionAssignee(null);
                           }
                         }}
-                        autoFocus
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ flex: 1, padding: '4px', border: '1px solid #2196f3' }}
                       />
                     ) : (
                       <span 
@@ -2574,6 +2590,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                           e.stopPropagation();
                           setEditingActionId(action.id);
                           setEditingActionText(action.text);
+                          setEditingActionAssignee(action.assignee || null);
                         }}
                         style={{ cursor: 'text' }}
                       >

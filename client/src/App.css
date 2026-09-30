@@ -2261,3 +2261,13 @@ body {
   opacity: 1;
   background: rgba(0, 0, 0, 0.06);
 }
+
+/* Editing a task in place (board card / card modal) - the "@" input keeps
+   the old inline edit look */
+.task-edit-input input {
+  padding: 2px 4px;
+  border: 1px solid #2196f3;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: inherit;
+}

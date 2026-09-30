@@ -9,9 +9,10 @@ const ROW_HEIGHT = 32; // px per team member in the list, for flip-above sizing
 // which assigns the task to them and removes the "@name" text. The chosen
 // assignee shows as a chip (× to clear) in front of the input.
 //
-// Used by the board's quick-add box and CardModal's "Add a next action" box.
-// Enter with the list closed calls onSubmit; every other key (e.g. Escape
-// with the list closed) goes to the caller's onKeyDown.
+// Used by every add-task box and both edit-task boxes (board card inline
+// edit, card modal). Enter with the list closed calls onSubmit(inputElement)
+// - the edit boxes use that to blur, since they save on blur; every other
+// key (e.g. Escape with the list closed) goes to the caller's onKeyDown.
 function AssigneeInput({
   value,
   onChange,
@@ -104,7 +105,7 @@ function AssigneeInput({
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (onSubmit) onSubmit();
+      if (onSubmit) onSubmit(e.currentTarget);
       return;
     }
     if (onKeyDown) onKeyDown(e);
