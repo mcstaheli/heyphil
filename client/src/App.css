@@ -2226,3 +2226,23 @@ body {
 .kanban-card {
   padding-left: 12px; /* Reduce from 16px to account for border */
 }
+
+/* Quick-open Project Folder / Working Model icons on a board card (the
+   full Resources row lives on Project Detail) */
+.card-quick-links {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.card-quick-links a {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 4px;
+  opacity: 0.8;
+}
+
+.card-quick-links a:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}

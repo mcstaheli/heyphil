@@ -676,22 +676,65 @@ export async function deleteTask(projectId, taskId) {
 
 // ========== LINKS (JSONB in projects.links) ==========
 
-export async function addLink(projectId, title, url) {
-  // Same bare-parameter bug as addTask - broke adding ANY new link to ANY
-  // card (verified directly before this fix).
+// kind: a Project Resources kind (resource-rules.js) - 'folder', 'model',
+// 'teaser', 'om', 'deck' or 'other'. Runs under a row lock so two adds
+// landing together can't both pass the one-folder/one-model check or pick
+// the same id (the old MAX(id)+1 subquery could). Returns the new link.
+export class DuplicateResourceError extends Error {}
+
+export async function addLink(projectId, title, url, kind = 'other', singleKinds = []) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query('SELECT links FROM projects WHERE id = $1 FOR UPDATE', [projectId]);
+    if (!current.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    const links = current.rows[0].links || [];
+    if (singleKinds.includes(kind) && links.some((l) => l.kind === kind)) {
+      await client.query('ROLLBACK');
+      throw new DuplicateResourceError('This project already has one - replace it instead.');
+    }
+    const link = {
+      id: links.reduce((max, l) => Math.max(max, Number(l.id) || 0), 0) + 1,
+      title,
+      url,
+      kind
+    };
+    await client.query(
+      `UPDATE projects SET links = COALESCE(links, '[]'::jsonb) || jsonb_build_array($2::jsonb) WHERE id = $1`,
+      [projectId, JSON.stringify(link)]
+    );
+    await client.query('COMMIT');
+    return link;
+  } catch (error) {
+    if (!(error instanceof DuplicateResourceError)) await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Replace a resource's URL/title in place (keeps its id and kind). COALESCE
+// guards jsonb_agg-over-nothing -> NULL, as in deleteLink. Returns the
+// updated link, or null if it no longer exists.
+export async function updateLink(projectId, linkId, title, url) {
   const result = await pool.query(`
     UPDATE projects
-    SET links = links || jsonb_build_array(
-      jsonb_build_object(
-        'id', (SELECT COALESCE(MAX((link->>'id')::int), 0) + 1 FROM projects, jsonb_array_elements(links) link WHERE id = $1),
-        'title', $2::text,
-        'url', $3::text
+    SET links = COALESCE((
+      SELECT jsonb_agg(
+        CASE WHEN (link->>'id')::int = $2
+          THEN link || jsonb_build_object('title', $3::text, 'url', $4::text)
+          ELSE link END
       )
-    )
+      FROM jsonb_array_elements(links) link
+    ), '[]'::jsonb)
     WHERE id = $1
     RETURNING links
-  `, [projectId, title, url]);
-  return result.rows[0];
+  `, [projectId, linkId, title, url]);
+  const links = result.rows[0]?.links || [];
+  return links.find((l) => Number(l.id) === linkId) || null;
 }
 
 export async function deleteLink(projectId, linkId) {

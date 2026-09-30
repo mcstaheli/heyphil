@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import './ProjectDetail.css';
+import ProjectResources from './ProjectResources';
 import LedgerModule, { BUDGET_LEDGER_CONFIG, VALUE_LEDGER_CONFIG } from './LedgerModule';
 import TimelineModule from './TimelineModule';
 
@@ -48,6 +49,21 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
     // in-progress Budget edit exactly like the broadcast handler would.
     socketRef.current.on('connect', () => {
       syncTimelineFromServer();
+    });
+
+    // Resources added/replaced/removed by someone else (or from another tab)
+    const applyLinks = (cardId, update) => {
+      if (cardId !== projectId) return;
+      setProject((prev) => (prev ? { ...prev, links: update(prev.links || []) } : prev));
+    };
+    socketRef.current.on('link:created', ({ cardId, linkId, title, url, kind }) => {
+      applyLinks(cardId, (links) => (links.some((l) => l.id === linkId) ? links : [...links, { id: linkId, title, url, kind }]));
+    });
+    socketRef.current.on('link:updated', ({ cardId, link }) => {
+      applyLinks(cardId, (links) => links.map((l) => (l.id === link.id ? link : l)));
+    });
+    socketRef.current.on('link:deleted', ({ cardId, linkId }) => {
+      applyLinks(cardId, (links) => links.filter((l) => l.id !== linkId));
     });
 
     socketRef.current.on('project:updated', ({ project: updated }) => {
@@ -117,7 +133,10 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
         budget: proj.budget || [],
         budgetLocks: proj.budget_locks || [],
         timeline: proj.timeline || [],
-        timelineLocks: proj.timeline_locks || []
+        timelineLocks: proj.timeline_locks || [],
+        // Project Resources (Project Folder, Working Model, Teaser...) -
+        // the project's typed links, see resources.js
+        links: proj.links || []
       });
     } catch (error) {
       console.error('Failed to fetch project:', error);
@@ -197,6 +216,12 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
           )}
         </div>
       </div>
+
+        <ProjectResources
+          projectId={project.id}
+          links={project.links}
+          onLinksChange={(update) => setProject((prev) => ({ ...prev, links: update(prev.links || []) }))}
+        />
 
         {/* Dashboard Overview */}
         <div className="project-dashboard">

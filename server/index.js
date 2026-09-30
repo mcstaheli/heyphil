@@ -21,6 +21,7 @@ import { getTypingStatus } from './typing-status.js';
 import { JWT_SECRET, requireAuth } from './auth-middleware.js';
 import { canModifyNote, noteAuthorName } from './note-permissions.js';
 import { deriveGridInputs } from './grid-inputs.js';
+import { RESOURCE_KIND_IDS, SINGLE_RESOURCE_KINDS, validateResourceUrl } from './resource-rules.js';
 import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin } from './permissions.js';
 import { sendStandupReminders, previewStandupReminders } from './reminders.js';
 import cashflowRouter from './routes/cashflow.js';
@@ -1571,7 +1572,11 @@ app.delete('/api/origination/action/:id', requireAuth, async (req, res) => {
 // Add link (now adds to JSONB links)
 app.post('/api/origination/link', requireAuth, async (req, res) => {
   try {
-    const { cardId, title, url } = req.body;
+    // Links are Project Resources now (Project Detail's Resources row) -
+    // each has a kind; see server/resource-rules.js.
+    const { cardId, title } = req.body;
+    const url = (req.body.url || '').trim();
+    const kind = req.body.kind || 'other';
     
     // Input validation
     if (!cardId) {
@@ -1580,38 +1585,72 @@ app.post('/api/origination/link', requireAuth, async (req, res) => {
     if (!title || title.trim().length === 0) {
       return res.status(400).json({ error: 'Link title is required' });
     }
-    if (!url || url.trim().length === 0) {
-      return res.status(400).json({ error: 'URL is required' });
-    }
     if (title.length > 255) {
       return res.status(400).json({ error: 'Link title must be 255 characters or less' });
     }
-    // Basic URL validation
-    try {
-      new URL(url);
-    } catch (e) {
-      return res.status(400).json({ error: 'Invalid URL format' });
+    const urlError = validateResourceUrl(url);
+    if (urlError) {
+      return res.status(400).json({ error: urlError });
     }
-    
-    // Add link to project
-    await boardDb.addLink(cardId, title, url);
-    
-    // Get the new link ID
-    const project = await boardDb.getProjectById(cardId);
-    const newLink = project.links[project.links.length - 1];
+    if (!RESOURCE_KIND_IDS.includes(kind)) {
+      return res.status(400).json({ error: `Unknown resource type "${kind}"` });
+    }
+    // Add link to project (the one-folder/one-model check happens inside,
+    // under a row lock)
+    let newLink;
+    try {
+      newLink = await boardDb.addLink(cardId, title.trim(), url, kind, SINGLE_RESOURCE_KINDS);
+    } catch (error) {
+      if (error instanceof boardDb.DuplicateResourceError) {
+        return res.status(409).json({ error: error.message });
+      }
+      throw error;
+    }
+    if (!newLink) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
     
     // Broadcast to all clients
     broadcastChange('link:created', {
       linkId: newLink.id,
       cardId,
-      title,
-      url
+      title: newLink.title,
+      url,
+      kind
     });
     
     res.json({ success: true, link: newLink });
   } catch (error) {
     console.error('Failed to add link:', error);
     res.status(500).json({ error: 'Failed to add link' });
+  }
+});
+
+// Replace a resource's link (and optionally its label) in place.
+app.put('/api/origination/link/:id', requireAuth, async (req, res) => {
+  try {
+    const linkId = parseInt(req.params.id, 10);
+    const { cardId, title } = req.body;
+    const url = (req.body.url || '').trim();
+    if (!cardId || !Number.isInteger(linkId)) {
+      return res.status(400).json({ error: 'Project ID and link ID are required' });
+    }
+    if (!title || !title.trim() || title.length > 255) {
+      return res.status(400).json({ error: 'Link title is required (255 characters max)' });
+    }
+    const urlError = validateResourceUrl(url);
+    if (urlError) {
+      return res.status(400).json({ error: urlError });
+    }
+    const link = await boardDb.updateLink(cardId, linkId, title.trim(), url);
+    if (!link) {
+      return res.status(404).json({ error: 'That link no longer exists' });
+    }
+    broadcastChange('link:updated', { cardId, link });
+    res.json({ success: true, link });
+  } catch (error) {
+    console.error('Failed to update link:', error);
+    res.status(500).json({ error: 'Failed to update link' });
   }
 });
 

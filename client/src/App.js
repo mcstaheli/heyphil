@@ -19,6 +19,8 @@ import { formatCompactMoney } from './formatMoney';
 import { isNoteEntry, canModifyNote, noteAuthorName } from './activityLog';
 import { deriveGridInputs } from './strategyGridMath';
 import AssigneeInput from './AssigneeInput';
+import { ResourceIcon } from './ProjectResources';
+import { detectSource, kindLabel, quickOpenLinks } from './resources';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -766,17 +768,18 @@ function OriginationBoard({ user, studioMode = false }) {
     });
     
     // Listen for link changes
-    socketRef.current.on('link:created', ({ linkId, cardId, title, url }) => {
+    socketRef.current.on('link:created', ({ linkId, cardId, title, url, kind }) => {
       console.log('📨 Link created:', linkId, 'for card:', cardId);
       setCards(prevCards => prevCards.map(c => {
         if (c.id === cardId) {
           return {
             ...c,
-            links: [...(c.links || []), {
+            links: [...(c.links || []).filter(l => l.id !== linkId), {
               id: linkId,
               cardId,
               title,
-              url
+              url,
+              kind
             }]
           };
         }
@@ -784,6 +787,14 @@ function OriginationBoard({ user, studioMode = false }) {
       }));
     });
     
+    socketRef.current.on('link:updated', ({ cardId, link }) => {
+      setCards(prevCards => prevCards.map(c => (
+        c.id === cardId
+          ? { ...c, links: (c.links || []).map(l => (l.id === link.id ? { ...link, cardId } : l)) }
+          : c
+      )));
+    });
+
     socketRef.current.on('link:deleted', ({ linkId, cardId }) => {
       console.log('📨 Link deleted:', linkId);
       setCards(prevCards => prevCards.map(c => {
@@ -1233,37 +1244,6 @@ function OriginationBoard({ user, studioMode = false }) {
     }
   };
 
-  const addLink = async (cardId, title, url) => {
-    try {
-      const response = await apiFetch(`${API_BASE_URL}/api/origination/link`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ cardId, title, url })
-      });
-      
-      if (response.ok) {
-        // State will be updated via Socket.io event
-      }
-    } catch (error) {
-      console.error('Failed to add link:', error);
-    }
-  };
-
-  const deleteLink = async (linkId, cardId) => {
-    try {
-      const response = await apiFetch(`${API_BASE_URL}/api/origination/link/${linkId}?cardId=${cardId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-
-      if (response.ok) {
-        // State will be updated via Socket.io event
-      }
-    } catch (error) {
-      console.error('Failed to delete link:', error);
-    }
-  };
-
   const addLogEntry = async (cardId, details) => {
     const response = await apiFetch(`${API_BASE_URL}/api/origination/log`, {
       method: 'POST',
@@ -1636,6 +1616,22 @@ function OriginationBoard({ user, studioMode = false }) {
                       )}
                       <div className="card-content">
                         <h4>{card.title}</h4>
+                        {quickOpenLinks(card.links).length > 0 && (
+                          <div className="card-quick-links">
+                            {quickOpenLinks(card.links).map((link) => (
+                              <a
+                                key={link.id}
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={`Open ${kindLabel(link.kind)}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <ResourceIcon type={detectSource(link.url).type} size={16} />
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                     {!isPrePost && (
@@ -1773,8 +1769,6 @@ function OriginationBoard({ user, studioMode = false }) {
           onToggleActionStar={toggleActionStar}
           onAddAction={addAction}
           onUpdateAction={updateAction}
-          onAddLink={addLink}
-          onDeleteLink={deleteLink}
           onAddLog={addLogEntry}
           projectTypeColors={projectTypeColors}
           people={people}
@@ -1817,8 +1811,6 @@ function OriginationBoard({ user, studioMode = false }) {
           onDeleteAction={deleteAction}
           onSetActionAssignee={setActionAssignee}
           teamMembers={teamMembers}
-          onAddLink={addLink}
-          onDeleteLink={deleteLink}
           onAddLog={addLogEntry}
           onUpdateLog={updateLogEntry}
           onDeleteLog={deleteLogEntry}
@@ -2184,7 +2176,7 @@ function HandoffPanel({ card, sortedPeople, onHandoffAction }) {
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onSetActionAssignee, teamMembers, onAddLink, onDeleteLink, onAddLog, onUpdateLog, onDeleteLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onHandoffAction }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onSetActionAssignee, teamMembers, onAddLog, onUpdateLog, onDeleteLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onHandoffAction }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -2204,8 +2196,6 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const [newActionAssignee, setNewActionAssignee] = useState(null); // from the "@" picker
   const [assigningActionId, setAssigningActionId] = useState(null); // task whose reassign picker is open
   const [pendingActions, setPendingActions] = useState([]); // new card only: [{ text, assignee }]
-  const [newLinkTitle, setNewLinkTitle] = useState('');
-  const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLogText, setNewLogText] = useState('');
   const [addingLog, setAddingLog] = useState(false);
   const [editingLogId, setEditingLogId] = useState(null);
@@ -2259,17 +2249,6 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
       setPendingActions([...pendingActions, { text: newActionText.trim(), assignee: newActionAssignee }]);
       setNewActionText('');
       setNewActionAssignee(null);
-    }
-  };
-
-  const handleAddLink = async () => {
-    if (!newLinkTitle.trim() || !newLinkUrl.trim()) return;
-
-    if (card && onAddLink) {
-      // Existing card - add directly
-      await onAddLink(card.id, newLinkTitle.trim(), newLinkUrl.trim());
-      setNewLinkTitle('');
-      setNewLinkUrl('');
     }
   };
 
@@ -2498,74 +2477,9 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               duplicate them. formData still carries these fields through
               unchanged on save (nothing here mutates them), so View
               Project Detail is the only way to edit them now. */}
-          <div className="form-group">
-            <label>Links</label>
-            {card && card.links && card.links.length > 0 && (
-              <div style={{ marginBottom: '8px' }}>
-                {card.links.map((link) => (
-                  <div key={link.id} style={{ display: 'flex', alignItems: 'center', marginBottom: '4px', gap: '8px' }}>
-                    <a 
-                      href={link.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      style={{ color: '#2196f3', textDecoration: 'none', flex: 1 }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      🔗 {link.title}
-                    </a>
-                    {onDeleteLink && (
-                      <button 
-                        type="button"
-                        className="btn-remove-action"
-                        onClick={() => {
-                          if (window.confirm('Delete this link?')) {
-                            onDeleteLink(link.id, link.cardId);
-                          }
-                        }}
-                        title="Delete link"
-                        style={{ padding: '2px 6px', fontSize: '14px' }}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {card && (
-              <div>
-                <input
-                  type="text"
-                  placeholder="Link title (e.g., SmartSheets)"
-                  value={newLinkTitle}
-                  onChange={(e) => setNewLinkTitle(e.target.value)}
-                  style={{ width: '100%', marginBottom: '4px' }}
-                />
-                <input
-                  type="url"
-                  placeholder="URL (https://...)"
-                  value={newLinkUrl}
-                  onChange={(e) => setNewLinkUrl(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddLink();
-                    }
-                  }}
-                  style={{ width: '100%', marginBottom: '4px' }}
-                />
-                <button 
-                  type="button" 
-                  className="btn-secondary"
-                  onClick={handleAddLink}
-                  disabled={!newLinkTitle.trim() || !newLinkUrl.trim()}
-                  style={{ width: '100%' }}
-                >
-                  + Add Link
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Links moved to Project Detail's Resources row (Project Folder,
+              Working Model, Teaser...) - board cards show quick-open icons
+              for the folder and model. */}
             </div>
             
             <div className="modal-right-column">
