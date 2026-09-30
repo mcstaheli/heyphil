@@ -794,6 +794,7 @@ export async function getLogsByProjectId(projectId) {
     [projectId]
   );
   return result.rows.map(row => ({
+    id: row.id,
     timestamp: row.timestamp,
     action: row.action,
     user: row.user_name,
@@ -940,6 +941,7 @@ export async function getBoardData() {
     if (projectId) {
       if (!logsByProject[projectId]) logsByProject[projectId] = [];
       logsByProject[projectId].push({
+        id: log.id,
         timestamp: log.timestamp,
         action: log.action,
         user: log.user_name,

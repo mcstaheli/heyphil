@@ -769,6 +769,16 @@ function OriginationBoard({ user, studioMode = false }) {
         return c;
       }));
     });
+
+    socketRef.current.on('log:created', ({ cardId, log }) => {
+      console.log('📨 Log entry created for card:', cardId);
+      setCards(prevCards => prevCards.map(c => {
+        if (c.id === cardId) {
+          return { ...c, log: [log, ...(c.log || [])] };
+        }
+        return c;
+      }));
+    });
     
     // Cleanup on unmount
     return () => {
@@ -1199,13 +1209,24 @@ function OriginationBoard({ user, studioMode = false }) {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
-      
+
       if (response.ok) {
         // State will be updated via Socket.io event
       }
     } catch (error) {
       console.error('Failed to delete link:', error);
     }
+  };
+
+  const addLogEntry = async (cardId, details) => {
+    const response = await apiFetch(`${API_BASE_URL}/api/origination/log`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ cardId, details })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to add note');
+    // State will be updated via Socket.io event (log:created)
   };
 
   const loadDeletedCards = async () => {
@@ -1662,6 +1683,7 @@ function OriginationBoard({ user, studioMode = false }) {
           onUpdateAction={updateAction}
           onAddLink={addLink}
           onDeleteLink={deleteLink}
+          onAddLog={addLogEntry}
           projectTypeColors={projectTypeColors}
           people={people}
           studioMode={studioMode}
@@ -1703,6 +1725,7 @@ function OriginationBoard({ user, studioMode = false }) {
           onDeleteAction={deleteAction}
           onAddLink={addLink}
           onDeleteLink={deleteLink}
+          onAddLog={addLogEntry}
           projectTypeColors={projectTypeColors}
           people={people}
           studioMode={studioMode}
@@ -2052,7 +2075,7 @@ function HandoffPanel({ card, sortedPeople, onUpdateHandoff, onAcceptHandoff }) 
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, projectTypeColors, people, studioMode, onViewProject, currentUser, onUpdateHandoff, onAcceptHandoff }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, onAddLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onUpdateHandoff, onAcceptHandoff }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -2072,6 +2095,8 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const [pendingActions, setPendingActions] = useState([]);
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [newLogText, setNewLogText] = useState('');
+  const [addingLog, setAddingLog] = useState(false);
   const [editingActionId, setEditingActionId] = useState(null);
   const [editingActionText, setEditingActionText] = useState('');
   const [showActivity, setShowActivity] = useState(false);
@@ -2116,12 +2141,25 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
 
   const handleAddLink = async () => {
     if (!newLinkTitle.trim() || !newLinkUrl.trim()) return;
-    
+
     if (card && onAddLink) {
       // Existing card - add directly
       await onAddLink(card.id, newLinkTitle.trim(), newLinkUrl.trim());
       setNewLinkTitle('');
       setNewLinkUrl('');
+    }
+  };
+
+  const handleAddLog = async () => {
+    if (!newLogText.trim() || !card || !onAddLog) return;
+    setAddingLog(true);
+    try {
+      await onAddLog(card.id, newLogText.trim());
+      setNewLogText('');
+    } catch (err) {
+      window.alert(`Failed to add note: ${err.message}`);
+    } finally {
+      setAddingLog(false);
     }
   };
 
@@ -2311,6 +2349,42 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               rows="2"
               placeholder="Additional notes..."
             />
+          </div>
+
+          <div className="form-group">
+            <label>Activity Log</label>
+            {card && card.log && card.log.length > 0 && (
+              <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '8px' }}>
+                {card.log.map((entry) => (
+                  <div key={entry.id} style={{ padding: '6px 0', borderBottom: '1px solid #eee', fontSize: '13px' }}>
+                    <div style={{ color: '#888', fontSize: '11px' }}>
+                      {entry.action}{entry.user ? ` by ${entry.user}` : ''} · {new Date(entry.timestamp).toLocaleString()}
+                    </div>
+                    <div>{entry.details}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {card && (
+              <div>
+                <textarea
+                  value={newLogText}
+                  onChange={(e) => setNewLogText(e.target.value)}
+                  rows="2"
+                  placeholder="Add a note (e.g. called Brian, he said...)"
+                  style={{ width: '100%', marginBottom: '4px' }}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleAddLog}
+                  disabled={!newLogText.trim() || addingLog}
+                  style={{ width: '100%' }}
+                >
+                  {addingLog ? 'Adding...' : '+ Add Note'}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="form-group">

@@ -1567,6 +1567,36 @@ app.delete('/api/origination/link/:id', requireAuth, async (req, res) => {
   }
 });
 
+// Manual activity-log entry (a dated, free-text note - e.g. "called Brian,
+// he said X") - separate from the auto-generated entries addLog already
+// gets called with elsewhere (card moved, task added, etc.) and from the
+// single Notes textarea, which just holds one ever-growing blob.
+app.post('/api/origination/log', requireAuth, async (req, res) => {
+  try {
+    const { cardId, details } = req.body;
+
+    if (!cardId) {
+      return res.status(400).json({ error: 'Project ID is required' });
+    }
+    if (!details || !details.trim()) {
+      return res.status(400).json({ error: 'Note details are required' });
+    }
+
+    const userName = req.user.name || req.user.email;
+    await boardDb.addLog(cardId, 'Note', userName, details.trim());
+
+    const logs = await boardDb.getLogsByProjectId(cardId);
+    const newLog = logs[0]; // ORDER BY timestamp DESC - just-inserted entry is first
+
+    broadcastChange('log:created', { cardId, log: newLog });
+
+    res.json({ success: true, log: newLog });
+  } catch (error) {
+    console.error('Failed to add log entry:', error);
+    res.status(500).json({ error: 'Failed to add log entry' });
+  }
+});
+
 // Bulk update cards
 app.post('/api/origination/bulk-update', requireAuth, async (req, res) => {
   try {
