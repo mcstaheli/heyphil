@@ -2542,15 +2542,11 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
             </div>
             <div className="modal-activity-column">
               <h3>Activity Log</h3>
-          <div className="form-group">
-            <label>Notes</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              rows="2"
-              placeholder="Additional notes..."
-            />
-          </div>
+              {/* The old free-text Notes field was removed (Improvements #29) -
+                  migrations/006-notes-to-activity-log.js copied each card's
+                  notes into its log as a 'Notes (migrated)' entry. formData
+                  still carries notes through unchanged on save, so the
+                  projects.notes column isn't wiped. */}
           {card && (
             <div className="activity-log-list">
               {card.log && card.log.length > 0 ? card.log.map((entry) => (
@@ -2558,7 +2554,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                   <div style={{ color: '#888', fontSize: '11px' }}>
                     {entry.action}{entry.user ? ` by ${entry.user}` : ''} · {new Date(entry.timestamp).toLocaleString()}
                   </div>
-                  <div>{entry.details}</div>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{entry.details}</div>
                 </div>
               )) : (
                 <div style={{ color: '#999', fontSize: '13px' }}>No activity yet.</div>
