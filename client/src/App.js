@@ -196,6 +196,14 @@ const mapProjectToCard = (project) => ({
   links: (project.links || []).map(link => ({ ...link, cardId: project.id }))
 });
 
+// Task ids are only unique WITHIN a card (every card has a task #1), so
+// any board-level "which task" state has to key on card + task - keying on
+// the task id alone put task #1 on every card into edit mode at once, and
+// each one's blur then saved the typed text onto its own card.
+function taskKey(cardId, actionId) {
+  return `${cardId}:${actionId}`;
+}
+
 // Wrapper component for project detail route
 function ProjectDetailRoute({ user }) {
   const { projectId } = useParams();
@@ -389,8 +397,8 @@ function OriginationBoard({ user, studioMode = false }) {
   const [quickAddTaskFor, setQuickAddTaskFor] = useState(null); // card id whose inline "+" quick-add input is open
   const [quickAddTaskText, setQuickAddTaskText] = useState({}); // card id -> draft text
   const [quickAddAssignee, setQuickAddAssignee] = useState({}); // card id -> "@" assignee for that draft
-  const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // action ids mid-"just checked off" flash
-  const [editingCardActionId, setEditingCardActionId] = useState(null); // action id being text-edited inline on the card face
+  const [pendingCompleteIds, setPendingCompleteIds] = useState(() => new Set()); // taskKey()s mid-"just checked off" flash
+  const [editingCardActionId, setEditingCardActionId] = useState(null); // taskKey() of the task being text-edited inline on a card face
   const [editingCardActionText, setEditingCardActionText] = useState('');
   const [sendingReminders, setSendingReminders] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
@@ -1671,29 +1679,30 @@ function OriginationBoard({ user, studioMode = false }) {
                         />
                       </div>
                     )}
-                    {!isPrePost && card.actions && card.actions.filter(a => !a.completedOn || pendingCompleteIds.has(a.id)).length > 0 && (
+                    {!isPrePost && card.actions && card.actions.filter(a => !a.completedOn || pendingCompleteIds.has(taskKey(card.id, a.id))).length > 0 && (
                       <div className="card-actions-section">
-                        {sortByStarred(card.actions.filter(a => !a.completedOn || pendingCompleteIds.has(a.id))).slice(0, 3).map((action) => (
+                        {sortByStarred(card.actions.filter(a => !a.completedOn || pendingCompleteIds.has(taskKey(card.id, a.id)))).slice(0, 3).map((action) => (
                           <div key={action.id} className={`card-action-item ${action.starred ? 'starred' : ''}`} onClick={(e) => {
                             e.stopPropagation();
-                            if (pendingCompleteIds.has(action.id)) return;
+                            const key = taskKey(card.id, action.id);
+                            if (pendingCompleteIds.has(key)) return;
                             // Show the checkmark for a beat before the item
                             // actually disappears from this "pending" list -
                             // toggleAction alone updates real state (via the
                             // action:toggled socket event) almost instantly,
                             // which filtered the row out before the user
                             // ever saw it checked.
-                            setPendingCompleteIds(prev => new Set(prev).add(action.id));
+                            setPendingCompleteIds(prev => new Set(prev).add(key));
                             toggleAction(action.id, true, action.cardId, action.cardTitle);
                             setTimeout(() => {
                               setPendingCompleteIds(prev => {
                                 const next = new Set(prev);
-                                next.delete(action.id);
+                                next.delete(key);
                                 return next;
                               });
                             }, 600);
                           }}>
-                            <input type="checkbox" checked={pendingCompleteIds.has(action.id)} readOnly />
+                            <input type="checkbox" checked={pendingCompleteIds.has(taskKey(card.id, action.id))} readOnly />
                             <span
                               className="star-toggle"
                               title={action.starred ? 'Unstar' : 'Mark as do-or-die'}
@@ -1707,7 +1716,7 @@ function OriginationBoard({ user, studioMode = false }) {
                                 {renderAvatar(action.assignee, people, 18)}
                               </span>
                             )}
-                            {editingCardActionId === action.id ? (
+                            {editingCardActionId === taskKey(card.id, action.id) ? (
                               <input
                                 type="text"
                                 value={editingCardActionText}
@@ -1732,7 +1741,7 @@ function OriginationBoard({ user, studioMode = false }) {
                                 style={{ cursor: 'text' }}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setEditingCardActionId(action.id);
+                                  setEditingCardActionId(taskKey(card.id, action.id));
                                   setEditingCardActionText(action.text);
                                 }}
                               >{action.text}</span>
@@ -2452,7 +2461,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
           {!studioMode && card && onHandoffAction && (
             <HandoffPanel
               card={card}
-              sortedPeople={sortedPeople}
+              sortedPeople={assignablePeople}
               onHandoffAction={onHandoffAction}
             />
           )}
@@ -2463,7 +2472,9 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
             >
               <option value="">Unassigned</option>
-              {sortedPeople.map(person => (
+              {/* Full team list, not just people with a photo - plus the
+                  current owner, in case they're no longer on it. */}
+              {[...new Set([...assignablePeople, ...(formData.owner ? [formData.owner] : [])])].map(person => (
                 <option key={person} value={person}>{person}</option>
               ))}
             </select>
