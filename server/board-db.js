@@ -106,7 +106,7 @@ export async function createProject(project) {
     project.owner || null,
     project.notes || null,
     project.projectType || null,
-    project.annualValue || null,
+    null, // annual_value - no longer written (see updateProjectFields)
     project.targetClose || null,
     project.dateCreated || new Date(),
     project.budget ? JSON.stringify(project.budget) : null,
@@ -115,15 +115,8 @@ export async function createProject(project) {
     project.files ? JSON.stringify(project.files) : null,
     project.tasks ? JSON.stringify(project.tasks) : '[]',
     project.links ? JSON.stringify(project.links) : '[]',
-    // Both use an explicit null/undefined/'' check (not `|| null`) so an
-    // intentional 0 is stored as 0, not silently coerced to "never set" -
-    // and '' (an empty form field left untouched, since months-to-first-
-    // cash isn't required outside the origination/Handoff stages) can't
-    // reach the INTEGER column and crash the insert.
-    project.capitalCommitted !== undefined && project.capitalCommitted !== null && project.capitalCommitted !== ''
-      ? project.capitalCommitted : null,
-    project.monthsToFirstCash !== undefined && project.monthsToFirstCash !== null && project.monthsToFirstCash !== ''
-      ? project.monthsToFirstCash : null,
+    null, // capital_committed - no longer written (see updateProjectFields)
+    null, // months_to_first_cash - likewise
     initialHandoff ? JSON.stringify(initialHandoff) : null
   ]);
   return result.rows[0];
@@ -179,22 +172,16 @@ async function updateProjectWithStatusCheck(id, updates, newStatus) {
     // while sitting in Handoff re-sends the same status, which skips this)
     // always starts a fresh checklist and stamps enteredAt, the source of
     // the "how long has this card been sitting in Handoff" alarm - this
-    // unconditionally overrides any handoff value the caller sent, same
-    // reasoning as the months-to-first-cash override below: a drag-and-drop
-    // move (moveCard) spreads the ENTIRE card back at the server, including
-    // whatever handoff/monthsToFirstCash it already had, so "only fill in
+    // unconditionally overrides any handoff value the caller sent: a
+    // drag-and-drop move (moveCard) spreads the ENTIRE card back at the
+    // server, including whatever handoff it already had, so "only fill in
     // if the caller omitted it" would never actually fire for that path.
     if (newStatus === 'handoff' && currentRow?.status !== 'handoff') {
       updates = { ...updates, handoff: freshHandoff() };
     }
 
-    // Assets is "producing now" - months to first cash is always 0 there,
-    // not something to keep asking for. Unconditionally forced on entering
-    // Assets (see the handoff comment above for why "only if omitted"
-    // wouldn't reliably fire).
-    if (newStatus === 'assets' && currentRow?.status !== 'assets') {
-      updates = { ...updates, monthsToFirstCash: 0 };
-    }
+    // (Assets counting as 0 months to first cash is now handled by
+    // deriveGridInputs itself, so nothing to force here.)
 
     // Snapshot annual value / capital committed / months to first cash on
     // every stage change - same "append, never overwrite" pattern as
@@ -292,18 +279,12 @@ async function updateProjectFields(id, updates, client = pool) {
     fields.push(`project_type = $${paramCount++}`);
     values.push(updates.projectType);
   }
-  if (updates.annualValue !== undefined) {
-    fields.push(`annual_value = $${paramCount++}`);
-    values.push(updates.annualValue);
-  }
-  if (updates.capitalCommitted !== undefined) {
-    fields.push(`capital_committed = $${paramCount++}`);
-    values.push(updates.capitalCommitted);
-  }
-  if (updates.monthsToFirstCash !== undefined) {
-    fields.push(`months_to_first_cash = $${paramCount++}`);
-    values.push(updates.monthsToFirstCash);
-  }
+  // annual_value / capital_committed / months_to_first_cash are no longer
+  // written: the Strategy Grid, board totals and snapshots derive those
+  // numbers from Value/Budget/Timeline (grid-inputs.js), and the Deal
+  // Terms inputs that set them are gone. Cards (and older browser tabs)
+  // still send annualValue etc. back on every move/save, so ignoring them
+  // here is what stops a stale copy from being written back.
   if (updates.metricSnapshots !== undefined) {
     fields.push(`metric_snapshots = $${paramCount++}::jsonb`);
     values.push(JSON.stringify(updates.metricSnapshots));
