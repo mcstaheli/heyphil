@@ -16,7 +16,7 @@ import Layout from './Layout';
 import { summarizeLedger, computeTimelineMetrics } from './projectMetrics';
 import { PRE_POST_COLUMN_IDS } from './boardStages';
 import { formatCompactMoney } from './formatMoney';
-import { isNoteEntry } from './activityLog';
+import { isNoteEntry, canModifyNote, noteAuthorName } from './activityLog';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -783,6 +783,22 @@ function OriginationBoard({ user, studioMode = false }) {
         return c;
       }));
     });
+
+    socketRef.current.on('log:updated', ({ cardId, log }) => {
+      setCards(prevCards => prevCards.map(c => (
+        c.id === cardId
+          ? { ...c, log: (c.log || []).map(l => (l.id === log.id ? log : l)) }
+          : c
+      )));
+    });
+
+    socketRef.current.on('log:deleted', ({ cardId, logId }) => {
+      setCards(prevCards => prevCards.map(c => (
+        c.id === cardId
+          ? { ...c, log: (c.log || []).filter(l => l.id !== logId) }
+          : c
+      )));
+    });
     
     // Cleanup on unmount
     return () => {
@@ -1231,6 +1247,40 @@ function OriginationBoard({ user, studioMode = false }) {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Failed to add note');
     // State will be updated via Socket.io event (log:created)
+  };
+
+  const updateLogEntry = async (logId, details) => {
+    const response = await apiFetch(`${API_BASE_URL}/api/origination/log/${logId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ details })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to update note');
+    // Apply the server's copy now rather than waiting on the socket - if the
+    // socket has dropped, the edit would otherwise look lost. The
+    // log:updated broadcast that follows is an idempotent replace.
+    const { log } = result;
+    setCards(prevCards => prevCards.map(c => (
+      c.id === log.projectId
+        ? { ...c, log: (c.log || []).map(l => (l.id === log.id ? log : l)) }
+        : c
+    )));
+  };
+
+  const deleteLogEntry = async (logId) => {
+    const response = await apiFetch(`${API_BASE_URL}/api/origination/log/${logId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to delete note');
+    // Remove it now (same reason as updateLogEntry); log:deleted is a no-op after.
+    setCards(prevCards => prevCards.map(c => (
+      (c.log || []).some(l => l.id === logId)
+        ? { ...c, log: c.log.filter(l => l.id !== logId) }
+        : c
+    )));
   };
 
   const loadDeletedCards = async () => {
@@ -1730,6 +1780,8 @@ function OriginationBoard({ user, studioMode = false }) {
           onAddLink={addLink}
           onDeleteLink={deleteLink}
           onAddLog={addLogEntry}
+          onUpdateLog={updateLogEntry}
+          onDeleteLog={deleteLogEntry}
           projectTypeColors={projectTypeColors}
           people={people}
           studioMode={studioMode}
@@ -2079,7 +2131,7 @@ function HandoffPanel({ card, sortedPeople, onUpdateHandoff, onAcceptHandoff }) 
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, onAddLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onUpdateHandoff, onAcceptHandoff }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onAddLink, onDeleteLink, onAddLog, onUpdateLog, onDeleteLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onUpdateHandoff, onAcceptHandoff }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -2101,6 +2153,10 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLogText, setNewLogText] = useState('');
   const [addingLog, setAddingLog] = useState(false);
+  const [editingLogId, setEditingLogId] = useState(null);
+  const [editingLogText, setEditingLogText] = useState('');
+  const [savingLog, setSavingLog] = useState(false);
+  const currentUserName = noteAuthorName(currentUser);
   const [editingActionId, setEditingActionId] = useState(null);
   const [editingActionText, setEditingActionText] = useState('');
   const [editingTitle, setEditingTitle] = useState(false);
@@ -2163,6 +2219,39 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
       window.alert(`Failed to add note: ${err.message}`);
     } finally {
       setAddingLog(false);
+    }
+  };
+
+  const startEditingLog = (entry) => {
+    setEditingLogId(entry.id);
+    setEditingLogText(entry.details || '');
+  };
+
+  const cancelEditingLog = () => {
+    setEditingLogId(null);
+    setEditingLogText('');
+  };
+
+  const handleSaveLogEdit = async () => {
+    if (!editingLogText.trim() || !onUpdateLog) return;
+    setSavingLog(true);
+    try {
+      await onUpdateLog(editingLogId, editingLogText.trim());
+      cancelEditingLog();
+    } catch (err) {
+      window.alert(`Failed to update note: ${err.message}`);
+    } finally {
+      setSavingLog(false);
+    }
+  };
+
+  const handleDeleteLog = async (entry) => {
+    if (!onDeleteLog || !window.confirm('Delete this note?')) return;
+    try {
+      await onDeleteLog(entry.id);
+      if (editingLogId === entry.id) cancelEditingLog();
+    } catch (err) {
+      window.alert(`Failed to delete note: ${err.message}`);
     }
   };
 
@@ -2558,11 +2647,39 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                   // they stand out from the system activity around them.
                   <div key={entry.id} className="log-entry log-note">
                     <div className="log-note-meta">
-                      <span className="log-note-author">{entry.user || 'Note'}</span>
-                      {' · '}{new Date(entry.timestamp).toLocaleString()}
-                      {entry.action === 'Notes (migrated)' && ' · from the old Notes field'}
+                      <span>
+                        <span className="log-note-author">{entry.user || 'Note'}</span>
+                        {' · '}{new Date(entry.timestamp).toLocaleString()}
+                        {entry.action === 'Notes (migrated)' && ' · from the old Notes field'}
+                      </span>
+                      {editingLogId !== entry.id && onUpdateLog && canModifyNote(entry, currentUserName) && (
+                        <span className="log-note-actions">
+                          <button type="button" onClick={() => startEditingLog(entry)}>Edit</button>
+                          <button type="button" onClick={() => handleDeleteLog(entry)}>Delete</button>
+                        </span>
+                      )}
                     </div>
-                    <div className="log-note-text">{entry.details}</div>
+                    {editingLogId === entry.id ? (
+                      <div className="log-note-edit">
+                        <textarea
+                          value={editingLogText}
+                          onChange={(e) => setEditingLogText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') cancelEditingLog();
+                          }}
+                          rows="3"
+                          autoFocus
+                        />
+                        <div className="log-note-edit-buttons">
+                          <button type="button" className="btn-secondary" onClick={cancelEditingLog} disabled={savingLog}>Cancel</button>
+                          <button type="button" className="btn-secondary" onClick={handleSaveLogEdit} disabled={!editingLogText.trim() || savingLog}>
+                            {savingLog ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="log-note-text">{entry.details}</div>
+                    )}
                   </div>
                 ) : (
                   <div key={entry.id} className="log-entry log-system">

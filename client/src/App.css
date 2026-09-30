@@ -543,9 +543,58 @@ body {
 }
 
 .log-note-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
   color: #6b7280;
   font-size: 11px;
   margin-bottom: 2px;
+}
+
+/* Edit / Delete on your own notes - quiet until you hover the bubble (or
+   tab to them), so they don't add noise when just reading the log. */
+.log-note-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.log-note:hover .log-note-actions,
+.log-note-actions:focus-within {
+  opacity: 1;
+}
+
+.log-note-actions button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: #4f5bd5;
+  cursor: pointer;
+}
+
+.log-note-actions button:hover {
+  text-decoration: underline;
+}
+
+.log-note-actions button:last-child {
+  color: #dc2626;
+}
+
+.log-note-edit textarea {
+  margin-top: 4px;
+  background: white;
+  resize: vertical;
+}
+
+.log-note-edit-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .log-note-author {
@@ -618,7 +667,8 @@ body {
 .form-group input,
 .form-group textarea,
 .form-group select,
-.activity-log-add textarea {
+.activity-log-add textarea,
+.log-note-edit textarea {
   width: 100%;
   padding: 10px;
   border: 1px solid #e3e3e3;
@@ -630,7 +680,8 @@ body {
 .form-group input:focus,
 .form-group textarea:focus,
 .form-group select:focus,
-.activity-log-add textarea:focus {
+.activity-log-add textarea:focus,
+.log-note-edit textarea:focus {
   outline: none;
   border-color: #667eea;
 }

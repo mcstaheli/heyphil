@@ -19,6 +19,7 @@ import * as improvementsDb from './improvements-db.js';
 import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
 import { JWT_SECRET, requireAuth } from './auth-middleware.js';
+import { canModifyNote, noteAuthorName } from './note-permissions.js';
 import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin } from './permissions.js';
 import { sendStandupReminders, previewStandupReminders } from './reminders.js';
 import cashflowRouter from './routes/cashflow.js';
@@ -1582,7 +1583,7 @@ app.post('/api/origination/log', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Note details are required' });
     }
 
-    const userName = req.user.name || req.user.email;
+    const userName = noteAuthorName(req.user);
     await boardDb.addLog(cardId, 'Note', userName, details.trim());
 
     const logs = await boardDb.getLogsByProjectId(cardId);
@@ -1594,6 +1595,59 @@ app.post('/api/origination/log', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to add log entry:', error);
     res.status(500).json({ error: 'Failed to add log entry' });
+  }
+});
+
+// Edit / delete a note in a card's Activity Log. Who may do it is
+// canModifyNote() (server/note-permissions.js): a 'Note' only by its author,
+// a 'Notes (migrated)' entry by anyone signed in, system activity never.
+async function loadModifiableNote(req, res) {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: 'Invalid log entry ID' });
+    return null;
+  }
+  const log = await boardDb.getLogById(id);
+  if (!log) {
+    res.status(404).json({ error: 'Log entry not found' });
+    return null;
+  }
+  if (!canModifyNote(log, noteAuthorName(req.user))) {
+    res.status(403).json({ error: 'You can only change notes you wrote' });
+    return null;
+  }
+  return log;
+}
+
+app.patch('/api/origination/log/:id', requireAuth, async (req, res) => {
+  try {
+    const { details } = req.body;
+    if (!details || !details.trim()) {
+      return res.status(400).json({ error: 'Note details are required' });
+    }
+    const log = await loadModifiableNote(req, res);
+    if (!log) return;
+
+    const updated = await boardDb.updateLogDetails(log.id, details.trim());
+    broadcastChange('log:updated', { cardId: log.projectId, log: updated });
+    res.json({ success: true, log: updated });
+  } catch (error) {
+    console.error('Failed to update log entry:', error);
+    res.status(500).json({ error: 'Failed to update note' });
+  }
+});
+
+app.delete('/api/origination/log/:id', requireAuth, async (req, res) => {
+  try {
+    const log = await loadModifiableNote(req, res);
+    if (!log) return;
+
+    await boardDb.deleteLog(log.id);
+    broadcastChange('log:deleted', { cardId: log.projectId, logId: log.id });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete log entry:', error);
+    res.status(500).json({ error: 'Failed to delete note' });
   }
 });
 

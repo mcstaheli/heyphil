@@ -803,6 +803,37 @@ export async function getLogsByProjectId(projectId) {
   }));
 }
 
+function mapLogRow(row) {
+  return {
+    id: row.id,
+    timestamp: row.timestamp,
+    action: row.action,
+    user: row.user_name,
+    details: row.details,
+    projectId: row.project_id
+  };
+}
+
+export async function getLogById(id) {
+  const result = await pool.query('SELECT * FROM activity_log WHERE id = $1', [id]);
+  return result.rows[0] ? mapLogRow(result.rows[0]) : null;
+}
+
+// Only the text changes - timestamp, author and action stay as written, so
+// an edited note keeps its place in the log.
+export async function updateLogDetails(id, details) {
+  const result = await pool.query(
+    'UPDATE activity_log SET details = $1 WHERE id = $2 RETURNING *',
+    [details, id]
+  );
+  return result.rows[0] ? mapLogRow(result.rows[0]) : null;
+}
+
+export async function deleteLog(id) {
+  const result = await pool.query('DELETE FROM activity_log WHERE id = $1 RETURNING id', [id]);
+  return result.rowCount > 0;
+}
+
 export async function addLog(projectId, action, userName, details) {
   await pool.query(
     'INSERT INTO activity_log (project_id, action, user_name, details) VALUES ($1, $2, $3, $4)',
