@@ -569,7 +569,8 @@ body {
 
 .form-group input,
 .form-group textarea,
-.form-group select {
+.form-group select,
+.activity-log-add textarea {
   width: 100%;
   padding: 10px;
   border: 1px solid #e3e3e3;
@@ -580,7 +581,8 @@ body {
 
 .form-group input:focus,
 .form-group textarea:focus,
-.form-group select:focus {
+.form-group select:focus,
+.activity-log-add textarea:focus {
   outline: none;
   border-color: #667eea;
 }

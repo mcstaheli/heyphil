@@ -85,6 +85,10 @@
 
 .imp-card {
   position: relative;
+  /* overflow: hidden below zeroes the card's automatic min-height, so
+     without this the column squeezes every card shorter instead of
+     scrolling (.imp-column-cards is the scroll container). */
+  flex-shrink: 0;
   background: white;
   border-radius: 6px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
