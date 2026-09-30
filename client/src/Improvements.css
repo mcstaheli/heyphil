@@ -84,11 +84,34 @@
 }
 
 .imp-card {
+  position: relative;
   background: white;
   border-radius: 6px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   cursor: grab;
   overflow: hidden;
+}
+
+.imp-reporter-avatar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  z-index: 1;
+}
+
+.imp-reporter-avatar-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
 }
 
 .imp-card:hover {

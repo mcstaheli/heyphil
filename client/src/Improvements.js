@@ -27,6 +27,32 @@ const RESOLVED_COLUMNS = ['shipped', 'abandoned'];
 
 const KIND_LABEL = { bug: '🐛 Bug', feature: '✨ Feature' };
 
+const AVATAR_COLORS = ['#4285F4', '#34A853', '#FBBC04', '#EA4335', '#9C27B0', '#00ACC1', '#FF6F00', '#7CB342'];
+
+function getInitialsColor(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+// Matches by email, not name - a reporter's name here is their Google
+// account display name ("Greg Whitehead"), which won't match the short
+// name people are filed under in Settings -> Team ("Greg"), but their
+// login email always matches exactly.
+function ReporterAvatar({ item, photoByEmail }) {
+  const name = item.reporterName || item.reporterEmail;
+  if (!name) return null;
+  const photo = item.reporterEmail && photoByEmail.get(item.reporterEmail.toLowerCase());
+  if (photo) {
+    return <img className="imp-reporter-avatar" src={photo} alt={name} title={name} />;
+  }
+  return (
+    <div className="imp-reporter-avatar imp-reporter-avatar-initials" style={{ backgroundColor: getInitialsColor(name) }} title={name}>
+      {name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
+    </div>
+  );
+}
+
 // Only bugs and features sitting in a Triaged column are things you'd
 // actually say "fix bug 3" / "implement feature 5" about - Intake hasn't
 // been sorted yet, and Shipped/Abandoned are already done.
@@ -60,6 +86,7 @@ function Improvements() {
   const [selected, setSelected] = useState(null);
   const [draggedId, setDraggedId] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [people, setPeople] = useState([]);
 
   const load = useCallback(() => {
     fetch(`${API_BASE_URL}/api/improvements`, { headers: authHeaders() })
@@ -77,6 +104,21 @@ function Improvements() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/people`, { headers: authHeaders() })
+      .then((res) => res.json())
+      .then((data) => setPeople(data.people || []))
+      .catch(() => {});
+  }, []);
+
+  const photoByEmail = useMemo(() => {
+    const map = new Map();
+    for (const person of people) {
+      if (person.email && person.photoUrl) map.set(person.email.toLowerCase(), person.photoUrl);
+    }
+    return map;
+  }, [people]);
 
   // Live updates so a report submitted (or triaged/fixed) anywhere shows
   // up here without a manual refresh - same pattern App.js already uses
@@ -211,6 +253,9 @@ function Improvements() {
                     <div className="imp-card-thumb">
                       <img src={item.screenshot} alt="" />
                     </div>
+                  )}
+                  {!RESOLVED_COLUMNS.includes(item.status) && (
+                    <ReporterAvatar item={item} photoByEmail={photoByEmail} />
                   )}
                   <div className="imp-card-body">
                     <div className="imp-card-kind">
