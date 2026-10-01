@@ -1594,9 +1594,12 @@ body {
 }
 
 .task-assignee-btn.assigned {
-  border: 1px solid transparent;
-  background: #e8f0fe;
-  color: #1a3d8f;
+  border: 1px solid #c9d3fb;
+  border-radius: 999px;
+  background: #eef1fd;
+  color: #3f4bc4;
+  padding: 1px 8px;
+  line-height: 15px;
 }
 
 .task-assignee-btn:hover {
@@ -2267,11 +2270,20 @@ body {
 }
 
 .task-assignee-line {
-  margin-top: 1px;
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 3px;
+  padding: 1px 8px;
+  overflow: hidden;
+  border: 1px solid #c9d3fb;
+  border-radius: 999px;
+  background: #eef1fd;
+  color: #3f4bc4;
   font-size: 11px;
   font-weight: 600;
-  color: #4f5bd5;
-  line-height: 14px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-body .task-assignee-btn {
