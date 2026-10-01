@@ -457,7 +457,11 @@
 /* Project Resources row (ProjectResources.js) - Project Folder and Working
    Model always shown, then any other resources, then "+ Add resource". */
 .project-resources {
-  margin: 24px 0 20px;
+  /* Same 30px side inset as .project-detail-header and .project-dashboard,
+     so the tiles line up with the project name and the sections below;
+     the dashboard's own 30px top padding provides the gap underneath. */
+  margin: 24px 0 0;
+  padding: 0 30px;
 }
 
 .resource-tiles {
