@@ -39,11 +39,6 @@
   margin: -4px 0 12px;
 }
 
-/* This box is the SCROLL container only - it must not also be the
-   canvas's positioned ancestor (see .snap-canvas-inner below) or the
-   canvas's height:100% resolves against this box's own capped/visible
-   height instead of the full scrollable content, and markup below
-   whatever was visible on load gets silently clipped. */
 .snap-canvas-wrap {
   max-height: 55vh;
   overflow: auto;
@@ -52,30 +47,74 @@
   line-height: 0;
 }
 
-/* Sized purely by its content (the image) via a normal, non-scrolling,
-   non-height-constrained box - so height:100% on the canvas below
-   always matches the image's full rendered height, scrolled into view
-   or not. */
-.snap-canvas-inner {
-  position: relative;
-}
-
-.snap-base-image {
-  width: 100%;
-  display: block;
-}
-
+/* One canvas: the capture with the markup shapes redrawn over it
+   (SnapshotReporter.js AnnotateModal) - scaled to fit, drawn at the
+   capture's own resolution. */
 .snap-draw-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
+  display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
   cursor: crosshair;
+  touch-action: none; /* pointer events draw instead of scrolling on touch */
 }
 
 .snap-toolbar {
-  margin: 10px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.snap-toolbar-spacer {
+  flex: 1;
+}
+
+.snap-tool-btn {
+  padding: 5px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.snap-tool-btn.active {
+  border-color: #ff3b30;
+  background: #fff1f0;
+  color: #b42318;
+  font-weight: 600;
+}
+
+.snap-tool-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* "Something is broken / Idea or request / Not sure" */
+.snap-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 8px;
+}
+
+.snap-hint-btn {
+  padding: 5px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: white;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.snap-hint-btn.active {
+  border-color: #4f5bd5;
+  background: #eef1fd;
+  color: #3f4bc4;
+  font-weight: 600;
 }
 
 .snap-note {

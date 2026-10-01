@@ -16,6 +16,17 @@
 // history if reviving either is ever worth it.
 import { randomUUID } from 'crypto';
 import pool from './db.js';
+import {
+  IMPROVEMENT_COLUMNS,
+  ImprovementValidationError,
+  parseDuplicateOf,
+  resolvedAtFor,
+  screenshotFromLegacyText,
+  sniffImageType,
+  validatePriority,
+} from './improvement-rules.js';
+
+export { IMPROVEMENT_COLUMNS, ImprovementValidationError };
 
 async function step(label, fn) {
   try {
@@ -58,10 +69,40 @@ export async function createTables() {
   await step('improvements seq_num column', () => pool.query(`
     ALTER TABLE improvements ADD COLUMN IF NOT EXISTS seq_num SERIAL
   `));
+
+  // Board upgrade: screenshots as bytes (the old `screenshot` TEXT column of
+  // data: URIs is kept, read as a fallback, until
+  // migrations/011-improvements-screenshots-to-bytea.js has copied every row
+  // across - dropping it is a separate, later change), plus report context
+  // and triage fields.
+  const columns = [
+    ['screenshot_data', 'BYTEA'],
+    ['screenshot_type', 'VARCHAR(20)'],        // image/jpeg | image/png | image/webp
+    ['reporter_hint', 'VARCHAR(20)'],          // broken | idea | unsure
+    ['priority', "VARCHAR(10) NOT NULL DEFAULT 'normal'"],
+    ['duplicate_of', 'INTEGER'],               // another card's seq_num
+    ['resolved_at', 'TIMESTAMP'],
+    ['context', 'JSONB'],                      // { viewport, userAgent, errors[] }
+    ['commit_sha', 'VARCHAR(64)'],
+  ];
+  for (const [name, type] of columns) {
+    await step(`improvements ${name} column`, () => pool.query(
+      `ALTER TABLE improvements ADD COLUMN IF NOT EXISTS ${name} ${type}`
+    ));
+  }
 }
 
 const VALID_KINDS = ['bug', 'feature'];
-export const IMPROVEMENT_COLUMNS = ['intake', 'triaged-bugs', 'triaged-features', 'shipped', 'abandoned'];
+
+// Every column except the screenshot bytes - the list and every broadcast
+// carry hasScreenshot instead; the image itself is GET /:id/screenshot.
+const ROW_COLUMNS = `
+  id, seq_num, title, note, kind, status, page_url, reporter_email, reporter_name,
+  classification_note, pr_url, created_at, updated_at, reporter_hint, priority,
+  duplicate_of, resolved_at, context, commit_sha, screenshot_type,
+  (screenshot_data IS NOT NULL
+    OR screenshot ~ '^data:image/(png|jpeg|webp);base64,') AS has_screenshot
+`;
 
 function mapRow(row) {
   if (!row) return null;
@@ -72,41 +113,84 @@ function mapRow(row) {
     note: row.note,
     kind: row.kind,
     status: row.status,
-    screenshot: row.screenshot,
+    hasScreenshot: !!row.has_screenshot,
     pageUrl: row.page_url,
     reporterEmail: row.reporter_email,
     reporterName: row.reporter_name,
+    reporterHint: row.reporter_hint || null,
     classificationNote: row.classification_note,
     prUrl: row.pr_url,
+    priority: row.priority || 'normal',
+    duplicateOf: row.duplicate_of ?? null,
+    resolvedAt: row.resolved_at,
+    context: row.context || null,
+    commitSha: row.commit_sha || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-export async function createImprovement({ title, note, screenshot, pageUrl, reporterEmail, reporterName }) {
+// screenshot: { buffer, type } from parseScreenshotDataUri, or null.
+export async function createImprovement({
+  title, note, screenshot, pageUrl, reporterEmail, reporterName, reporterHint, context, commitSha,
+}) {
   const id = randomUUID();
   const { rows } = await pool.query(
-    `INSERT INTO improvements (id, title, note, screenshot, page_url, reporter_email, reporter_name, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'intake')
-     RETURNING *`,
-    [id, title, note || '', screenshot || null, pageUrl || null, reporterEmail || null, reporterName || null]
+    `INSERT INTO improvements
+       (id, title, note, screenshot_data, screenshot_type, page_url, reporter_email, reporter_name,
+        reporter_hint, context, commit_sha, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'intake')
+     RETURNING ${ROW_COLUMNS}`,
+    [
+      id, title, note || '',
+      screenshot ? screenshot.buffer : null, screenshot ? screenshot.type : null,
+      pageUrl || null, reporterEmail || null, reporterName || null,
+      reporterHint || null, context ? JSON.stringify(context) : null, commitSha || null,
+    ]
   );
   return mapRow(rows[0]);
 }
 
 export async function getAllImprovements() {
   const { rows } = await pool.query(
-    `SELECT * FROM improvements WHERE deleted_at IS NULL ORDER BY created_at DESC`
+    `SELECT ${ROW_COLUMNS} FROM improvements WHERE deleted_at IS NULL ORDER BY created_at DESC`
   );
   return rows.map(mapRow);
 }
 
 export async function getImprovementById(id) {
   const { rows } = await pool.query(
-    `SELECT * FROM improvements WHERE id = $1 AND deleted_at IS NULL`,
+    `SELECT ${ROW_COLUMNS} FROM improvements WHERE id = $1 AND deleted_at IS NULL`,
     [id]
   );
   return mapRow(rows[0]);
+}
+
+export async function getImprovementBySeqNum(seqNum) {
+  const { rows } = await pool.query(
+    `SELECT ${ROW_COLUMNS} FROM improvements WHERE seq_num = $1 AND deleted_at IS NULL`,
+    [seqNum]
+  );
+  return mapRow(rows[0]);
+}
+
+// The image for one card: { buffer, type } or null. Prefers the BYTEA
+// column; falls back to decoding the old data: URI for rows the 011
+// conversion hasn't reached yet.
+export async function getScreenshot(id) {
+  const { rows } = await pool.query(
+    `SELECT screenshot_data, screenshot_type, screenshot FROM improvements WHERE id = $1 AND deleted_at IS NULL`,
+    [id]
+  );
+  const row = rows[0];
+  if (!row) return null;
+  if (row.screenshot_data) {
+    // Only ever written after parseScreenshotDataUri / the 011 sniff, but
+    // type it by the bytes regardless.
+    const type = sniffImageType(row.screenshot_data);
+    return type ? { buffer: row.screenshot_data, type } : null;
+  }
+  return screenshotFromLegacyText(row.screenshot);
 }
 
 // Fields a caller may patch through the generic update route.
@@ -117,32 +201,78 @@ const PATCHABLE_FIELDS = {
   status: 'status',
   classificationNote: 'classification_note',
   prUrl: 'pr_url',
+  priority: 'priority',
+  duplicateOf: 'duplicate_of',
 };
 
+// Validates every field first (throwing ImprovementValidationError), then
+// writes under a row lock so resolved_at is computed from the status the
+// card actually had: set on moving into Shipped/Abandoned, cleared if it's
+// reopened (improvement-rules.js resolvedAtFor).
 export async function updateImprovement(id, updates) {
-  const sets = [];
-  const values = [];
-  let i = 1;
-  for (const [key, column] of Object.entries(PATCHABLE_FIELDS)) {
-    if (updates[key] === undefined) continue;
-    if (key === 'kind' && updates.kind !== null && !VALID_KINDS.includes(updates.kind)) {
-      throw new Error(`kind must be one of ${VALID_KINDS.join(', ')}`);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query(
+      'SELECT seq_num, status, resolved_at FROM improvements WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+      [id]
+    );
+    const row = current.rows[0];
+    if (!row) {
+      await client.query('ROLLBACK');
+      return null;
     }
-    if (key === 'status' && !IMPROVEMENT_COLUMNS.includes(updates.status)) {
-      throw new Error(`status must be one of ${IMPROVEMENT_COLUMNS.join(', ')}`);
+
+    const sets = [];
+    const values = [];
+    const add = (column, value) => {
+      values.push(value);
+      sets.push(`${column} = $${values.length}`);
+    };
+
+    for (const [key, column] of Object.entries(PATCHABLE_FIELDS)) {
+      if (updates[key] === undefined) continue;
+      let value = updates[key];
+      if (key === 'kind' && value !== null && !VALID_KINDS.includes(value)) {
+        throw new ImprovementValidationError(`kind must be one of ${VALID_KINDS.join(', ')}`);
+      }
+      if (key === 'status' && !IMPROVEMENT_COLUMNS.includes(value)) {
+        throw new ImprovementValidationError(`status must be one of ${IMPROVEMENT_COLUMNS.join(', ')}`);
+      }
+      if (key === 'priority') value = validatePriority(value);
+      if (key === 'duplicateOf') {
+        value = parseDuplicateOf(value, row.seq_num);
+        if (value !== null) {
+          const exists = await client.query('SELECT 1 FROM improvements WHERE seq_num = $1 AND deleted_at IS NULL', [value]);
+          if (exists.rows.length === 0) {
+            throw new ImprovementValidationError(`there's no card #${value}`);
+          }
+        }
+      }
+      add(column, value);
     }
-    sets.push(`${column} = $${i}`);
-    values.push(updates[key]);
-    i += 1;
+
+    const resolvedAt = resolvedAtFor(row.status, updates.status, row.resolved_at);
+    if (resolvedAt !== undefined) add('resolved_at', resolvedAt);
+
+    if (sets.length === 0) {
+      await client.query('ROLLBACK');
+      return getImprovementById(id);
+    }
+    sets.push('updated_at = NOW()');
+    values.push(id);
+    const { rows } = await client.query(
+      `UPDATE improvements SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING ${ROW_COLUMNS}`,
+      values
+    );
+    await client.query('COMMIT');
+    return mapRow(rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-  if (sets.length === 0) return getImprovementById(id);
-  sets.push(`updated_at = NOW()`);
-  values.push(id);
-  const { rows } = await pool.query(
-    `UPDATE improvements SET ${sets.join(', ')} WHERE id = $${i} AND deleted_at IS NULL RETURNING *`,
-    values
-  );
-  return mapRow(rows[0]);
 }
 
 export async function softDeleteImprovement(id) {

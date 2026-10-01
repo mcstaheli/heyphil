@@ -32,18 +32,19 @@ export const requireAuth = (req, res, next) => {
   }
 };
 
-// Admin-only routes (who can log in, who's an admin). Use after
-// requireAuth. Checks the database on every request - never a claim in the
-// JWT - so revoking someone's admin takes effect immediately. Fails closed:
-// a database error is a 500, not a pass. `isAdmin` is injectable for tests.
-export function makeRequireAdmin(isAdmin) {
+// Admin-only routes (who can log in, who's an admin; moving/editing/deleting
+// Improvements cards). Use after requireAuth. Checks the database on every
+// request - never a claim in the JWT - so revoking someone's admin takes
+// effect immediately. Fails closed: a database error is a 500, not a pass.
+// `isAdmin` is injectable for tests; `message` is the 403 text.
+export function makeRequireAdmin(isAdmin, message = 'Only admins can change who has access.') {
   return async (req, res, next) => {
     if (!req.user || !req.user.email) {
       return res.status(401).json({ error: 'Not signed in' });
     }
     try {
       if (!(await isAdmin(req.user.email.toLowerCase()))) {
-        return res.status(403).json({ error: 'Only admins can change who has access.' });
+        return res.status(403).json({ error: message });
       }
       return next();
     } catch (error) {
@@ -55,4 +56,6 @@ export function makeRequireAdmin(isAdmin) {
 
 // permissions.js is loaded lazily so importing this module doesn't open a
 // database connection.
-export const requireAdmin = makeRequireAdmin(async (email) => (await import('./permissions.js')).isAdmin(email));
+const isAdminLazy = async (email) => (await import('./permissions.js')).isAdmin(email);
+export const requireAdmin = makeRequireAdmin(isAdminLazy);
+export const requireImprovementsAdmin = makeRequireAdmin(isAdminLazy, 'Only admins can move, edit or delete Improvements cards.');

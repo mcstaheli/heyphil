@@ -18,7 +18,8 @@
     "railway:build": "npm install && cd client && npm install && npm run build",
     "start": "node server/index.js",
     "smoke": "node scripts/smoke.js",
-    "test": "node --test scripts/tests/*.test.js"
+    "test": "node --test scripts/tests/*.test.js",
+    "improvements": "node scripts/improvements.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

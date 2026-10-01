@@ -4,6 +4,11 @@ import { BrowserRouter } from 'react-router-dom';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+import { installErrorBuffer } from './errorBuffer';
+
+// Before anything renders, so errors from startup are kept too - attached
+// to Improvements reports (SnapshotReporter).
+installErrorBuffer();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

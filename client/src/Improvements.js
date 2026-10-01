@@ -26,6 +26,63 @@ const COLUMNS = [
 const RESOLVED_COLUMNS = ['shipped', 'abandoned'];
 
 const KIND_LABEL = { bug: '🐛 Bug', feature: '✨ Feature' };
+const HINT_LABEL = { broken: 'Something is broken', idea: 'Idea or request', unsure: 'Not sure' };
+const PRIORITY_LABEL = { high: 'High priority', normal: 'Normal priority', low: 'Low priority' };
+const REPO_URL = 'https://github.com/mcstaheli/heyphil';
+
+// Screenshots aren't in the list payload (just hasScreenshot) - each image
+// is fetched from GET /api/improvements/:id/screenshot, with the auth
+// header (a plain <img src> can't send it), as a blob URL. Thumbnails wait
+// until the card scrolls into view; fetched images are cached for the
+// session since a card's screenshot never changes.
+const screenshotCache = new Map(); // id -> Promise<objectURL>
+
+function loadScreenshot(id) {
+  if (!screenshotCache.has(id)) {
+    const p = fetch(`${API_BASE_URL}/api/improvements/${id}/screenshot`, { headers: authHeaders() })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => URL.createObjectURL(blob));
+    p.catch(() => screenshotCache.delete(id)); // let a later view retry
+    screenshotCache.set(id, p);
+  }
+  return screenshotCache.get(id);
+}
+
+function ScreenshotImage({ id, lazy = false, alt = '' }) {
+  const ref = useRef(null);
+  const [src, setSrc] = useState(null);
+  const [visible, setVisible] = useState(!lazy);
+
+  useEffect(() => {
+    if (visible || !ref.current) return undefined;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return undefined;
+    }
+    const obs = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setVisible(true);
+        obs.disconnect();
+      }
+    }, { rootMargin: '200px' });
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    let cancelled = false;
+    loadScreenshot(id).then((url) => { if (!cancelled) setSrc(url); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [id, visible]);
+
+  return src
+    ? <img ref={ref} src={src} alt={alt} />
+    : <div ref={ref} className="imp-screenshot-placeholder" aria-label="Loading screenshot" />;
+}
 
 const AVATAR_COLORS = ['#4285F4', '#34A853', '#FBBC04', '#EA4335', '#9C27B0', '#00ACC1', '#FF6F00', '#7CB342'];
 
@@ -87,12 +144,16 @@ function Improvements() {
   const [draggedId, setDraggedId] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [people, setPeople] = useState([]);
+  // Moving, editing and deleting cards is admin-only (the server enforces
+  // it; this just hides controls that would be refused).
+  const [canManage, setCanManage] = useState(false);
 
   const load = useCallback(() => {
     fetch(`${API_BASE_URL}/api/improvements`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => {
         setItems(data.improvements || []);
+        setCanManage(!!data.canManage);
         setLoading(false);
       })
       .catch((err) => {
@@ -193,7 +254,7 @@ function Improvements() {
   }
 
   function handleDrop(columnId) {
-    if (draggedId) {
+    if (draggedId && canManage) {
       const item = items.find((it) => it.id === draggedId);
       if (item && item.status !== columnId) {
         patch(draggedId, { status: columnId }).catch((err) => window.alert(err.message));
@@ -225,6 +286,7 @@ function Improvements() {
         <p className="imp-subtitle">Bug reports and feature requests captured with the snapshot button, anywhere in the app.</p>
         <p className="imp-hint">
           Tell a Claude Code session <strong>&quot;triage&quot;</strong> to sort Intake and auto-fix any bugs, or <strong>&quot;implement feature 2&quot;</strong> to build a specific feature.
+          {!canManage && ' Only admins can move or edit cards.'}
         </p>
       </div>
 
@@ -244,14 +306,14 @@ function Improvements() {
               {(byColumn[col.id] || []).map((item) => (
                 <div
                   key={item.id}
-                  className="imp-card"
-                  draggable
+                  className={`imp-card ${canManage ? '' : 'imp-card-readonly'}`}
+                  draggable={canManage}
                   onDragStart={() => handleDragStart(item.id)}
                   onClick={() => setSelected(item)}
                 >
-                  {item.screenshot && !RESOLVED_COLUMNS.includes(item.status) && (
+                  {item.hasScreenshot && !RESOLVED_COLUMNS.includes(item.status) && (
                     <div className="imp-card-thumb">
-                      <img src={item.screenshot} alt="" />
+                      <ScreenshotImage id={item.id} lazy />
                     </div>
                   )}
                   {!RESOLVED_COLUMNS.includes(item.status) && (
@@ -259,7 +321,10 @@ function Improvements() {
                   )}
                   <div className="imp-card-body">
                     <div className="imp-card-kind">
-                      <span>{item.seqNum != null && `#${item.seqNum} `}{item.kind ? KIND_LABEL[item.kind] : '❔ Unclassified'}</span>
+                      <span>
+                        <span className={`imp-priority-dot priority-${item.priority || 'normal'}`} title={PRIORITY_LABEL[item.priority || 'normal']} />
+                        {item.seqNum != null && `#${item.seqNum} `}{item.kind ? KIND_LABEL[item.kind] : '❔ Unclassified'}
+                      </span>
                       {PROMPTABLE_COLUMNS.includes(item.status) && (
                         <button
                           className="imp-copy-btn"
@@ -271,6 +336,10 @@ function Improvements() {
                         </button>
                       )}
                     </div>
+                    {!item.kind && item.reporterHint && (
+                      <div className="imp-card-hint">Reporter says: {HINT_LABEL[item.reporterHint]}</div>
+                    )}
+                    {item.duplicateOf && <div className="imp-card-duplicate">Duplicate of #{item.duplicateOf}</div>}
                     <div className="imp-card-title">{item.title}</div>
                     <div className="imp-card-meta">
                       {item.reporterName || item.reporterEmail || 'Unknown'} · {timeAgo(item.createdAt)}
@@ -287,6 +356,7 @@ function Improvements() {
       {selected && (
         <ImprovementModal
           item={selected}
+          canManage={canManage}
           onClose={() => setSelected(null)}
           onSave={(updates) => patch(selected.id, updates).catch((err) => window.alert(err.message))}
           onDelete={() => remove(selected.id)}
@@ -296,14 +366,24 @@ function Improvements() {
   );
 }
 
-function ImprovementModal({ item, onClose, onSave, onDelete }) {
+function ImprovementModal({ item, canManage, onClose, onSave, onDelete }) {
   const [title, setTitle] = useState(item.title);
   const [note, setNote] = useState(item.note);
+  const [duplicateOf, setDuplicateOf] = useState(item.duplicateOf ?? '');
 
   useEffect(() => {
     setTitle(item.title);
     setNote(item.note);
+    setDuplicateOf(item.duplicateOf ?? '');
   }, [item]);
+
+  const ctx = item.context;
+  const errors = (ctx && ctx.errors) || [];
+  const saveDuplicate = () => {
+    const next = String(duplicateOf).trim().replace(/^#/, '');
+    if (next === String(item.duplicateOf ?? '')) return;
+    onSave({ duplicateOf: next === '' ? null : next });
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -322,23 +402,23 @@ function ImprovementModal({ item, onClose, onSave, onDelete }) {
         </div>
         <div className="modal-body">
           <div className="imp-modal-body">
-            {item.screenshot && (
+            {item.hasScreenshot && (
               <div className="imp-modal-screenshot">
-                <img src={item.screenshot} alt="Screenshot" />
+                <ScreenshotImage id={item.id} alt="Screenshot" />
               </div>
             )}
             <div className="imp-modal-fields">
               <label>
                 Title
-                <input value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => title !== item.title && onSave({ title })} />
+                <input value={title} disabled={!canManage} onChange={(e) => setTitle(e.target.value)} onBlur={() => title !== item.title && onSave({ title })} />
               </label>
               <label>
                 Note
-                <textarea rows={4} value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => note !== item.note && onSave({ note })} />
+                <textarea rows={4} value={note} disabled={!canManage} onChange={(e) => setNote(e.target.value)} onBlur={() => note !== item.note && onSave({ note })} />
               </label>
               <label>
                 Kind
-                <select value={item.kind || ''} onChange={(e) => onSave({ kind: e.target.value || null })}>
+                <select value={item.kind || ''} disabled={!canManage} onChange={(e) => onSave({ kind: e.target.value || null })}>
                   <option value="">Unclassified</option>
                   <option value="bug">🐛 Bug</option>
                   <option value="feature">✨ Feature</option>
@@ -346,12 +426,40 @@ function ImprovementModal({ item, onClose, onSave, onDelete }) {
               </label>
               <label>
                 Status
-                <select value={item.status} onChange={(e) => onSave({ status: e.target.value })}>
+                <select value={item.status} disabled={!canManage} onChange={(e) => onSave({ status: e.target.value })}>
                   {COLUMNS.map((c) => (
                     <option key={c.id} value={c.id}>{c.title}</option>
                   ))}
                 </select>
               </label>
+              <div className="imp-modal-row">
+                <label>
+                  Priority
+                  <select value={item.priority || 'normal'} disabled={!canManage} onChange={(e) => onSave({ priority: e.target.value })}>
+                    <option value="high">High</option>
+                    <option value="normal">Normal</option>
+                    <option value="low">Low</option>
+                  </select>
+                </label>
+                <label>
+                  Duplicate of #
+                  <input
+                    inputMode="numeric"
+                    placeholder="—"
+                    value={duplicateOf}
+                    disabled={!canManage}
+                    onChange={(e) => setDuplicateOf(e.target.value)}
+                    onBlur={saveDuplicate}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                  />
+                </label>
+              </div>
+              {item.reporterHint && (
+                <div className="imp-modal-meta">Reporter&apos;s hint: {HINT_LABEL[item.reporterHint]}</div>
+              )}
+              {item.resolvedAt && (
+                <div className="imp-modal-meta">Resolved {new Date(item.resolvedAt).toLocaleString()}</div>
+              )}
               {item.classificationNote && (
                 <div className="imp-classification-note">
                   <strong>Triage notes:</strong> {item.classificationNote}
@@ -366,12 +474,48 @@ function ImprovementModal({ item, onClose, onSave, onDelete }) {
                 Reported by {item.reporterName || item.reporterEmail || 'Unknown'} on {new Date(item.createdAt).toLocaleString()}
                 {item.pageUrl && <> · from <code>{item.pageUrl}</code></>}
               </div>
+              {(ctx || item.commitSha) && (
+                <div className="imp-context">
+                  <div className="imp-context-title">Context when reported</div>
+                  {ctx && ctx.viewport && <div>Window: {ctx.viewport.width} × {ctx.viewport.height}</div>}
+                  {ctx && ctx.userAgent && <div className="imp-context-ua">{ctx.userAgent}</div>}
+                  {ctx && ctx.clientCommit && (
+                    <div>
+                      Page build: <a href={`${REPO_URL}/commit/${ctx.clientCommit}`} target="_blank" rel="noreferrer"><code>{ctx.clientCommit.slice(0, 7)}</code></a>
+                    </div>
+                  )}
+                  {item.commitSha && (
+                    <div>
+                      API build: <a href={`${REPO_URL}/commit/${item.commitSha}`} target="_blank" rel="noreferrer"><code>{item.commitSha.slice(0, 7)}</code></a>
+                    </div>
+                  )}
+                  {ctx && (
+                    errors.length === 0 ? (
+                      <div>No JavaScript errors before reporting</div>
+                    ) : (
+                      <details className="imp-context-errors">
+                        <summary>{errors.length} JavaScript error{errors.length === 1 ? '' : 's'} before reporting</summary>
+                        <ol>
+                          {errors.map((e, i) => (
+                            // eslint-disable-next-line react/no-array-index-key
+                            <li key={i}>
+                              <div className="imp-error-head">{e.time ? new Date(e.time).toLocaleTimeString() : ''} · {e.source}</div>
+                              <div className="imp-error-message">{e.message}</div>
+                              {e.stack && <pre>{e.stack}</pre>}
+                            </li>
+                          ))}
+                        </ol>
+                      </details>
+                    )
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
         <div className="modal-footer">
           <div className="imp-modal-actions">
-            <button className="btn-danger" onClick={onDelete}>Delete</button>
+            {canManage && <button className="btn-danger" onClick={onDelete}>Delete</button>}
             <button className="btn-primary" onClick={onClose}>Done</button>
           </div>
         </div>

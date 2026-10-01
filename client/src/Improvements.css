@@ -246,3 +246,114 @@
   justify-content: space-between;
   width: 100%;
 }
+
+/* ---- Board upgrade: lazy screenshots, triage fields, report context ---- */
+.imp-screenshot-placeholder {
+  height: 100px;
+  background: linear-gradient(90deg, #f1f3f6, #e7eaef, #f1f3f6);
+}
+
+.imp-modal-screenshot .imp-screenshot-placeholder {
+  height: 240px;
+}
+
+.imp-card-readonly {
+  cursor: pointer;
+}
+
+.imp-priority-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+
+.imp-priority-dot.priority-high { background: #e5484d; }
+.imp-priority-dot.priority-normal { background: #8b95a7; }
+.imp-priority-dot.priority-low { background: #d3d7de; }
+
+.imp-card-hint {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #6b5900;
+  background: #fff7d6;
+  border-radius: 4px;
+  padding: 1px 6px;
+  display: inline-block;
+}
+
+.imp-card-duplicate {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a4b00;
+}
+
+.imp-modal-row {
+  display: flex;
+  gap: 12px;
+}
+
+.imp-modal-row label {
+  flex: 1;
+}
+
+.imp-context {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafbfc;
+  font-size: 12px;
+  color: #444;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.imp-context-title {
+  font-weight: 600;
+  color: #222;
+}
+
+.imp-context-ua {
+  color: #777;
+  word-break: break-word;
+}
+
+.imp-context-errors summary {
+  cursor: pointer;
+  color: #b42318;
+  font-weight: 600;
+}
+
+.imp-context-errors ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.imp-context-errors li {
+  margin-bottom: 6px;
+}
+
+.imp-error-head {
+  color: #888;
+  font-size: 11px;
+}
+
+.imp-error-message {
+  font-family: 'SFMono-Regular', Menlo, monospace;
+  word-break: break-word;
+}
+
+.imp-context-errors pre {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 10px;
+  color: #666;
+}
