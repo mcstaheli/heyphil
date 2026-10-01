@@ -457,7 +457,7 @@
 /* Project Resources row (ProjectResources.js) - Project Folder and Working
    Model always shown, then any other resources, then "+ Add resource". */
 .project-resources {
-  margin: 0 0 20px;
+  margin: 24px 0 20px;
 }
 
 .resource-tiles {
@@ -475,8 +475,11 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  width: 150px;
-  min-height: 96px;
+  /* Every tile the same size, whatever its label/caption/badge - long
+     labels clamp to two lines, captions to one */
+  width: 160px;
+  height: 112px;
+  overflow: hidden;
   padding: 12px 14px;
   box-sizing: border-box;
   border: 1px solid #e3e5e8;
@@ -496,6 +499,11 @@
 }
 
 .resource-tile-label {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
   font-size: 14px;
   font-weight: 600;
   color: #212529;
@@ -528,6 +536,7 @@
 .resource-tile-add {
   justify-content: center;
   align-items: center;
+  gap: 4px;
   border-style: dashed;
   background: transparent;
   color: #666;
@@ -804,4 +813,10 @@
   font-weight: 600;
   line-height: 16px;
   vertical-align: 1px;
+}
+
+/* fixed tile height: never squeeze the icon or the caption line */
+.resource-tile > svg,
+.resource-tile-caption {
+  flex-shrink: 0;
 }
