@@ -1572,26 +1572,6 @@ body {
   background: #e8f0fe;
 }
 
-/* Assignee at the start of a task (board card, modal list): a readable
-   "@Name" tag - the tiny avatar alone wasn't enough to tell who it was. */
-.task-assignee-tag {
-  display: inline-block;
-  flex-shrink: 0;
-  max-width: 90px;
-  margin-right: 6px;
-  padding: 1px 6px;
-  overflow: hidden;
-  border-radius: 10px;
-  background: #e8f0fe;
-  color: #1a3d8f;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
 /* In the card modal the tag is a button (click to reassign); unassigned
    tasks show a faint dashed "@". */
 .task-assignee-btn {
@@ -2270,4 +2250,48 @@ body {
   border-radius: 3px;
   font-family: inherit;
   font-size: inherit;
+}
+
+/* Task text with its assignee on a small line underneath (board card and
+   card modal) - inline, the "@Name" took too much of a narrow card */
+.task-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+
+.task-body .action-text {
+  flex: none;
+}
+
+.task-assignee-line {
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4f5bd5;
+  line-height: 14px;
+}
+
+.task-body .task-assignee-btn {
+  margin: 2px 0 0;
+}
+
+.task-body .task-assignee-select {
+  margin: 2px 0 0;
+}
+
+/* While editing a task on a board card, the assignee chip sits on its own
+   line under the input instead of beside it */
+.card-action-item .task-edit-input {
+  flex-wrap: wrap;
+}
+
+.card-action-item .task-edit-input input {
+  flex-basis: 100%;
+}
+
+.card-action-item .task-edit-input .assignee-chip {
+  order: 1;
 }

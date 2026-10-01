@@ -1708,11 +1708,6 @@ function OriginationBoard({ user, studioMode = false }) {
                                 toggleActionStar(action.id, !action.starred, action.cardId);
                               }}
                             >{action.starred ? '★' : '☆'}</span>
-                            {action.assignee && editingCardActionId !== taskKey(card.id, action.id) && (
-                              <span className="task-assignee-tag" title={`Assigned to ${action.assignee}`}>
-                                @{action.assignee}
-                              </span>
-                            )}
                             {editingCardActionId === taskKey(card.id, action.id) ? (
                               <AssigneeInput
                                 autoFocus
@@ -1741,15 +1736,24 @@ function OriginationBoard({ user, studioMode = false }) {
                                 }}
                               />
                             ) : (
-                              <span
-                                style={{ cursor: 'text' }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingCardActionId(taskKey(card.id, action.id));
-                                  setEditingCardActionText(action.text);
-                                  setEditingCardActionAssignee(action.assignee || null);
-                                }}
-                              >{action.text}</span>
+                              // Assignee on its own small line under the text - inline it
+                              // ate too much of a narrow card's width
+                              <span className="task-body">
+                                <span
+                                  style={{ cursor: 'text' }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingCardActionId(taskKey(card.id, action.id));
+                                    setEditingCardActionText(action.text);
+                                    setEditingCardActionAssignee(action.assignee || null);
+                                  }}
+                                >{action.text}</span>
+                                {action.assignee && (
+                                  <span className="task-assignee-line" title={`Assigned to ${action.assignee}`}>
+                                    @{action.assignee}
+                                  </span>
+                                )}
+                              </span>
                             )}
                           </div>
                         ))}
@@ -2308,6 +2312,41 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
     }
   };
 
+  // Assign / reassign control for a task in the list: the "@Name" button
+  // (or "@" when unassigned), swapped for a people dropdown while open.
+  const renderAssignControl = (action) => (
+    assigningActionId === action.id ? (
+      <select
+        className="task-assignee-select"
+        autoFocus
+        value={action.assignee || ''}
+        onChange={(e) => {
+          onSetActionAssignee(action.id, action.cardId, e.target.value || null);
+          setAssigningActionId(null);
+        }}
+        onBlur={() => setAssigningActionId(null)}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <option value="">Unassigned</option>
+        {[...new Set([...assignablePeople, ...(action.assignee ? [action.assignee] : [])])].map((person) => (
+          <option key={person} value={person}>{person}</option>
+        ))}
+      </select>
+    ) : (
+      <button
+        type="button"
+        className={`task-assignee-btn ${action.assignee ? 'assigned' : ''}`}
+        title={action.assignee ? `Assigned to ${action.assignee} - click to change` : 'Assign to someone'}
+        onClick={(e) => {
+          e.stopPropagation();
+          setAssigningActionId(action.id);
+        }}
+      >
+        {action.assignee ? `@${action.assignee}` : '@'}
+      </button>
+    )
+  );
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.title || !formData.title.trim()) {
@@ -2520,38 +2559,6 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                         }
                       }}
                     >{action.starred ? '★' : '☆'}</span>
-                    {onSetActionAssignee && editingActionId !== action.id && (
-                      assigningActionId === action.id ? (
-                        <select
-                          className="task-assignee-select"
-                          autoFocus
-                          value={action.assignee || ''}
-                          onChange={(e) => {
-                            onSetActionAssignee(action.id, action.cardId, e.target.value || null);
-                            setAssigningActionId(null);
-                          }}
-                          onBlur={() => setAssigningActionId(null)}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <option value="">Unassigned</option>
-                          {[...new Set([...assignablePeople, ...(action.assignee ? [action.assignee] : [])])].map((person) => (
-                            <option key={person} value={person}>{person}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <button
-                          type="button"
-                          className={`task-assignee-btn ${action.assignee ? 'assigned' : ''}`}
-                          title={action.assignee ? `Assigned to ${action.assignee} - click to change` : 'Assign to someone'}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setAssigningActionId(action.id);
-                          }}
-                        >
-                          {action.assignee ? `@${action.assignee}` : '@'}
-                        </button>
-                      )
-                    )}
                     {editingActionId === action.id ? (
                       <AssigneeInput
                         autoFocus
@@ -2584,19 +2591,25 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                         }}
                       />
                     ) : (
-                      <span 
-                        className="action-text"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingActionId(action.id);
-                          setEditingActionText(action.text);
-                          setEditingActionAssignee(action.assignee || null);
-                        }}
-                        style={{ cursor: 'text' }}
-                      >
-                        {action.text}
+                      // Assigned: "@Name" on its own line under the text (click to
+                      // reassign). Unassigned: a faint "@" at the end of the row.
+                      <span className="task-body">
+                        <span 
+                          className="action-text"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingActionId(action.id);
+                            setEditingActionText(action.text);
+                            setEditingActionAssignee(action.assignee || null);
+                          }}
+                          style={{ cursor: 'text' }}
+                        >
+                          {action.text}
+                        </span>
+                        {onSetActionAssignee && action.assignee && renderAssignControl(action)}
                       </span>
                     )}
+                    {onSetActionAssignee && !action.assignee && editingActionId !== action.id && renderAssignControl(action)}
                     {action.completedOn && (
                       <span className="action-meta">
                         ✓ {action.completedBy} • {new Date(action.completedOn).toLocaleDateString()}
@@ -2624,12 +2637,14 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
               <div className="modal-actions-list">
                 {[...pendingActions].reverse().map((pending, idx) => (
                   <div key={idx} className="modal-action-item">
-                    {pending.assignee && (
-                      <span className="task-assignee-tag" title={`Assigned to ${pending.assignee}`}>
-                        @{pending.assignee}
-                      </span>
-                    )}
-                    <span className="action-text">{pending.text}</span>
+                    <span className="task-body">
+                      <span className="action-text">{pending.text}</span>
+                      {pending.assignee && (
+                        <span className="task-assignee-line" title={`Assigned to ${pending.assignee}`}>
+                          @{pending.assignee}
+                        </span>
+                      )}
+                    </span>
                     <button 
                       type="button"
                       className="btn-remove-action"
