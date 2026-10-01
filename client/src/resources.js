@@ -91,3 +91,9 @@ export function rankFolders(folders, query, projectName) {
     .map((f) => ({ ...f, suggested: !!target && normalizeName(f.name) === target }))
     .sort((a, b) => (Number(b.suggested) - Number(a.suggested)) || a.name.localeCompare(b.name));
 }
+
+// The folder id in a Google Drive folder link, or null.
+export function driveFolderId(url) {
+  const m = /drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([A-Za-z0-9_-]+)/.exec(url || '');
+  return m ? m[1] : null;
+}

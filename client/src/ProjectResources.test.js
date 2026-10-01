@@ -57,3 +57,29 @@ test('when Drive isn\'t set up, the picker says what to share and offers paste i
   expect(screen.getByText('bot@x.iam.gserviceaccount.com')).toBeInTheDocument();
   expect(screen.getByPlaceholderText(/Paste a folder link/)).toBeInTheDocument();
 });
+
+test('Working Model defaults to the latest locked version in the Project Folder', async () => {
+  global.fetch = jest.fn((url) => {
+    if (url.includes('/api/drive/folders/f2/latest-model')) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ model: {
+        id: 's1', name: 'Zion Promenade — Hospitality Model — v2 — LOCKED 2026-09-30',
+        url: 'https://docs.google.com/spreadsheets/d/s1/edit', version: 'v2', lockedOn: '2026-09-30',
+      } }) });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  render(<Harness initial={[{ id: 1, kind: 'folder', title: 'Zion Promenade', url: 'https://drive.google.com/drive/folders/f2' }]} />);
+  await screen.findByText('v2 · locked 2026-09-30');
+  expect(screen.getByText('Latest')).toBeInTheDocument();
+  expect(screen.getByText('v2 · locked 2026-09-30').closest('a')).toHaveAttribute('href', 'https://docs.google.com/spreadsheets/d/s1/edit');
+});
+
+test('a pinned Working Model link wins - no latest-version lookup', async () => {
+  global.fetch = jest.fn(() => { throw new Error('should not look up'); });
+  render(<Harness initial={[
+    { id: 1, kind: 'folder', title: 'Zion Promenade', url: 'https://drive.google.com/drive/folders/f2' },
+    { id: 2, kind: 'model', title: 'Working Model', url: 'https://docs.google.com/spreadsheets/d/pinned/edit' },
+  ]} />);
+  expect(screen.getByText('Working Model').closest('a')).toHaveAttribute('href', 'https://docs.google.com/spreadsheets/d/pinned/edit');
+  expect(global.fetch).not.toHaveBeenCalled();
+});

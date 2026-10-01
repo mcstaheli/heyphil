@@ -792,3 +792,16 @@
   font-family: inherit;
   font-size: 14px;
 }
+
+.resource-tile-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e6f4ea;
+  color: #137333;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  vertical-align: 1px;
+}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RESOURCE_KINDS, detectSource, kindLabel, linkKind, rankFolders, resourceLayout } from './resources';
+import { RESOURCE_KINDS, detectSource, driveFolderId, kindLabel, linkKind, rankFolders, resourceLayout } from './resources';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -203,6 +203,38 @@ function ProjectResources({ projectId, projectName, links, onLinksChange }) {
   const [folderPicker, setFolderPicker] = useState(null); // null | { link: existing folder link or null }
   const { pinned, extras } = resourceLayout(links);
 
+  // Working Model default: with no model pinned, show the latest LOCKED
+  // version found in the Project Folder (and its subfolders) - looked up
+  // on each visit, so a newly locked version shows up on its own.
+  const folderLink = pinned.find((p) => p.kind === 'folder').link;
+  const modelLink = pinned.find((p) => p.kind === 'model').link;
+  const autoFolderId = !modelLink && folderLink ? driveFolderId(folderLink.url) : null;
+  const [autoModel, setAutoModel] = useState({ status: 'idle', model: null });
+  React.useEffect(() => {
+    if (!autoFolderId) {
+      setAutoModel({ status: 'idle', model: null });
+      return undefined;
+    }
+    let cancelled = false;
+    setAutoModel({ status: 'loading', model: null });
+    (async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const res = await fetch(`${API_BASE_URL}/api/drive/folders/${encodeURIComponent(autoFolderId)}/latest-model`, {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) setAutoModel({ status: 'error', model: null, error: data.error });
+        else setAutoModel({ status: data.model ? 'ready' : 'none', model: data.model || null });
+      } catch (error) {
+        if (!cancelled) setAutoModel({ status: 'error', model: null });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [autoFolderId]);
+
   const request = async (method, path, body) => {
     const token = localStorage.getItem('authToken');
     const res = await fetch(`${API_BASE_URL}/api/origination/link${path}`, {
@@ -311,7 +343,39 @@ function ProjectResources({ projectId, projectName, links, onLinksChange }) {
   return (
     <div className="project-resources">
       <div className="resource-tiles">
-        {pinned.map((slot) => (slot.link ? renderTile(slot.link) : (
+        {pinned.map((slot) => (slot.link ? renderTile(slot.link) : slot.kind === 'model' && autoModel.model ? (
+          <div key="model-auto" className="resource-tile-wrap">
+            <a
+              className="resource-tile"
+              href={autoModel.model.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`${autoModel.model.name} - the latest locked version in the Project Folder`}
+            >
+              <ResourceIcon type="sheets" />
+              <span className="resource-tile-label">Working Model <span className="resource-tile-badge">Latest</span></span>
+              <span className="resource-tile-caption">
+                {autoModel.model.version}{autoModel.model.lockedOn ? ` · locked ${autoModel.model.lockedOn}` : ''}
+              </span>
+            </a>
+            <button
+              type="button"
+              className="resource-tile-menu-btn"
+              title="Pin a different model"
+              onClick={() => setMenuFor(menuFor === 'model-auto' ? null : 'model-auto')}
+            >⋯</button>
+            {menuFor === 'model-auto' && (
+              <div className="resource-tile-menu" onMouseLeave={() => setMenuFor(null)}>
+                <button
+                  type="button"
+                  onClick={() => { setMenuFor(null); setEditor({ mode: 'add', kind: 'model', label: 'Working Model', url: '' }); }}
+                >
+                  Pin a specific link
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
           <button
             key={slot.kind}
             type="button"
@@ -322,7 +386,12 @@ function ProjectResources({ projectId, projectName, links, onLinksChange }) {
           >
             <ResourceIcon type={EMPTY_SLOT_ICON[slot.kind]} />
             <span className="resource-tile-label">{slot.label}</span>
-            <span className="resource-tile-caption">{slot.kind === 'folder' ? '＋ Add folder' : '＋ Add link'}</span>
+            <span className="resource-tile-caption">
+              {slot.kind === 'folder' && '＋ Add folder'}
+              {slot.kind === 'model' && (autoModel.status === 'loading' ? 'Finding latest…'
+                : autoModel.status === 'none' ? 'No locked version yet · ＋ Add link'
+                : '＋ Add link')}
+            </span>
           </button>
         )))}
         {extras.map(renderTile)}

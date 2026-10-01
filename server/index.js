@@ -22,7 +22,7 @@ import { JWT_SECRET, requireAuth, requireAdmin } from './auth-middleware.js';
 import { canModifyNote, noteAuthorName } from './note-permissions.js';
 import { deriveGridInputs } from './grid-inputs.js';
 import { RESOURCE_KIND_IDS, SINGLE_RESOURCE_KINDS, validateResourceUrl } from './resource-rules.js';
-import { listProjectFolders, DriveSetupError } from './drive.js';
+import { listProjectFolders, latestLockedModel, DriveSetupError } from './drive.js';
 import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin, isAdmin, setAdmin, AccessRuleError } from './permissions.js';
 import { sendStandupReminders, previewStandupReminders } from './reminders.js';
 import cashflowRouter from './routes/cashflow.js';
@@ -1664,6 +1664,22 @@ app.get('/api/drive/project-folders', requireAuth, async (req, res) => {
     }
     console.error('Failed to list Drive project folders:', error.message);
     res.status(500).json({ error: 'Could not load the Drive folders' });
+  }
+});
+
+// The latest locked model in a deal folder - Project Detail shows it as
+// the Working Model by default when no model link is pinned. { model: null }
+// when the folder has no locked version yet.
+app.get('/api/drive/folders/:folderId/latest-model', requireAuth, async (req, res) => {
+  try {
+    const model = await latestLockedModel(req.params.folderId);
+    res.json({ model });
+  } catch (error) {
+    if (error instanceof DriveSetupError) {
+      return res.status(503).json({ error: error.message, serviceAccountEmail: error.serviceAccountEmail, setup: true });
+    }
+    console.error('Failed to find the latest locked model:', error.message);
+    res.status(500).json({ error: 'Could not look up the model' });
   }
 });
 
