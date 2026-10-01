@@ -18,12 +18,12 @@ import * as cashflowDb from './cashflow-db.js';
 import * as improvementsDb from './improvements-db.js';
 import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
-import { JWT_SECRET, requireAuth } from './auth-middleware.js';
+import { JWT_SECRET, requireAuth, requireAdmin } from './auth-middleware.js';
 import { canModifyNote, noteAuthorName } from './note-permissions.js';
 import { deriveGridInputs } from './grid-inputs.js';
 import { RESOURCE_KIND_IDS, SINGLE_RESOURCE_KINDS, validateResourceUrl } from './resource-rules.js';
 import { listProjectFolders, DriveSetupError } from './drive.js';
-import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin } from './permissions.js';
+import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin, isAdmin, setAdmin, AccessRuleError } from './permissions.js';
 import { sendStandupReminders, previewStandupReminders } from './reminders.js';
 import cashflowRouter from './routes/cashflow.js';
 import improvementsRouter from './routes/improvements.js';
@@ -230,6 +230,20 @@ async function autoMigrate() {
       ('connor.bell@philo.ventures')
     ON CONFLICT (email) DO NOTHING
   `));
+  // Admins can change who can log in and who's an admin (requireAdmin).
+  // Seeding: Chad becomes admin only when there are NO admins at all - so
+  // he can never be locked out, but a deliberate later demotion (while
+  // another admin exists) isn't undone on every boot. The API itself never
+  // lets the last admin be removed or demoted (access-rules.js).
+  await runMigrationStep('allowed_emails is_admin column', () => pool.query(`
+    ALTER TABLE allowed_emails ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false
+  `));
+  await runMigrationStep('allowed_emails admin seed (chad, if no admin exists)', () => pool.query(`
+    INSERT INTO allowed_emails (email, is_admin)
+    SELECT 'chad@philo.ventures', true
+    WHERE NOT EXISTS (SELECT 1 FROM allowed_emails WHERE is_admin)
+    ON CONFLICT (email) DO UPDATE SET is_admin = true
+  `));
 }
 // Awaited (not fire-and-forget): routes below depend on tables this
 // creates (app_access in particular), so nothing should be able to serve
@@ -393,13 +407,23 @@ app.get('/auth/google/callback',
   }
 );
 
-app.get('/auth/status', requireAuth, (req, res) => {
+app.get('/auth/status', requireAuth, async (req, res) => {
+  // isAdmin is looked up fresh (not from the token) so the client shows the
+  // right controls right after someone's admin status changes. It's only
+  // for display - every admin route checks again server-side.
+  let admin = false;
+  try {
+    admin = await isAdmin((req.user.email || '').toLowerCase());
+  } catch (error) {
+    console.error('isAdmin lookup failed for /auth/status:', error.message);
+  }
   res.json({
     authenticated: true,
     user: {
       email: req.user.email,
       name: req.user.name,
-      picture: req.user.picture
+      picture: req.user.picture,
+      isAdmin: admin
     }
   });
 });
@@ -1963,21 +1987,22 @@ app.delete('/api/people/:name', requireAuth, async (req, res) => {
 });
 
 // Who can log in at all (Settings -> Team's "Can log in" toggle, plus a
-// small standalone list for access not tied to any team member row).
-// Same trust model as the rest of this internal team tool: anyone who can
-// already log in can grant/revoke login for someone else - there's no
-// separate admin role anywhere else in this app either.
+// small standalone list for access not tied to any team member row), and
+// who's an admin. Anyone signed in can SEE the list; only admins can change
+// it (requireAdmin checks the database on every request). Guards in
+// access-rules.js: you can't revoke your own login, and the last admin
+// can't be removed or demoted.
 app.get('/api/allowed-emails', requireAuth, async (req, res) => {
   try {
-    const emails = await listAllowedEmails();
-    res.json({ emails });
+    const access = await listAllowedEmails();
+    res.json({ emails: access.map((a) => a.email), access });
   } catch (error) {
     console.error('Failed to list allowed emails:', error.message);
     res.status(500).json({ error: 'Failed to list allowed emails' });
   }
 });
 
-app.post('/api/allowed-emails', requireAuth, async (req, res) => {
+app.post('/api/allowed-emails', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email || !email.trim()) {
@@ -1991,14 +2016,32 @@ app.post('/api/allowed-emails', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/allowed-emails/:email', requireAuth, async (req, res) => {
+app.delete('/api/allowed-emails/:email', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const ok = await revokeEmailLogin(req.params.email.toLowerCase());
+    const ok = await revokeEmailLogin(req.user.email, req.params.email.toLowerCase());
     if (!ok) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
   } catch (error) {
+    if (error instanceof AccessRuleError) return res.status(409).json({ error: error.message });
     console.error('Failed to revoke email:', error.message);
     res.status(500).json({ error: 'Failed to revoke email' });
+  }
+});
+
+// Make / unmake an admin: { isAdmin: true|false }. The email must already
+// be able to log in.
+app.put('/api/allowed-emails/:email/admin', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    if (typeof req.body.isAdmin !== 'boolean') {
+      return res.status(400).json({ error: 'isAdmin (true or false) is required' });
+    }
+    const ok = await setAdmin(req.user.email, req.params.email.toLowerCase(), req.body.isAdmin);
+    if (!ok) return res.status(404).json({ error: "That email can't log in - grant login first" });
+    res.json({ success: true });
+  } catch (error) {
+    if (error instanceof AccessRuleError) return res.status(409).json({ error: error.message });
+    console.error('Failed to set admin:', error.message);
+    res.status(500).json({ error: 'Failed to change admin status' });
   }
 });
 

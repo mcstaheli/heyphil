@@ -22,9 +22,15 @@ function authHeaders() {
 // only makes sense once a person has one on file; someone who needs
 // access but isn't (or isn't yet) a team member can still be granted it
 // directly in the standalone list below.
-function TeamSection() {
+//
+// Only admins can change who can log in or who's an admin - the server
+// enforces that (requireAdmin + the lockout guards in access-rules.js);
+// this page just disables/hides those controls for everyone else so nobody
+// is surprised by a refusal. Whether *you* are an admin is read from the
+// same access list the page shows, so it updates the moment it changes.
+function TeamSection({ currentUser }) {
   const [people, setPeople] = useState([]);
-  const [allowedEmails, setAllowedEmails] = useState([]);
+  const [access, setAccess] = useState([]); // [{ email, isAdmin }]
   const [loading, setLoading] = useState(true);
   const [newPerson, setNewPerson] = useState({ name: '', email: '', photoUrl: '', borderColor: '#4caf50' });
   const [newAccessEmail, setNewAccessEmail] = useState('');
@@ -37,7 +43,7 @@ function TeamSection() {
     ])
       .then(([peopleData, accessData]) => {
         setPeople(peopleData.people || []);
-        setAllowedEmails(accessData.emails || []);
+        setAccess(accessData.access || (accessData.emails || []).map((email) => ({ email, isAdmin: false })));
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -93,16 +99,24 @@ function TeamSection() {
     }
   }
 
+  // Server error message, or a generic one - surfaced as-is (e.g. "Only
+  // admins can change who has access", "You can't revoke your own login").
+  async function failure(res, fallback) {
+    const data = await res.json().catch(() => ({}));
+    window.alert(data.error || fallback);
+  }
+
   async function grantAccess(email) {
     const normalized = email.trim().toLowerCase();
     if (!normalized) return;
     try {
-      await fetch(`${API_BASE_URL}/api/allowed-emails`, {
+      const res = await fetch(`${API_BASE_URL}/api/allowed-emails`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normalized })
       });
-      setAllowedEmails((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+      if (!res.ok) return failure(res, 'Failed to grant access');
+      setAccess((prev) => (prev.some((a) => a.email === normalized) ? prev : [...prev, { email: normalized, isAdmin: false }]));
     } catch (err) {
       window.alert(`Failed to grant access: ${err.message}`);
     }
@@ -115,27 +129,80 @@ function TeamSection() {
         method: 'DELETE',
         headers: authHeaders()
       });
-      if (res.ok) {
-        setAllowedEmails((prev) => prev.filter((e) => e !== normalized));
-      } else {
-        window.alert('Failed to revoke access');
-      }
+      if (!res.ok) return failure(res, 'Failed to revoke access');
+      setAccess((prev) => prev.filter((a) => a.email !== normalized));
     } catch (err) {
       window.alert(`Failed to revoke access: ${err.message}`);
     }
   }
 
+  async function changeAdmin(email, makeAdmin) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/allowed-emails/${encodeURIComponent(email)}/admin`, {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isAdmin: makeAdmin })
+      });
+      if (!res.ok) return failure(res, 'Failed to change admin status');
+      setAccess((prev) => prev.map((a) => (a.email === email ? { ...a, isAdmin: makeAdmin } : a)));
+    } catch (err) {
+      window.alert(`Failed to change admin status: ${err.message}`);
+    }
+  }
+
   if (loading) return <p>Loading team...</p>;
 
+  const me = (currentUser?.email || '').toLowerCase();
+  const accessByEmail = new Map(access.map((a) => [a.email, a]));
+  const amAdmin = !!accessByEmail.get(me)?.isAdmin;
+  const adminCount = access.filter((a) => a.isAdmin).length;
   const teamEmails = new Set(people.filter((p) => p.email).map((p) => p.email.toLowerCase()));
-  const otherAccessEmails = allowedEmails.filter((e) => !teamEmails.has(e));
+  const otherAccessEmails = access.map((a) => a.email).filter((e) => !teamEmails.has(e));
+
+  // Login + admin checkboxes for one email - shared by team rows and the
+  // "other people with access" list.
+  const accessControls = (email) => {
+    const entry = accessByEmail.get(email);
+    const canLogIn = !!entry;
+    const isAdmin = !!entry?.isAdmin;
+    const isMe = email === me;
+    const lastAdmin = isAdmin && adminCount <= 1;
+    const loginTitle = !email ? 'Add an email first - login access is granted by email'
+      : !amAdmin ? 'Only admins can change who can log in'
+        : isMe ? "You can't revoke your own login" : '';
+    const adminTitle = !amAdmin ? 'Only admins can change who is an admin'
+      : lastAdmin ? "The last admin can't be removed - make someone else an admin first" : '';
+    return (
+      <>
+        <label className="settings-can-login" title={loginTitle}>
+          <input
+            type="checkbox"
+            disabled={!email || !amAdmin || (isMe && canLogIn)}
+            checked={canLogIn}
+            onChange={(e) => (e.target.checked ? grantAccess(email) : revokeAccess(email))}
+          />
+          Can log in
+        </label>
+        {canLogIn && (
+          <label className="settings-can-login settings-admin" title={adminTitle}>
+            <input
+              type="checkbox"
+              disabled={!amAdmin || lastAdmin}
+              checked={isAdmin}
+              onChange={(e) => changeAdmin(email, e.target.checked)}
+            />
+            Admin
+          </label>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="settings-section">
       <div className="settings-list">
         {people.map((person) => {
           const email = (person.email || '').toLowerCase();
-          const canLogIn = !!email && allowedEmails.includes(email);
           return (
             <div key={person.name} className="settings-item">
               <input
@@ -175,18 +242,7 @@ function TeamSection() {
                 className="settings-color-input"
                 title="Border color"
               />
-              <label
-                className="settings-can-login"
-                title={email ? '' : 'Add an email first - login access is granted by email'}
-              >
-                <input
-                  type="checkbox"
-                  disabled={!email}
-                  checked={canLogIn}
-                  onChange={(e) => (e.target.checked ? grantAccess(email) : revokeAccess(email))}
-                />
-                Can log in
-              </label>
+              {accessControls(email)}
               <button className="btn-danger-small" onClick={() => handleDelete(person.name)}>🗑️</button>
             </div>
           );
@@ -236,9 +292,18 @@ function TeamSection() {
         {otherAccessEmails.map((email) => (
           <div key={email} className="settings-item">
             <input type="text" value={email} disabled className="settings-input" />
-            <button className="btn-danger-small" onClick={() => revokeAccess(email)}>🗑️</button>
+            {accessControls(email)}
+            {amAdmin && email !== me && (
+              <button className="btn-danger-small" title="Revoke login" onClick={() => revokeAccess(email)}>🗑️</button>
+            )}
           </div>
         ))}
+        {!amAdmin && (
+          <p className="settings-hint settings-admin-note">
+            Only admins can change who can log in or who's an admin.
+          </p>
+        )}
+        {amAdmin && (
         <div className="settings-item">
           <input
             type="email"
@@ -254,6 +319,7 @@ function TeamSection() {
             ➕ Grant access
           </button>
         </div>
+        )}
       </div>
     </div>
   );
@@ -280,7 +346,7 @@ function SettingsPage({ user, onLogout }) {
 
         <div className="settings-card">
           <h2>Team</h2>
-          <TeamSection />
+          <TeamSection currentUser={user} />
         </div>
 
         <div className="settings-card">

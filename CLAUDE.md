@@ -34,7 +34,7 @@ Columns (`server/improvements-db.js`'s `IMPROVEMENT_COLUMNS`): `intake`, `triage
 ## Conventions
 
 - ESM throughout (`"type": "module"`) — use `import`, not `require`, everywhere including server code.
-- **Primary datastore is Postgres**, via `server/db.js` + `board-db.js` / `orgchart-db.js`. README.md and CONTEXT.md both describe Google Sheets as "the database" — that's stale. Sheets/`googleapis` code (`server/index-sheets-backup.js`, `setup-*.js`, the `__OLD_SHEETS` route) is legacy/setup-only, not on the live data path.
+- **Primary datastore is Postgres**, via `server/db.js` + `board-db.js` / `orgchart-db.js`. README.md and CONTEXT.md both describe Google Sheets as "the database" — that's stale. Sheets/`googleapis` code (`setup-*.js`, the `__OLD_SHEETS` route) is legacy/setup-only, not on the live data path. (`server/index-sheets-backup.js` was dead code and has been removed.) `googleapis` is also used, read-only, by `server/drive.js` for the Project Folder picker.
 - Realtime updates go over Socket.io from `server/index.js`, not polling.
 - Deploy: push to `main` → Railway auto-deploys the backend; Cloudflare Pages builds `client/` separately from the same repo (build command `cd client && npm install && npm run build`, output `client/build`).
 
@@ -43,6 +43,7 @@ Columns (`server/improvements-db.js`'s `IMPROVEMENT_COLUMNS`): `intake`, `triage
 - **Never commit `client/build/` or `static/`.** They're gitignored on purpose — a committed build directory silently overrides Railway's fresh build, so deploys report success but serve stale code.
 - Cloudflare sits in front of Railway and caches aggressively (up to 1–4h). After a deploy, compare the live bundle hash (`curl -s https://heyphil.bot | grep 'main\.[a-z0-9]*\.js'`) against the local build before assuming a deploy failed; purge the Cloudflare cache if it's stale after 5+ minutes.
 - Startup failures are asymmetric: a bad/missing `DATABASE_URL` fails silently (`autoMigrate()` catches and just logs a warning — the server still boots). A missing `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` crashes the process immediately, since `passport-google-oauth20`'s Strategy constructor throws synchronously. If the server won't start, check OAuth env vars first.
+- In production (`NODE_ENV=production` or running on Railway) the server also refuses to start without a real `SESSION_SECRET` (it signs every login token, and this repo is public) - `server/auth-middleware.js`.
 
 ## Workflow
 
