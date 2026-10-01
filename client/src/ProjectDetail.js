@@ -219,6 +219,7 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
 
         <ProjectResources
           projectId={project.id}
+          projectName={project.name}
           links={project.links}
           onLinksChange={(update) => setProject((prev) => ({ ...prev, links: update(prev.links || []) }))}
         />

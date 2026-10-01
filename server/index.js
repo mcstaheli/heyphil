@@ -22,6 +22,7 @@ import { JWT_SECRET, requireAuth } from './auth-middleware.js';
 import { canModifyNote, noteAuthorName } from './note-permissions.js';
 import { deriveGridInputs } from './grid-inputs.js';
 import { RESOURCE_KIND_IDS, SINGLE_RESOURCE_KINDS, validateResourceUrl } from './resource-rules.js';
+import { listProjectFolders, DriveSetupError } from './drive.js';
 import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin } from './permissions.js';
 import { sendStandupReminders, previewStandupReminders } from './reminders.js';
 import cashflowRouter from './routes/cashflow.js';
@@ -1623,6 +1624,22 @@ app.post('/api/origination/link', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to add link:', error);
     res.status(500).json({ error: 'Failed to add link' });
+  }
+});
+
+// Deal folders in the Drive Projects folder, for Project Detail's
+// "Project Folder" picker. 503 + the service account's email when Drive
+// access isn't set up yet, so the picker can say exactly what to share.
+app.get('/api/drive/project-folders', requireAuth, async (req, res) => {
+  try {
+    const folders = await listProjectFolders();
+    res.json({ folders });
+  } catch (error) {
+    if (error instanceof DriveSetupError) {
+      return res.status(503).json({ error: error.message, serviceAccountEmail: error.serviceAccountEmail, setup: true });
+    }
+    console.error('Failed to list Drive project folders:', error.message);
+    res.status(500).json({ error: 'Could not load the Drive folders' });
   }
 });
 

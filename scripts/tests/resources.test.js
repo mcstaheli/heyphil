@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RESOURCE_KINDS, detectSource, resourceLayout, quickOpenLinks } from '../../client/src/resources.js';
+import { RESOURCE_KINDS, detectSource, resourceLayout, quickOpenLinks, rankFolders } from '../../client/src/resources.js';
 import { RESOURCE_KIND_IDS, SINGLE_RESOURCE_KINDS, validateResourceUrl } from '../../server/resource-rules.js';
 
 test('client and server agree on the resource kinds', () => {
@@ -55,4 +55,35 @@ test('validateResourceUrl: http(s) only - a javascript: link must never become a
   assert.match(validateResourceUrl('data:text/html,<script>'), /http/);
   assert.match(validateResourceUrl('not a url'), /valid/);
   assert.match(validateResourceUrl(''), /required/);
+});
+
+const FOLDERS = [
+  { id: 'a', name: 'Willow' },
+  { id: 'b', name: 'Zion Promenade (Unit Sales)' },
+  { id: 'c', name: 'Zion Promenade' },
+  { id: 'd', name: 'Bryce Canyon - Marriott' },
+];
+
+test('rankFolders: the folder named like the project comes first, marked suggested', () => {
+  const ranked = rankFolders(FOLDERS, '', 'Zion Promenade');
+  assert.deepEqual(ranked.map((f) => [f.name, !!f.suggested]), [
+    ['Zion Promenade', true],
+    ['Bryce Canyon - Marriott', false],
+    ['Willow', false],
+    ['Zion Promenade (Unit Sales)', false],
+  ]);
+  // case / spacing / dash differences still match
+  assert.equal(rankFolders(FOLDERS, '', '  bryce canyon – marriott ')[0].name, 'Bryce Canyon - Marriott');
+});
+
+test('rankFolders: no exact match -> alphabetical, nothing suggested', () => {
+  const ranked = rankFolders(FOLDERS, '', 'Red Lion');
+  assert.deepEqual(ranked.map((f) => f.name), ['Bryce Canyon - Marriott', 'Willow', 'Zion Promenade', 'Zion Promenade (Unit Sales)']);
+  assert.equal(ranked.some((f) => f.suggested), false);
+});
+
+test('rankFolders: search filters by any word, case-insensitive', () => {
+  assert.deepEqual(rankFolders(FOLDERS, 'unit', 'Zion Promenade').map((f) => f.name), ['Zion Promenade (Unit Sales)']);
+  assert.deepEqual(rankFolders(FOLDERS, 'zion prom', 'x').map((f) => f.name), ['Zion Promenade', 'Zion Promenade (Unit Sales)']);
+  assert.deepEqual(rankFolders(FOLDERS, 'zzz', 'x'), []);
 });

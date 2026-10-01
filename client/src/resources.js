@@ -73,3 +73,21 @@ export function quickOpenLinks(links) {
     .map((kind) => (links || []).find((l) => linkKind(l) === kind))
     .filter(Boolean);
 }
+
+// Project Folder picker: folders in the Drive Projects folder, filtered by
+// the search box (every typed word must appear), alphabetical, with the one
+// named like this project (ignoring case, spacing and dash style) first and
+// marked `suggested`.
+const normalizeName = (s) => (s || '').toLowerCase().replace(/[‐-―−-]/g, '-').replace(/\s+/g, ' ').trim();
+
+export function rankFolders(folders, query, projectName) {
+  const words = normalizeName(query).split(' ').filter(Boolean);
+  const target = normalizeName(projectName);
+  return (folders || [])
+    .filter((f) => {
+      const name = normalizeName(f.name);
+      return words.every((w) => name.includes(w));
+    })
+    .map((f) => ({ ...f, suggested: !!target && normalizeName(f.name) === target }))
+    .sort((a, b) => (Number(b.suggested) - Number(a.suggested)) || a.name.localeCompare(b.name));
+}

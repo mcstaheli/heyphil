@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RESOURCE_KINDS, detectSource, kindLabel, linkKind, resourceLayout } from './resources';
+import { RESOURCE_KINDS, detectSource, kindLabel, linkKind, rankFolders, resourceLayout } from './resources';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -59,6 +59,135 @@ export function ResourceIcon({ type, size = 28 }) {
 }
 
 const EMPTY_SLOT_ICON = { folder: 'folder', model: 'sheets' };
+
+// "Add folder" for the Project Folder slot: lists the deal folders in the
+// Drive Projects folder (GET /api/drive/project-folders), the one named
+// like this project first. Until Drive access is set up the route answers
+// 503 with what to do; "Paste a link instead" always works.
+function FolderPickerModal({ projectName, onPick, onClose }) {
+  const [state, setState] = useState({ loading: true, folders: [], error: null, setup: null });
+  const [query, setQuery] = useState('');
+  const [pasting, setPasting] = useState(false);
+  const [pasteUrl, setPasteUrl] = useState('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const res = await fetch(`${API_BASE_URL}/api/drive/project-folders`, {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          setState({ loading: false, folders: [], error: data.error || 'Could not load the Drive folders', setup: data.setup ? data : null });
+          setPasting(true);
+          return;
+        }
+        setState({ loading: false, folders: data.folders || [], error: null, setup: null });
+      } catch (error) {
+        if (!cancelled) {
+          setState({ loading: false, folders: [], error: 'Could not reach HeyPhil to load the folders', setup: null });
+          setPasting(true);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const ranked = rankFolders(state.folders, query, projectName);
+
+  return (
+    <div className="folder-picker-overlay" onClick={onClose}>
+      <div className="folder-picker" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Choose the project folder">
+        <div className="folder-picker-header">
+          <h3>Choose the project folder</h3>
+          <button type="button" className="folder-picker-close" onClick={onClose} title="Close">×</button>
+        </div>
+
+        {state.loading && <p className="folder-picker-note">Loading folders from Drive...</p>}
+
+        {state.error && (
+          <div className="folder-picker-error">
+            <p>{state.error}</p>
+            {state.setup && state.setup.serviceAccountEmail && (
+              <p>
+                To list folders here, share the Drive <b>Projects</b> folder (Viewer) with{' '}
+                <code>{state.setup.serviceAccountEmail}</code>
+                {/turned off/i.test(state.error) && ' and turn on the Google Drive API for its Google Cloud project'}.
+              </p>
+            )}
+          </div>
+        )}
+
+        {!state.loading && !state.error && (
+          <>
+            <input
+              type="text"
+              className="folder-picker-search"
+              placeholder="Search folders..."
+              value={query}
+              autoFocus
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && ranked[0]) onPick(ranked[0]);
+                if (e.key === 'Escape') onClose();
+              }}
+            />
+            <ul className="folder-picker-list">
+              {ranked.length === 0 && (
+                <li className="folder-picker-empty">
+                  {state.folders.length === 0 ? 'The Projects folder has no subfolders yet.' : 'No folders match.'}
+                </li>
+              )}
+              {ranked.map((folder) => (
+                <li key={folder.id}>
+                  <button type="button" onClick={() => onPick(folder)}>
+                    <ResourceIcon type="folder" size={20} />
+                    <span className="folder-picker-name">{folder.name}</span>
+                    {folder.suggested && <span className="folder-picker-suggested">Suggested</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        <div className="folder-picker-footer">
+          {!pasting ? (
+            <button type="button" className="folder-picker-paste-toggle" onClick={() => setPasting(true)}>
+              Paste a link instead
+            </button>
+          ) : (
+            <div className="folder-picker-paste">
+              <input
+                type="url"
+                placeholder="Paste a folder link (https://drive.google.com/...)"
+                value={pasteUrl}
+                autoFocus={!!state.error}
+                onChange={(e) => setPasteUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && pasteUrl.trim()) onPick({ name: 'Project Folder', url: pasteUrl.trim() });
+                  if (e.key === 'Escape') onClose();
+                }}
+              />
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={!pasteUrl.trim()}
+                onClick={() => onPick({ name: 'Project Folder', url: pasteUrl.trim() })}
+              >
+                Use link
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 const ADDABLE_KINDS = RESOURCE_KINDS.filter((k) => !k.pinned);
 
 // The Resources row at the top of Project Detail: Project Folder and
@@ -66,11 +195,12 @@ const ADDABLE_KINDS = RESOURCE_KINDS.filter((k) => !k.pinned);
 // any Teaser / Offering Memorandum / Pitch Deck / Other links, then
 // "+ Add resource". Each tile opens its link in a new tab; hovering shows
 // ⋯ for Replace link / Remove. Saves straight away via the link routes.
-function ProjectResources({ projectId, links, onLinksChange }) {
+function ProjectResources({ projectId, projectName, links, onLinksChange }) {
   // editor: null | { mode: 'add', kind, label, url } | { mode: 'replace', link, label, url }
   const [editor, setEditor] = useState(null);
   const [menuFor, setMenuFor] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [folderPicker, setFolderPicker] = useState(null); // null | { link: existing folder link or null }
   const { pinned, extras } = resourceLayout(links);
 
   const request = async (method, path, body) => {
@@ -109,6 +239,24 @@ function ProjectResources({ projectId, links, onLinksChange }) {
     }
   };
 
+  // Picked (or pasted) a folder: the link's title is the folder's name, so
+  // the tile can show which folder it is.
+  const saveFolder = async (folder) => {
+    const existing = folderPicker && folderPicker.link;
+    setFolderPicker(null);
+    try {
+      if (existing) {
+        const { link } = await request('PUT', `/${existing.id}`, { cardId: projectId, title: folder.name, url: folder.url });
+        onLinksChange((prev) => prev.map((l) => (l.id === link.id ? link : l)));
+      } else {
+        const { link } = await request('POST', '', { cardId: projectId, kind: 'folder', title: folder.name, url: folder.url });
+        onLinksChange((prev) => [...prev.filter((l) => l.id !== link.id), link]);
+      }
+    } catch (error) {
+      window.alert(`Could not save the folder: ${error.message}`);
+    }
+  };
+
   const remove = async (link) => {
     setMenuFor(null);
     if (!window.confirm(`Remove "${link.title}"? The file itself isn't touched.`)) return;
@@ -123,12 +271,17 @@ function ProjectResources({ projectId, links, onLinksChange }) {
   const renderTile = (link) => {
     const source = detectSource(link.url);
     const kind = linkKind(link);
+    // Project Folder / Working Model keep their slot name as the label and
+    // show which file/folder it is (e.g. the folder's name) underneath.
+    const isPinned = RESOURCE_KINDS.some((k) => k.kind === kind && k.pinned);
+    const label = isPinned ? kindLabel(kind) : (link.title || kindLabel(kind));
+    const caption = isPinned && link.title && link.title !== kindLabel(kind) ? link.title : source.caption;
     return (
       <div key={link.id} className="resource-tile-wrap">
         <a className="resource-tile" href={link.url} target="_blank" rel="noopener noreferrer" title={link.url}>
           <ResourceIcon type={source.type} />
-          <span className="resource-tile-label">{link.title || kindLabel(kind)}</span>
-          <span className="resource-tile-caption">{source.caption}</span>
+          <span className="resource-tile-label">{label}</span>
+          <span className="resource-tile-caption">{caption}</span>
         </a>
         <button
           type="button"
@@ -138,8 +291,15 @@ function ProjectResources({ projectId, links, onLinksChange }) {
         >⋯</button>
         {menuFor === link.id && (
           <div className="resource-tile-menu" onMouseLeave={() => setMenuFor(null)}>
-            <button type="button" onClick={() => { setMenuFor(null); setEditor({ mode: 'replace', link, label: link.title || '', url: link.url }); }}>
-              Replace link
+            <button
+              type="button"
+              onClick={() => {
+                setMenuFor(null);
+                if (kind === 'folder') setFolderPicker({ link });
+                else setEditor({ mode: 'replace', link, label: link.title || '', url: link.url });
+              }}
+            >
+              {kind === 'folder' ? 'Choose a different folder' : 'Replace link'}
             </button>
             <button type="button" className="danger" onClick={() => remove(link)}>Remove</button>
           </div>
@@ -156,11 +316,13 @@ function ProjectResources({ projectId, links, onLinksChange }) {
             key={slot.kind}
             type="button"
             className="resource-tile resource-tile-empty"
-            onClick={() => setEditor({ mode: 'add', kind: slot.kind, label: slot.label, url: '' })}
+            onClick={() => (slot.kind === 'folder'
+              ? setFolderPicker({ link: null })
+              : setEditor({ mode: 'add', kind: slot.kind, label: slot.label, url: '' }))}
           >
             <ResourceIcon type={EMPTY_SLOT_ICON[slot.kind]} />
             <span className="resource-tile-label">{slot.label}</span>
-            <span className="resource-tile-caption">＋ Add link</span>
+            <span className="resource-tile-caption">{slot.kind === 'folder' ? '＋ Add folder' : '＋ Add link'}</span>
           </button>
         )))}
         {extras.map(renderTile)}
@@ -173,6 +335,14 @@ function ProjectResources({ projectId, links, onLinksChange }) {
           <span className="resource-tile-label">Add resource</span>
         </button>
       </div>
+
+      {folderPicker && (
+        <FolderPickerModal
+          projectName={projectName}
+          onPick={saveFolder}
+          onClose={() => setFolderPicker(null)}
+        />
+      )}
 
       {editor && (
         <div className="resource-editor">
