@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './CustomTimeline.css';
 import { enforceSingleFirstCash } from './strategyGridMath';
+import { darkenHex } from './colorUtils';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -2149,7 +2150,7 @@ function CustomTimeline({ projectId, compact = false, people = {}, activeLock = 
                               className="timeline-bar-progress"
                               style={{ 
                                 width: `${task.progress || 0}%`,
-                                backgroundColor: `color-mix(in srgb, ${getTaskColor(task)} 80%, black)`
+                                backgroundColor: darkenHex(getTaskColor(task))
                               }}
                             />
                           )}
