@@ -2068,11 +2068,11 @@ body {
 
 /* Condensed Value/Budget/Timeline metrics on cards - sits above the
    photo/title row, so order is target-value-to-Philo, budget delta,
-   timeline delta; nowrap keeps it to one line since it now has the
-   card's full width instead of sharing a row with the photo. */
+   timeline delta. Usually one line across the card's full width; wraps
+   when the labeled chips ("vs plan", "left", "late") don't fit. */
 .card-metric-chips {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 0 0 10px 0;
 }

@@ -13,9 +13,9 @@ import ProjectDetail from './ProjectDetail';
 import Portfolio from './Portfolio';
 import StrategyGrid from './StrategyGrid';
 import Layout from './Layout';
-import { summarizeLedger, computeTimelineMetrics } from './projectMetrics';
 import { PRE_POST_COLUMN_IDS } from './boardStages';
 import { formatCompactMoney } from './formatMoney';
+import { getCardMetricChips } from './cardMetricChips';
 import { isNoteEntry, canModifyNote, noteAuthorName } from './activityLog';
 import { deriveGridInputs } from './strategyGridMath';
 import AssigneeInput from './AssigneeInput';
@@ -30,60 +30,6 @@ const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
 // there instead (see board-db.js's auto-zero hook). No longer edited or
 // required-checked in this modal - moved to Project Detail (per request),
 // which still respects the same auto-zero-on-Assets server behavior.
-
-function hasLeafItems(items) {
-  return (items || []).some((i) => !i.isHeading);
-}
-
-
-// Value shows the goal (what we're aiming for) since that's motivating on
-// its own; Budget and Timeline show delta from plan since those are the
-// two places drifting off-plan is the thing worth flagging at a glance.
-function getCardMetricChips(card) {
-  const chips = [];
-
-  if (hasLeafItems(card.value)) {
-    const valueLocks = card.valueLocks || [];
-    const latestValueLock = valueLocks.length ? valueLocks[valueLocks.length - 1] : null;
-    const { totalExpected } = summarizeLedger(card.value, latestValueLock);
-    chips.push({ key: 'value', icon: '💰', text: formatCompactMoney(totalExpected), className: '' });
-  }
-
-  if (hasLeafItems(card.budget)) {
-    const budgetLocks = card.budgetLocks || [];
-    const latestBudgetLock = budgetLocks.length ? budgetLocks[budgetLocks.length - 1] : null;
-    const { delta } = summarizeLedger(card.budget, latestBudgetLock);
-    chips.push({
-      key: 'budget',
-      icon: '🎯',
-      text: formatCompactMoney(delta),
-      className: delta > 0 ? 'over' : delta < 0 ? 'under' : ''
-    });
-  }
-
-  const hasTimeline = (card.timeline || []).some((t) => t.type === 'milestone' && t.date);
-  if (hasTimeline) {
-    const { finalComparison, daysRemaining } = computeTimelineMetrics(card.timeline, card.timelineLocks);
-    if (finalComparison) {
-      const days = finalComparison.slippageDays;
-      chips.push({
-        key: 'timeline',
-        icon: '📅',
-        text: `${days > 0 ? '+' : ''}${days}d`,
-        className: days > 0 ? 'over' : days < 0 ? 'under' : ''
-      });
-    } else if (daysRemaining !== null) {
-      chips.push({
-        key: 'timeline',
-        icon: '📅',
-        text: daysRemaining < 0 ? `${Math.abs(daysRemaining)}d over` : `${daysRemaining}d`,
-        className: daysRemaining < 0 ? 'over' : ''
-      });
-    }
-  }
-
-  return chips;
-}
 
 // Helper function to generate consistent colors for initials
 // Starred ("do or die") items float to the top; Array.prototype.sort is
@@ -1583,7 +1529,7 @@ function OriginationBoard({ user, studioMode = false }) {
                     {metricChips.length > 0 && (
                       <div className="card-metric-chips">
                         {metricChips.map((chip) => (
-                          <span key={chip.key} className={`card-metric-chip ${chip.className}`}>
+                          <span key={chip.key} className={`card-metric-chip ${chip.className}`} title={chip.title}>
                             {chip.icon} {chip.text}
                           </span>
                         ))}
