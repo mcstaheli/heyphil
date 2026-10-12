@@ -1,4 +1,4 @@
-import { fitWithin, rectFromDrag, drawShape, isMeaningful, MAX_WIDTH } from './snapshotMarkup';
+import { fitWithin, rectFromDrag, drawShape, isMeaningful, MAX_WIDTH, freezeMotion } from './snapshotMarkup';
 
 function fakeCtx() {
   const calls = [];
@@ -54,4 +54,13 @@ test('box strokes a rectangle; arrow draws a shaft and a head; pen follows its p
   const pen = fakeCtx();
   drawShape(pen, { type: 'pen', points: [{ x: 1, y: 1 }, { x: 5, y: 6 }, { x: 9, y: 9 }] }, 1000);
   expect(pen.calls.filter((c) => c[0] === 'lineTo')).toHaveLength(2);
+});
+
+test('freezeMotion turns off animations and transitions in the cloned document (#36)', () => {
+  const doc = document.implementation.createHTMLDocument('clone');
+  freezeMotion(doc);
+  const style = doc.head.querySelector('style[data-snapshot-freeze]');
+  expect(style).not.toBeNull();
+  expect(style.textContent).toMatch(/animation: none !important/);
+  expect(style.textContent).toMatch(/transition: none !important/);
 });

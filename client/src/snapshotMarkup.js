@@ -82,3 +82,14 @@ export function drawAll(ctx, image, width, height, shapes) {
   ctx.drawImage(image, 0, 0, width, height);
   for (const shape of shapes) drawShape(ctx, shape, width);
 }
+
+// html2canvas draws a cloned copy of the page, and CSS animations restart
+// in that copy - Project Detail's slide-in was captured part-way in from
+// the right (#36). Freezing animations and transitions in the clone makes
+// every element render at its settled position.
+export function freezeMotion(doc) {
+  const style = doc.createElement('style');
+  style.setAttribute('data-snapshot-freeze', '');
+  style.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }';
+  (doc.head || doc.documentElement).appendChild(style);
+}

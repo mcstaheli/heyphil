@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './SnapshotReporter.css';
-import { TOOLS, JPEG_QUALITY, drawAll, fitWithin, isMeaningful, rectFromDrag } from './snapshotMarkup';
+import { TOOLS, JPEG_QUALITY, drawAll, fitWithin, isMeaningful, rectFromDrag, freezeMotion } from './snapshotMarkup';
 import { getRecentErrors } from './errorBuffer';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -27,6 +27,7 @@ async function captureViewport() {
     useCORS: true,
     logging: false,
     ignoreElements: (el) => el.hasAttribute && el.hasAttribute(IGNORE_ATTR),
+    onclone: (clonedDoc) => freezeMotion(clonedDoc),
   });
 }
 
