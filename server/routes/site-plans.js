@@ -30,6 +30,39 @@ async function canDelete(req, plan) {
   return isAdmin(email).catch(() => false);
 }
 
+// Presets come before /:id so "presets" is never read as a site id.
+router.get('/presets', async (req, res) => {
+  try {
+    res.json({ presets: await sitePlansDb.listPresets() });
+  } catch (error) {
+    handleError(res, error, 'list presets');
+  }
+});
+
+router.post('/presets', async (req, res) => {
+  try {
+    const preset = await sitePlansDb.createPreset(req.body || {}, { email: req.user.email, name: req.user.name });
+    res.status(201).json({ preset });
+  } catch (error) {
+    handleError(res, error, 'save the preset');
+  }
+});
+
+router.delete('/presets/:presetId', async (req, res) => {
+  try {
+    if (!isUuid(req.params.presetId)) return res.status(404).json({ error: 'Not found' });
+    const preset = await sitePlansDb.getPreset(req.params.presetId);
+    if (!preset) return res.status(404).json({ error: 'Not found' });
+    if (!(await canDelete(req, preset))) {
+      return res.status(403).json({ error: 'Only the person who saved this preset or an admin can delete it.' });
+    }
+    await sitePlansDb.softDeletePreset(req.params.presetId);
+    res.json({ success: true });
+  } catch (error) {
+    handleError(res, error, 'delete the preset');
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const plans = await sitePlansDb.getAllPlans();

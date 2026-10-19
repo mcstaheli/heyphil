@@ -70,3 +70,45 @@ test('isUuid', () => {
   assert.equal(isUuid('670c4019-27c8-40e5-a7d4-999f106f9a15'), true);
   assert.equal(isUuid('x'), false);
 });
+
+import { validatePreset } from '../../server/site-plan-rules.js';
+
+const square = { type: 'Polygon', coordinates: [[[-111.9, 40.7], [-111.899, 40.7], [-111.899, 40.701], [-111.9, 40.701], [-111.9, 40.7]]] };
+const one = (extra) => validateSchemes([{ id: 'a', name: 'A', assetType: 'mf-garden', ...extra }])[0];
+
+test('schemes keep hand-placed buildings, checked', () => {
+  const b = { id: 'b1', center: [-111.9, 40.7], length: 200, depth: 65, angle: 12.5 };
+  assert.deepEqual(one({ edits: { buildings: [b, { ...b, id: 'b2', floors: 4 }] } }).edits.buildings[1].floors, 4);
+  assert.equal(one({}).edits, undefined);
+  assert.throws(() => one({ edits: { buildings: [{ ...b, length: 0 }] } }), SitePlanValidationError);
+  assert.throws(() => one({ edits: { buildings: [{ ...b, center: [500, 0] }] } }), SitePlanValidationError);
+  assert.throws(() => one({ edits: { buildings: [b, b] } }), SitePlanValidationError);
+  assert.throws(() => one({ edits: { buildings: [{ ...b, floors: 2.5 }] } }), SitePlanValidationError);
+  assert.throws(() => one({ edits: 'nope' }), SitePlanValidationError);
+});
+
+test('schemes keep spaces: no-build, or an asset type with settings', () => {
+  const out = one({
+    spaces: [
+      { id: 's1', name: ' Pond ', kind: 'no-build', polygon: square, assetType: 'retail' },
+      { id: 's2', name: 'Pad', kind: 'asset', assetType: 'retail', overrides: { setback: 0 }, polygon: square },
+    ],
+  });
+  assert.equal(out.spaces[0].name, 'Pond');
+  assert.equal(out.spaces[0].assetType, undefined); // ignored for no-build
+  assert.deepEqual(out.spaces[1].overrides, { setback: 0 });
+  assert.throws(() => one({ spaces: [{ id: 's', name: 'X', kind: 'park', polygon: square }] }), SitePlanValidationError);
+  assert.throws(() => one({ spaces: [{ id: 's', name: 'X', kind: 'asset', assetType: 'castle', polygon: square }] }), SitePlanValidationError);
+  assert.throws(() => one({ spaces: [{ id: 's', name: 'X', kind: 'no-build' }] }), SitePlanValidationError);
+});
+
+test('pro forma dollar settings can go into the millions', () => {
+  assert.equal(one({ overrides: { landCost: 4500000 } }).overrides.landCost, 4500000);
+  assert.throws(() => one({ overrides: { landCost: 2e10 } }), SitePlanValidationError);
+});
+
+test('validatePreset', () => {
+  assert.deepEqual(validatePreset({ name: ' Wrap ', assetType: 'mf-podium', overrides: { floors: 6 } }), { name: 'Wrap', assetType: 'mf-podium', overrides: { floors: 6 } });
+  assert.throws(() => validatePreset({ name: '', assetType: 'mf-podium' }), SitePlanValidationError);
+  assert.throws(() => validatePreset({ name: 'X', assetType: 'castle' }), SitePlanValidationError);
+});

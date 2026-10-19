@@ -150,13 +150,42 @@ export const ASSET_TYPES = [
 
 export const ASSET_TYPE_IDS = ASSET_TYPES.map((t) => t.id);
 
+// Pro forma inputs (proforma.js). Rental types end in a value from NOI
+// and an exit cap; for-sale homes in sale revenue. Rough starting points
+// to override, not market data.
+const pf = (key, label, unit, def, extra = {}) => ({ key, label, unit, default: def, group: 'Pro forma', max: 1e10, ...extra });
+const COST_FIELDS = (hardCost) => [
+  pf('landCost', 'Land cost', '$', 0, { step: 10000 }),
+  pf('hardCostPerSf', 'Hard cost', '$ / sf', hardCost),
+  pf('softCostPct', 'Soft costs', '% of hard', 25),
+  pf('surfaceStallCost', 'Surface stall cost', '$', 5000, { step: 500 }),
+  pf('structuredStallCost', 'Structured stall cost', '$', 30000, { step: 1000 }),
+];
+const RENTAL_FIELDS = (vacancy, opex, cap) => [
+  pf('vacancyPct', 'Vacancy', '%', vacancy, { step: 0.5 }),
+  pf('opexPct', 'Operating costs', '% of income', opex),
+  pf('exitCapPct', 'Exit cap rate', '%', cap, { step: 0.05 }),
+];
+
+export const PROFORMA_FIELDS = {
+  'mf-garden': [...COST_FIELDS(165), pf('rentPerSfMonth', 'Rent', '$ / sf / mo', 1.95, { step: 0.05 }), pf('otherIncomePerUnitMonth', 'Other income', '$ / unit / mo', 50), ...RENTAL_FIELDS(5, 35, 5.5)],
+  'mf-podium': [...COST_FIELDS(215), pf('rentPerSfMonth', 'Rent', '$ / sf / mo', 2.4, { step: 0.05 }), pf('otherIncomePerUnitMonth', 'Other income', '$ / unit / mo', 75), ...RENTAL_FIELDS(5, 35, 5.25)],
+  townhome: [...COST_FIELDS(160), pf('lotDevCost', 'Lot development', '$ / home', 45000, { step: 1000 }), pf('salePrice', 'Sale price', '$ / home', 475000, { step: 5000 }), pf('sellingCostPct', 'Selling costs', '%', 6, { step: 0.5 })],
+  sfr: [...COST_FIELDS(145), pf('lotDevCost', 'Lot development', '$ / home', 60000, { step: 1000 }), pf('salePrice', 'Sale price', '$ / home', 650000, { step: 5000 }), pf('sellingCostPct', 'Selling costs', '%', 6, { step: 0.5 })],
+  hotel: [...COST_FIELDS(230), pf('adr', 'Average daily rate', '$', 160), pf('occupancyPct', 'Occupancy', '%', 70), pf('opexPct', 'Operating costs', '% of revenue', 70), pf('exitCapPct', 'Exit cap rate', '%', 7.5, { step: 0.05 })],
+  industrial: [...COST_FIELDS(85), pf('rentPerSfYear', 'Rent (NNN)', '$ / sf / yr', 9, { step: 0.25 }), ...RENTAL_FIELDS(5, 8, 5.75)],
+  retail: [...COST_FIELDS(160), pf('rentPerSfYear', 'Rent (NNN)', '$ / sf / yr', 28, { step: 0.5 }), ...RENTAL_FIELDS(7, 10, 6.5)],
+  parking: [...COST_FIELDS(0), pf('revenuePerStallMonth', 'Revenue', '$ / stall / mo', 75), ...RENTAL_FIELDS(10, 20, 7)],
+};
+
 export function getAssetType(id) {
   return ASSET_TYPES.find((t) => t.id === id) || ASSET_TYPES[0];
 }
 
-// Every field a type shows, shared ones last.
+// Every field a type shows: its program, the shared site/zoning/parking
+// fields, then its pro forma.
 export function fieldsFor(type) {
-  return [...type.fields, ...COMMON_FIELDS];
+  return [...type.fields, ...COMMON_FIELDS, ...(PROFORMA_FIELDS[type.id] || [])];
 }
 
 export function defaultsFor(type) {

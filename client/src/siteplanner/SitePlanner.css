@@ -507,3 +507,214 @@
   .siteplan-search { left: 50px; width: calc(100% - 110px); }
   .siteplan-legend { max-width: calc(100% - 20px); }
 }
+
+/* ---- Map handles and labels ---- */
+.siteplan-handle {
+  background: #facc15;
+  color: #1f2937;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
+  font-weight: 700;
+  cursor: grab;
+}
+
+.siteplan-handle-rotate { background: #38bdf8; }
+.siteplan-handle-move { background: white; }
+
+.leaflet-tooltip.siteplan-space-label {
+  background: rgba(17, 24, 39, 0.7);
+  color: white;
+  border: none;
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+
+.leaflet-tooltip.siteplan-space-label::before { display: none; }
+
+.lg-nobuild { background: #34d399; border: 1px dashed #047857; }
+.lg-space { background: #fb7185; }
+
+/* ---- Panel sections ---- */
+.siteplan-section {
+  border-top: 1px solid #f3f4f6;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.siteplan-section-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.siteplan-section-head > span { display: flex; gap: 6px; align-items: center; }
+.siteplan-section-manual { background: #faf5ff; border-radius: 8px; padding: 8px; border-top: none; }
+
+.siteplan-small-btn {
+  border: 1px solid #c7d2fe;
+  background: white;
+  color: #4338ca;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.siteplan-small-btn:disabled { opacity: 0.5; cursor: default; }
+
+.siteplan-building-list { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.siteplan-building-chip {
+  min-width: 28px;
+  border: 1px solid #c4b5fd;
+  background: white;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #5b21b6;
+}
+
+.siteplan-building-chip.active { background: #facc15; border-color: #ca8a04; color: #1f2937; }
+.siteplan-building-chip.bad { border-color: #ef4444; color: #b91c1c; }
+.siteplan-building-edit { background: white; border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.siteplan-building-actions { display: flex; gap: 12px; padding: 4px; }
+
+.siteplan-space-row {
+  display: grid;
+  grid-template-columns: 14px auto 1fr;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e5e7eb;
+  background: white;
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+}
+
+.siteplan-space-row.active { border-color: #667eea; background: #eef0fb; }
+.siteplan-space-row .siteplan-small { text-align: right; }
+.siteplan-space-name { font-weight: 600; }
+.siteplan-space-swatch { width: 12px; height: 12px; border-radius: 3px; }
+.siteplan-space-swatch.nobuild { background: #34d399; border: 1px dashed #047857; }
+.siteplan-space-swatch.asset { background: #fb7185; }
+.siteplan-space-edit { background: #f9fafb; border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+
+.siteplan-text-input {
+  width: 180px;
+  padding: 5px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.siteplan-presets summary { cursor: pointer; }
+.siteplan-presets[open] { gap: 6px; }
+.siteplan-preset-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 13px; }
+.siteplan-preset-row > span:last-child { display: flex; gap: 10px; }
+
+.siteplan-group-toggle {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.siteplan-changed-count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: #b45309;
+  background: #fffbeb;
+  border-radius: 8px;
+  padding: 0 6px;
+}
+
+/* ---- Results: yield on cost, checks, pro forma ---- */
+.siteplan-yoc {
+  margin-left: auto;
+  background: #ecfdf5;
+  color: #047857;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.siteplan-checks { margin: 6px 0; }
+.siteplan-checks table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.siteplan-checks td { padding: 3px 4px; border-bottom: 1px solid #f3f4f6; }
+.siteplan-checks td:first-child { width: 20px; }
+.siteplan-checks td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.siteplan-check-fail td { color: #b91c1c; font-weight: 600; }
+.siteplan-check-ok, .siteplan-check-bad {
+  text-transform: none;
+  letter-spacing: 0;
+  border-radius: 8px;
+  padding: 0 6px;
+}
+
+.siteplan-check-ok { background: #dcfce7; color: #166534; }
+.siteplan-check-bad { background: #fee2e2; color: #b91c1c; }
+
+.siteplan-details { margin-top: 6px; }
+.siteplan-details summary { cursor: pointer; font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 4px; }
+.siteplan-neg { color: #b91c1c; }
+
+/* ---- Option generator ---- */
+.siteplan-gen-modal { max-width: 920px; width: 100%; }
+.siteplan-gen-body { display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 220px); overflow-y: auto; }
+.siteplan-gen-sweeps { display: flex; flex-direction: column; gap: 6px; }
+
+.siteplan-gen-sweep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.siteplan-gen-sweep select, .siteplan-gen-filters select { padding: 5px 6px; border: 1px solid #d1d5db; border-radius: 6px; }
+
+.siteplan-gen-sweep input, .siteplan-gen-filters input[type='number'] {
+  width: 84px;
+  padding: 5px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  text-align: right;
+}
+
+.siteplan-gen-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.siteplan-gen-filters label { display: flex; align-items: center; gap: 6px; }
+.siteplan-gen-run { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.siteplan-gen-results table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.siteplan-gen-results th, .siteplan-gen-results td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #f3f4f6;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.siteplan-gen-results th { background: #f9fafb; font-size: 12px; }

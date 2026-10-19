@@ -1,167 +1,51 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import SitePlanMap from './SitePlanMap';
+import GeneratorModal from './GeneratorModal';
 import { loadProjects, searchAddress, sitePlansApi } from './api';
-import { ASSET_TYPES, DEFAULT_MIX, defaultsFor, fieldsFor, getAssetType } from './assetTypes';
-import { LIMIT_LABELS, solveScheme } from './solver';
+import { ASSET_TYPES, effectiveSettings, getAssetType } from './assetTypes';
+import { makeProjection } from './geometry';
+import { solveScheme, supportsManualLayout } from './solver';
+import { NumberInput, SchemeSettings, fmtDec } from './settingsFields';
+import { CompareView, ResultsCard, planMetrics, yieldOf } from './results';
 import './SitePlanner.css';
 
 // Dev Tools -> Site Planner -> a site: the map on the left, the schemes
-// and their settings and numbers on the right. Every change saves itself
-// a moment later; a save based on an older copy than the stored one is
+// and their settings and numbers on the right. A scheme can be laid out
+// automatically or placed by hand (Edit layout), carry spaces (no-build
+// areas, or areas with their own asset type), be saved as a preset, and
+// be explored with the option generator. Every change saves itself a
+// moment later; a save based on an older copy than the stored one is
 // refused (409) rather than undoing someone else's work.
 
 const SAVE_DELAY_MS = 800;
 
-const fmtInt = (n) => Math.round(n || 0).toLocaleString('en-US');
-const fmtDec = (n, d = 2) => (n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
-const fmtPct = (n) => `${fmtDec((n || 0) * 100, 1)}%`;
+const newId = () => Math.random().toString(36).slice(2, 10);
 
-function yieldOf(type, m) {
-  if (!m) return { value: '-', label: '' };
-  switch (type.yieldKind) {
-    case 'units': return { value: fmtInt(m.units), label: type.mode === 'lots' ? 'homes' : 'units' };
-    case 'keys': return { value: fmtInt(m.keys), label: 'keys' };
-    case 'stalls': return { value: fmtInt(m.parkingProvided), label: 'stalls' };
-    default: return { value: fmtInt(m.nsf), label: type.mode === 'industrial' ? 'sf building' : 'sf leasable' };
-  }
-}
-
-// The rows shown for a scheme's results, also used side by side in Compare.
-function metricRows(type, m) {
-  if (!m) return [];
-  const rows = [
-    ['Site area', `${fmtDec(m.siteAcres)} ac (${fmtInt(m.siteSf)} sf)`],
-    ['Buildable after setback', `${fmtInt(m.buildableSf)} sf`],
-  ];
-  if (type.mode !== 'parking') {
-    rows.push(
-      [type.mode === 'lots' ? 'Homes' : 'Buildings', fmtInt(m.buildingCount)],
-      ['Footprint', `${fmtInt(m.footprintSf)} sf`],
-      ['Floors / height', m.floors ? `${m.floors} / ${fmtDec(m.heightFt, 0)} ft` : '-'],
-      ['Gross area', `${fmtInt(m.gsf)} sf`],
-    );
-    if (type.yieldKind === 'units' && type.mode !== 'lots') rows.push(['Net rentable', `${fmtInt(m.nsf)} sf`]);
-    if (type.id === 'retail') rows.push(['Leasable (GLA)', `${fmtInt(m.nsf)} sf`]);
-    if (type.yieldKind === 'units') rows.push(['Units', fmtInt(m.units)]);
-    if (type.yieldKind === 'keys') rows.push(['Keys', fmtInt(m.keys)]);
-    if (type.yieldKind === 'units' || type.yieldKind === 'keys') rows.push(['Density', `${fmtDec(m.density, 1)} per acre`]);
-    rows.push(['FAR', fmtDec(m.far)], ['Lot coverage', fmtPct(m.coverage)]);
-    if (type.mode === 'industrial') rows.push(['Dock doors', fmtInt(m.docks)]);
-    rows.push(['Parking required', fmtInt(m.parkingRequired)]);
-  }
-  const parts = [];
-  if (m.parkingSurface) parts.push(`${fmtInt(m.parkingSurface)} surface`);
-  if (m.parkingStructured) parts.push(`${fmtInt(m.parkingStructured)} structured`);
-  if (m.parkingGarage) parts.push(`${fmtInt(m.parkingGarage)} garage`);
-  rows.push(['Parking provided', `${fmtInt(m.parkingProvided)}${parts.length > 1 ? ` (${parts.join(' + ')})` : ''}`]);
-  if (type.mode !== 'parking') {
-    const ratioUnit = type.yieldKind === 'keys' ? 'key' : type.yieldKind === 'units' ? (type.mode === 'lots' ? 'home' : 'unit') : null;
-    const count = m.units || m.keys;
-    if (ratioUnit && count) rows.push(['Parking ratio', `${fmtDec(m.parkingProvided / count)} per ${ratioUnit}`]);
-    if (!ratioUnit && m.gsf) rows.push(['Parking ratio', `${fmtDec((m.parkingProvided / m.gsf) * 1000)} per 1,000 sf`]);
-  }
-  rows.push(['Orientation', `${fmtDec(m.orientationDeg, 1)}°`]);
-  return rows;
-}
-
-function newSchemeId() {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function nextSchemeName(schemes) {
+function nextSchemeName(schemes, prefix = 'Scheme') {
   for (let i = 0; i < 26; i++) {
-    const name = `Scheme ${String.fromCharCode(65 + i)}`;
+    const name = `${prefix} ${String.fromCharCode(65 + i)}`;
     if (!schemes.some((s) => s.name === name)) return name;
   }
-  return `Scheme ${schemes.length + 1}`;
+  return `${prefix} ${schemes.length + 1}`;
 }
 
-// A number input that lets you type freely ("1." on the way to "1.5")
-// and reports only valid numbers.
-function NumberInput({ value, onChange, step, min = 0, max = 1000000, ...rest }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => {
-    setText((t) => (Number(t) === value && t.trim() !== '' ? t : String(value)));
-  }, [value]);
-  return (
-    <input
-      type="number"
-      inputMode="decimal"
-      min={min}
-      max={max}
-      step={step || 1}
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        const n = Number(e.target.value);
-        if (e.target.value.trim() !== '' && Number.isFinite(n) && n >= min && n <= max) onChange(n);
-      }}
-      onBlur={() => setText(String(value))}
-      {...rest}
-    />
-  );
+// Rounds a placed building so saves stay small and stable.
+function tidyBuilding(b) {
+  const out = {
+    id: b.id,
+    center: [Number(b.center[0].toFixed(7)), Number(b.center[1].toFixed(7))],
+    length: Math.max(1, Math.round(b.length)),
+    depth: Math.max(1, Math.round(b.depth)),
+    angle: Math.round((((b.angle % 360) + 540) % 360 - 180) * 10) / 10,
+  };
+  if (b.floors) out.floors = b.floors;
+  return out;
 }
 
-function SettingField({ field, value, overridden, onChange, onReset }) {
-  return (
-    <label className={`siteplan-field ${overridden ? 'siteplan-field-changed' : ''}`}>
-      <span className="siteplan-field-label">
-        {field.label}
-        {field.unit && <span className="siteplan-field-unit"> {field.unit}</span>}
-      </span>
-      <span className="siteplan-field-input">
-        <NumberInput value={value} step={field.step} max={field.max} onChange={onChange} title={field.hint || ''} />
-        {overridden
-          ? <button type="button" className="siteplan-reset" onClick={onReset} title={`Back to the default (${field.default})`}>↺</button>
-          : <span className="siteplan-reset-spacer" />}
-      </span>
-    </label>
-  );
-}
-
-function MixEditor({ mix, overridden, onChange, onReset }) {
-  const update = (i, key, value) => onChange(mix.map((u, j) => (j === i ? { ...u, [key]: value } : u)));
-  const total = mix.reduce((s, u) => s + (u.pct || 0), 0);
-  return (
-    <div className={`siteplan-mix ${overridden ? 'siteplan-field-changed' : ''}`}>
-      <div className="siteplan-group-title">
-        Unit mix
-        {overridden && <button type="button" className="siteplan-reset" onClick={onReset} title="Back to the default mix">↺</button>}
-      </div>
-      <div className="siteplan-mix-row siteplan-mix-head"><span>Type</span><span>Size sf</span><span>Mix %</span><span /></div>
-      {mix.map((u, i) => (
-        // eslint-disable-next-line react/no-array-index-key
-        <div className="siteplan-mix-row" key={i}>
-          <input value={u.name} maxLength={40} onChange={(e) => update(i, 'name', e.target.value)} />
-          <NumberInput value={u.size} min={1} max={100000} onChange={(n) => update(i, 'size', n)} />
-          <NumberInput value={u.pct} max={100} onChange={(n) => update(i, 'pct', n)} />
-          <button
-            type="button"
-            className="siteplan-mix-remove"
-            onClick={() => onChange(mix.filter((_, j) => j !== i))}
-            disabled={mix.length <= 1}
-            title="Remove this unit type"
-          >
-            ×
-          </button>
-        </div>
-      ))}
-      <div className="siteplan-mix-foot">
-        <button
-          type="button"
-          className="siteplan-link-btn"
-          onClick={() => onChange([...mix, { name: 'New', size: 900, pct: 0 }])}
-          disabled={mix.length >= 12}
-        >
-          + Unit type
-        </button>
-        <span className={Math.abs(total - 100) > 0.01 ? 'siteplan-warn' : 'siteplan-muted'}>
-          {fmtDec(total, 0)}%{Math.abs(total - 100) > 0.01 ? ' (scaled to 100%)' : ''}
-        </span>
-      </div>
-    </div>
-  );
+function ringCentroid(geometry) {
+  const ring = geometry.coordinates[0].slice(0, -1);
+  return [ring.reduce((s, p) => s + p[0], 0) / ring.length, ring.reduce((s, p) => s + p[1], 0) / ring.length];
 }
 
 function AddressSearch({ onPick }) {
@@ -211,16 +95,207 @@ function AddressSearch({ onPick }) {
   );
 }
 
+// Edit layout (#1): hand-placed buildings and the selected one's numbers.
+function LayoutSection({ scheme, type, result, selectedId, onSelect, onStart, onReset, onAdd, onUpdate, onRemove, onDuplicate }) {
+  if (!supportsManualLayout(type)) return null;
+  const placed = scheme.edits?.buildings || [];
+  const selected = placed.find((b) => b.id === selectedId);
+  const outside = new Set(result?.warnings?.outside || []);
+  const overlapping = new Set((result?.warnings?.overlaps || []).flat());
+  const defaultFloors = effectiveSettings(scheme).floors;
+
+  if (!placed.length) {
+    return (
+      <div className="siteplan-section">
+        <div className="siteplan-section-head">
+          <span className="siteplan-group-title">Layout · automatic</span>
+          <button type="button" className="siteplan-small-btn" onClick={onStart} disabled={!result?.metrics}>✋ Edit by hand</button>
+        </div>
+        <p className="siteplan-muted siteplan-small">
+          Turns the generated buildings into ones you can drag, stretch and rotate on the map. Parking re-fills around them.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="siteplan-section siteplan-section-manual">
+      <div className="siteplan-section-head">
+        <span className="siteplan-group-title">Layout · placed by hand</span>
+        <span>
+          <button type="button" className="siteplan-small-btn" onClick={onAdd} disabled={!result?.metrics}>+ Building</button>
+          <button type="button" className="siteplan-link-btn siteplan-danger-link" onClick={onReset}>Back to automatic</button>
+        </span>
+      </div>
+      <p className="siteplan-muted siteplan-small">
+        Click a building, then drag it (or ✥) to move, ↔ ↕ to stretch, ⟳ to rotate. Zoning limits are checked, not enforced.
+      </p>
+      <div className="siteplan-building-list">
+        {placed.map((b, i) => (
+          <button
+            type="button"
+            key={b.id}
+            className={`siteplan-building-chip ${b.id === selectedId ? 'active' : ''} ${outside.has(b.id) || overlapping.has(b.id) ? 'bad' : ''}`}
+            onClick={() => onSelect(b.id)}
+            title={outside.has(b.id) ? 'Over the setback line or on a space' : overlapping.has(b.id) ? 'Overlaps another building' : ''}
+          >
+            {i + 1}
+          </button>
+        ))}
+      </div>
+      {selected && (
+        <div className="siteplan-building-edit">
+          <label className="siteplan-field">
+            <span className="siteplan-field-label">Length<span className="siteplan-field-unit"> ft</span></span>
+            <span className="siteplan-field-input"><NumberInput value={selected.length} min={1} max={5000} onChange={(n) => onUpdate(selected.id, { length: n })} /></span>
+          </label>
+          <label className="siteplan-field">
+            <span className="siteplan-field-label">Depth<span className="siteplan-field-unit"> ft</span></span>
+            <span className="siteplan-field-input"><NumberInput value={selected.depth} min={1} max={5000} onChange={(n) => onUpdate(selected.id, { depth: n })} /></span>
+          </label>
+          <label className="siteplan-field">
+            <span className="siteplan-field-label">Angle<span className="siteplan-field-unit"> °</span></span>
+            <span className="siteplan-field-input"><NumberInput value={selected.angle} min={-360} max={360} step={0.5} onChange={(n) => onUpdate(selected.id, { angle: n })} /></span>
+          </label>
+          {type.mode !== 'industrial' && (
+            <label className="siteplan-field">
+              <span className="siteplan-field-label">Floors<span className="siteplan-field-unit"> (blank = {defaultFloors})</span></span>
+              <span className="siteplan-field-input">
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={selected.floors || ''}
+                  placeholder={String(defaultFloors)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    onUpdate(selected.id, { floors: e.target.value === '' ? undefined : (Number.isInteger(n) && n >= 1 && n <= 100 ? n : selected.floors) });
+                  }}
+                />
+              </span>
+            </label>
+          )}
+          <div className="siteplan-building-actions">
+            <button type="button" className="siteplan-link-btn" onClick={() => onDuplicate(selected.id)}>Duplicate</button>
+            <button type="button" className="siteplan-link-btn siteplan-danger-link" onClick={() => onRemove(selected.id)}>Remove</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Spaces (#3): no-build areas, or areas with their own asset type.
+function SpacesSection({ scheme, results, selectedId, onSelect, onDraw, onUpdate, onRemove }) {
+  const spaces = scheme.spaces || [];
+  const selected = spaces.find((sp) => sp.id === selectedId);
+  const spaceResult = selected ? (results?.spaces || []).find((r) => r.id === selected.id)?.result : null;
+  return (
+    <div className="siteplan-section">
+      <div className="siteplan-section-head">
+        <span className="siteplan-group-title">Spaces</span>
+        <span>
+          <button type="button" className="siteplan-small-btn" onClick={() => onDraw('Rectangle')} title="Draw a rectangle on the map">+ Rectangle</button>
+          <button type="button" className="siteplan-small-btn" onClick={() => onDraw('Polygon')} title="Click corners on the map; click the first to close">+ Shape</button>
+        </span>
+      </div>
+      {spaces.length === 0 && (
+        <p className="siteplan-muted siteplan-small">
+          Mark an easement, pond or open space as no-build, or give an area its own use (a retail pad beside apartments).
+        </p>
+      )}
+      {spaces.map((sp) => {
+        const r = (results?.spaces || []).find((x) => x.id === sp.id)?.result;
+        const t = sp.kind === 'asset' ? getAssetType(sp.assetType) : null;
+        const y = t && r?.metrics ? yieldOf(t, r.metrics) : null;
+        return (
+          <button type="button" key={sp.id} className={`siteplan-space-row ${sp.id === selectedId ? 'active' : ''}`} onClick={() => onSelect(sp.id)}>
+            <span className={`siteplan-space-swatch ${sp.kind === 'no-build' ? 'nobuild' : 'asset'}`} />
+            <span className="siteplan-space-name">{sp.name}</span>
+            <span className="siteplan-muted siteplan-small">{t ? `${t.label}${y ? ` · ${y.value} ${y.label}` : ''}` : 'No-build'}</span>
+          </button>
+        );
+      })}
+      {selected && (
+        <div className="siteplan-space-edit">
+          <label className="siteplan-field">
+            <span className="siteplan-field-label">Name</span>
+            <span className="siteplan-field-input">
+              <input value={selected.name} maxLength={100} onChange={(e) => onUpdate(selected.id, { name: e.target.value })} className="siteplan-text-input" />
+            </span>
+          </label>
+          <label className="siteplan-field">
+            <span className="siteplan-field-label">Use</span>
+            <span className="siteplan-field-input">
+              <select
+                value={selected.kind === 'no-build' ? 'no-build' : selected.assetType}
+                onChange={(e) => (e.target.value === 'no-build'
+                  ? onUpdate(selected.id, { kind: 'no-build', assetType: undefined, overrides: undefined })
+                  : onUpdate(selected.id, { kind: 'asset', assetType: e.target.value, overrides: { setback: 0 } }))}
+              >
+                <option value="no-build">No-build</option>
+                {ASSET_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              </select>
+            </span>
+          </label>
+          <p className="siteplan-muted siteplan-small">Drag, reshape or rotate it with the map&apos;s edit tools (left edge).</p>
+          {selected.kind === 'asset' && (
+            <SchemeSettings
+              key={`${selected.id}-${selected.assetType}`}
+              type={getAssetType(selected.assetType)}
+              overrides={selected.overrides || {}}
+              onChange={(overrides) => onUpdate(selected.id, { overrides })}
+              idPrefix={`space-${selected.id}`}
+              currentOrientationDeg={spaceResult?.metrics?.orientationDeg}
+              groupsOpen={['Program', 'Site']}
+            />
+          )}
+          <button type="button" className="siteplan-link-btn siteplan-danger-link" onClick={() => onRemove(selected.id)}>Remove space</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Presets (#4): save a scheme's asset type and settings, apply them on
+// any site.
+function PresetsSection({ presets, scheme, onApply, onSave, onDelete }) {
+  return (
+    <details className="siteplan-section siteplan-presets">
+      <summary className="siteplan-group-title">Presets ({presets.length})</summary>
+      <button type="button" className="siteplan-small-btn" onClick={onSave}>Save this scheme as a preset</button>
+      {presets.length === 0 && <p className="siteplan-muted siteplan-small">None saved yet.</p>}
+      {presets.map((p) => (
+        <div key={p.id} className="siteplan-preset-row">
+          <span>
+            <b>{p.name}</b>
+            <span className="siteplan-muted siteplan-small"> · {getAssetType(p.assetType).label}{p.createdByName ? ` · ${p.createdByName}` : ''}</span>
+          </span>
+          <span>
+            <button type="button" className="siteplan-link-btn" onClick={() => onApply(p)} disabled={!scheme}>Apply</button>
+            <button type="button" className="siteplan-link-btn siteplan-danger-link" onClick={() => onDelete(p)}>×</button>
+          </span>
+        </div>
+      ))}
+    </details>
+  );
+}
+
 function SitePlanEditor() {
   const { planId } = useParams();
   const navigate = useNavigate();
   const [draft, setDraft] = useState(null); // { name, projectId, boundary, mapView, schemes }
   const [canDelete, setCanDelete] = useState(false);
   const [projects, setProjects] = useState([]);
+  const [presets, setPresets] = useState([]);
   const [loadError, setLoadError] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [compare, setCompare] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
+  const [drawRequest, setDrawRequest] = useState(null);
+  const [selectedBuildingId, setSelectedBuildingId] = useState(null);
+  const [selectedSpaceId, setSelectedSpaceId] = useState(null);
   const [saveState, setSaveState] = useState('saved'); // saved | pending | saving | error | conflict
   const [saveError, setSaveError] = useState(null);
 
@@ -249,6 +324,7 @@ function SitePlanEditor() {
       })
       .catch((err) => setLoadError(err.status === 404 ? 'This site doesn\'t exist or was deleted.' : err.message));
     loadProjects().then(setProjects).catch(() => {});
+    sitePlansApi('GET', '/presets').then((d) => setPresets(d.presets || [])).catch(() => {});
   }, [planId]);
 
   // Sends whatever changed since the last save. Reads only refs, so the
@@ -268,14 +344,14 @@ function SitePlanEditor() {
     for (const key of keys) body[key] = draftRef.current[key];
     // A name being retyped can be blank for a moment; send a placeholder
     // rather than have the save refused.
+    const tidyMix = (o) => (o && o.mix ? { ...o, mix: o.mix.map((u) => ({ ...u, name: u.name.trim() || 'Unit' })) } : o);
     if (body.name !== undefined && !body.name.trim()) delete body.name;
     if (body.schemes) {
       body.schemes = body.schemes.map((s) => ({
         ...s,
         name: s.name.trim() || 'Scheme',
-        overrides: s.overrides.mix
-          ? { ...s.overrides, mix: s.overrides.mix.map((u) => ({ ...u, name: u.name.trim() || 'Unit' })) }
-          : s.overrides,
+        overrides: tidyMix(s.overrides),
+        spaces: s.spaces?.map((sp) => ({ ...sp, name: sp.name.trim() || 'Space', overrides: tidyMix(sp.overrides) })),
       }));
     }
     let failed = false;
@@ -330,28 +406,38 @@ function SitePlanEditor() {
   const active = draft?.schemes.find((s) => s.id === activeId) || draft?.schemes[0];
   const activeType = active ? getAssetType(active.assetType) : null;
   const activeResult = active ? results[active.id] : null;
+  const placed = active && supportsManualLayout(activeType) && active.edits?.buildings?.length ? active.edits.buildings : null;
 
-  const buildingLabel = useCallback((i) => {
-    if (!activeResult?.metrics) return '';
-    const m = activeResult.metrics;
-    return `Building ${i + 1}${m.floors ? ` · ${m.floors} floor${m.floors === 1 ? '' : 's'}` : ''}`;
-  }, [activeResult]);
+  // Changing scheme clears what was selected on the map.
+  useEffect(() => {
+    setSelectedBuildingId(null);
+    setSelectedSpaceId(null);
+  }, [activeId]);
 
-  const updateScheme = (id, patch) => {
-    change('schemes', draftRef.current.schemes.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-  };
+  const buildingLabel = useCallback((i, b) => {
+    if (b) {
+      const floors = b.floors || effectiveSettings(active).floors;
+      return `Building ${i + 1} · ${b.length} × ${b.depth} ft${activeType?.mode === 'industrial' ? '' : ` · ${floors} floors`}`;
+    }
+    const m = activeResult?.metrics;
+    return m ? `Building ${i + 1}${m.floors ? ` · ${m.floors} floor${m.floors === 1 ? '' : 's'}` : ''}` : '';
+  }, [activeResult, active, activeType]);
 
-  const setOverride = (key, value) => {
-    const defaults = defaultsFor(activeType);
-    const overrides = { ...active.overrides };
-    if (value === undefined || JSON.stringify(value) === JSON.stringify(defaults[key])) delete overrides[key];
-    else overrides[key] = value;
-    updateScheme(active.id, { overrides });
-  };
+  const updateScheme = useCallback((id, patch) => {
+    change('schemes', draftRef.current.schemes.map((s) => {
+      if (s.id !== id) return s;
+      const next = { ...s, ...patch };
+      Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
+      return next;
+    }));
+  }, [change]);
 
+  const currentScheme = () => draftRef.current.schemes.find((s) => s.id === active.id);
+
+  // ---- Schemes ----
   const addScheme = () => {
     if (draftRef.current.schemes.length >= 12) return;
-    const copy = { ...active, id: newSchemeId(), name: nextSchemeName(draftRef.current.schemes), overrides: { ...active.overrides } };
+    const copy = { ...JSON.parse(JSON.stringify(active)), id: newId(), name: nextSchemeName(draftRef.current.schemes) };
     change('schemes', [...draftRef.current.schemes, copy]);
     setActiveId(copy.id);
   };
@@ -365,10 +451,160 @@ function SitePlanEditor() {
   };
 
   const changeType = (assetType) => {
-    if (Object.keys(active.overrides || {}).length > 0
-      && !window.confirm('Switching the asset type starts its settings from that type\'s defaults. Continue?')) return;
-    updateScheme(active.id, { assetType, overrides: {} });
+    if ((Object.keys(active.overrides || {}).length > 0 || active.edits)
+      && !window.confirm('Switching the asset type starts its settings from that type\'s defaults and goes back to an automatic layout. Continue?')) return;
+    updateScheme(active.id, { assetType, overrides: {}, edits: undefined });
   };
+
+  // ---- Edit layout (#1) ----
+  const setPlaced = (buildings) => updateScheme(active.id, { edits: buildings.length ? { buildings: buildings.map(tidyBuilding) } : undefined });
+  const placedNow = () => currentScheme().edits?.buildings || [];
+
+  const startManual = () => {
+    const rects = activeResult?.buildingRects || [];
+    const buildings = rects.map((r) => ({ id: newId(), ...r }));
+    if (!buildings.length && boundary) {
+      const s = effectiveSettings(active);
+      buildings.push({ id: newId(), center: ringCentroid(boundary), length: 200, depth: s.buildingDepth || 65, angle: activeResult?.metrics?.orientationDeg || 0 });
+    }
+    setPlaced(buildings);
+    setSelectedBuildingId(buildings[0]?.id || null);
+  };
+
+  const resetAuto = () => {
+    if (!window.confirm('Go back to the automatic layout? The buildings you placed will be dropped.')) return;
+    updateScheme(active.id, { edits: undefined });
+    setSelectedBuildingId(null);
+  };
+
+  const addBuilding = () => {
+    if (!boundary) return;
+    const s = effectiveSettings(active);
+    const industrial = activeType.mode === 'industrial';
+    const b = {
+      id: newId(),
+      center: ringCentroid(boundary),
+      length: industrial ? 400 : 200,
+      depth: industrial ? 200 : (s.buildingDepth || 65),
+      angle: activeResult?.metrics?.orientationDeg || 0,
+    };
+    setPlaced([...placedNow(), b]);
+    setSelectedBuildingId(b.id);
+  };
+
+  const updateBuilding = useCallback((id, patch) => {
+    const scheme = draftRef.current.schemes.find((s) => s.id === activeId) || draftRef.current.schemes[0];
+    const buildings = (scheme.edits?.buildings || []).map((b) => {
+      if (b.id !== id) return b;
+      const next = { ...b, ...patch };
+      if (patch.floors === undefined && 'floors' in patch) delete next.floors;
+      return next;
+    });
+    updateScheme(scheme.id, { edits: { buildings: buildings.map(tidyBuilding) } });
+  }, [activeId, updateScheme]);
+
+  const removeBuilding = (id) => {
+    const rest = placedNow().filter((b) => b.id !== id);
+    if (!rest.length) {
+      resetAuto();
+      return;
+    }
+    setPlaced(rest);
+    setSelectedBuildingId(null);
+  };
+
+  const duplicateBuilding = (id) => {
+    const b = placedNow().find((x) => x.id === id);
+    if (!b) return;
+    // Next to the original, one building depth plus a drive aisle across.
+    const proj = makeProjection([b.center]);
+    const a = (b.angle * Math.PI) / 180;
+    const shift = b.depth + 30;
+    const [lat, lng] = proj.toLatLng([-Math.sin(a) * shift, Math.cos(a) * shift]);
+    const copy = { ...b, id: newId(), center: [lng, lat] };
+    setPlaced([...placedNow(), copy]);
+    setSelectedBuildingId(copy.id);
+  };
+
+  // ---- Spaces (#3) ----
+  const setSpaces = (spaces) => updateScheme(active.id, { spaces: spaces.length ? spaces : undefined });
+  const spacesNow = () => currentScheme().spaces || [];
+
+  const onSpaceDrawn = useCallback((polygon) => {
+    const scheme = draftRef.current.schemes.find((s) => s.id === activeId) || draftRef.current.schemes[0];
+    const existing = scheme.spaces || [];
+    if (existing.length >= 20) return;
+    const sp = { id: newId(), name: `Space ${existing.length + 1}`, kind: 'no-build', polygon };
+    updateScheme(scheme.id, { spaces: [...existing, sp] });
+    setSelectedSpaceId(sp.id);
+  }, [activeId, updateScheme]);
+
+  const updateSpace = useCallback((id, patch) => {
+    const scheme = draftRef.current.schemes.find((s) => s.id === activeId) || draftRef.current.schemes[0];
+    const spaces = (scheme.spaces || []).map((sp) => {
+      if (sp.id !== id) return sp;
+      const next = { ...sp, ...patch };
+      Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
+      return next;
+    });
+    updateScheme(scheme.id, { spaces });
+  }, [activeId, updateScheme]);
+
+  const removeSpace = (id) => {
+    setSpaces(spacesNow().filter((sp) => sp.id !== id));
+    setSelectedSpaceId(null);
+  };
+
+  // ---- Presets (#4) ----
+  async function savePreset() {
+    const name = window.prompt('Name this preset (e.g. "Our standard wrap")', `${active.name} - ${activeType.label}`);
+    if (!name || !name.trim()) return;
+    try {
+      const { preset } = await sitePlansApi('POST', '/presets', { name, assetType: active.assetType, overrides: active.overrides });
+      setPresets((list) => [...list, preset].sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (err) {
+      window.alert(err.message);
+    }
+  }
+
+  function applyPreset(p) {
+    if ((Object.keys(active.overrides || {}).length || active.assetType !== p.assetType)
+      && !window.confirm(`Replace ${active.name}'s asset type and settings with "${p.name}"?`)) return;
+    updateScheme(active.id, {
+      assetType: p.assetType,
+      overrides: { ...p.overrides },
+      edits: p.assetType === active.assetType ? active.edits : undefined,
+    });
+  }
+
+  async function deletePreset(p) {
+    if (!window.confirm(`Delete the preset "${p.name}" for everyone?`)) return;
+    try {
+      await sitePlansApi('DELETE', `/presets/${p.id}`);
+      setPresets((list) => list.filter((x) => x.id !== p.id));
+    } catch (err) {
+      window.alert(err.message);
+    }
+  }
+
+  // ---- Generator (#5) ----
+  function applyOption(combo) {
+    if (draftRef.current.schemes.length >= 12) {
+      window.alert('A site can hold 12 schemes - delete one first.');
+      return;
+    }
+    const base = JSON.parse(JSON.stringify(active));
+    delete base.edits;
+    const option = {
+      ...base,
+      id: newId(),
+      name: nextSchemeName(draftRef.current.schemes, 'Option'),
+      overrides: { ...base.overrides, ...combo },
+    };
+    change('schemes', [...draftRef.current.schemes, option]);
+    setActiveId(option.id);
+    setGenerating(false);
+  }
 
   async function deleteSite() {
     if (!window.confirm(`Delete "${draft.name}"? This cannot be undone.`)) return;
@@ -383,6 +619,15 @@ function SitePlanEditor() {
     }
   }
 
+  const spaceLayouts = useMemo(
+    () => (activeResult?.spaces || []).map((sp) => sp.result?.geometry).filter(Boolean),
+    [activeResult]
+  );
+  const badBuildingIds = useMemo(
+    () => [...(activeResult?.warnings?.outside || []), ...(activeResult?.warnings?.overlaps || []).flat()],
+    [activeResult]
+  );
+
   if (loadError) {
     return (
       <div className="siteplan-page">
@@ -395,11 +640,6 @@ function SitePlanEditor() {
     );
   }
   if (!draft) return <div className="siteplan-page"><p className="siteplan-muted siteplan-pad">Loading...</p></div>;
-
-  const settings = { ...defaultsFor(activeType), ...active.overrides };
-  const fields = fieldsFor(activeType);
-  const groups = [...new Set(fields.map((f) => f.group))];
-  const rotationAuto = settings.rotation === 'auto';
 
   const saveLabel = {
     saved: 'All changes saved',
@@ -438,6 +678,9 @@ function SitePlanEditor() {
           </button>
         )}
         <span className="siteplan-header-spacer" />
+        <button className="siteplan-toggle" onClick={() => setGenerating(true)} disabled={!draft.boundary} title="Try many combinations and keep the best">
+          ✨ Generate options
+        </button>
         <button
           className={`siteplan-toggle ${compare ? 'on' : ''}`}
           onClick={() => {
@@ -475,9 +718,21 @@ function SitePlanEditor() {
               boundary={draft.boundary}
               initialView={draft.mapView}
               layout={activeResult?.geometry}
+              spaceLayouts={spaceLayouts}
               flyTo={flyTo}
               onBoundaryChange={(geometry) => change('boundary', geometry)}
               buildingLabel={buildingLabel}
+              spaces={active.spaces || []}
+              selectedSpaceId={selectedSpaceId}
+              onSelectSpace={setSelectedSpaceId}
+              onSpaceChange={(id, polygon) => updateSpace(id, { polygon })}
+              onSpaceDrawn={onSpaceDrawn}
+              drawRequest={drawRequest}
+              placed={placed}
+              badBuildingIds={badBuildingIds}
+              selectedBuildingId={selectedBuildingId}
+              onSelectBuilding={setSelectedBuildingId}
+              onBuildingChange={updateBuilding}
             />
             {!draft.boundary && (
               <div className="siteplan-map-hint">
@@ -489,6 +744,8 @@ function SitePlanEditor() {
               <span><i className="lg-setback" />Setback</span>
               <span><i className="lg-building" />Building</span>
               <span><i className="lg-parking" />Parking</span>
+              {(active.spaces || []).some((sp) => sp.kind === 'no-build') && <span><i className="lg-nobuild" />No-build</span>}
+              {(active.spaces || []).some((sp) => sp.kind === 'asset') && <span><i className="lg-space" />Space</span>}
               {activeType.mode === 'lots' && <><span><i className="lg-lot" />Lots</span><span><i className="lg-street" />Streets</span></>}
               {activeType.mode === 'industrial' && <span><i className="lg-truck" />Truck court</span>}
             </div>
@@ -497,10 +754,10 @@ function SitePlanEditor() {
           <aside className="siteplan-panel">
             <div className="siteplan-tabs">
               {draft.schemes.map((s) => {
-                const y = yieldOf(getAssetType(s.assetType), results[s.id]?.metrics);
+                const y = yieldOf(getAssetType(s.assetType), planMetrics(results[s.id]));
                 return (
                   <button key={s.id} className={`siteplan-tab ${s.id === active.id ? 'active' : ''}`} onClick={() => setActiveId(s.id)}>
-                    <span className="siteplan-tab-name">{s.name}</span>
+                    <span className="siteplan-tab-name">{s.name}{s.edits ? ' ✋' : ''}</span>
                     <span className="siteplan-tab-yield">{y.value} {y.label}</span>
                   </button>
                 );
@@ -538,158 +795,65 @@ function SitePlanEditor() {
 
             <ResultsCard type={activeType} result={activeResult} />
 
-            <div className="siteplan-settings">
-              <p className="siteplan-muted siteplan-small">
-                Starting from standard {activeType.label.toLowerCase()} defaults. Change any number; ↺ puts it back.
-              </p>
-              {activeType.hasMix && (
-                <MixEditor
-                  mix={settings.mix || DEFAULT_MIX}
-                  overridden={'mix' in active.overrides}
-                  onChange={(mix) => setOverride('mix', mix)}
-                  onReset={() => setOverride('mix', undefined)}
-                />
-              )}
-              {groups.map((g) => (
-                <div key={g} className="siteplan-group">
-                  <div className="siteplan-group-title">{g}</div>
-                  {fields.filter((f) => f.group === g).map((f) => (
-                    <SettingField
-                      key={`${active.id}-${f.key}`}
-                      field={f}
-                      value={settings[f.key]}
-                      overridden={f.key in active.overrides}
-                      onChange={(n) => setOverride(f.key, n)}
-                      onReset={() => setOverride(f.key, undefined)}
-                    />
-                  ))}
-                  {g === 'Site' && (
-                    <label className={`siteplan-field ${rotationAuto ? '' : 'siteplan-field-changed'}`}>
-                      <span className="siteplan-field-label">Orientation</span>
-                      <span className="siteplan-field-input">
-                        <select
-                          value={rotationAuto ? 'auto' : 'fixed'}
-                          onChange={(e) => setOverride('rotation', e.target.value === 'auto'
-                            ? undefined
-                            : Math.round(activeResult?.metrics?.orientationDeg || 0))}
-                        >
-                          <option value="auto">Best fit</option>
-                          <option value="fixed">Fixed angle</option>
-                        </select>
-                        <span className="siteplan-reset-spacer" />
-                      </span>
-                    </label>
-                  )}
-                  {g === 'Site' && !rotationAuto && (
-                    <label className="siteplan-field siteplan-field-changed">
-                      <span className="siteplan-field-label">Angle<span className="siteplan-field-unit"> ° from east</span></span>
-                      <span className="siteplan-field-input">
-                        <NumberInput
-                          value={settings.rotation}
-                          max={360}
-                          onChange={(n) => setOverride('rotation', n)}
-                        />
-                        <span className="siteplan-reset-spacer" />
-                      </span>
-                    </label>
-                  )}
-                </div>
-              ))}
-              {draft.boundary && (
-                <button
-                  className="siteplan-link-btn siteplan-danger-link"
-                  onClick={() => { if (window.confirm('Clear the site boundary so you can draw it again?')) change('boundary', null); }}
-                >
-                  Clear site boundary
-                </button>
-              )}
-              <p className="siteplan-muted siteplan-small">
-                A rules-based test fit: buildings and double-loaded parking bays lined up with the site&apos;s main edges.
-                Drive connections and grading aren&apos;t modelled.
-              </p>
+            <LayoutSection
+              scheme={active}
+              type={activeType}
+              result={activeResult}
+              selectedId={selectedBuildingId}
+              onSelect={setSelectedBuildingId}
+              onStart={startManual}
+              onReset={resetAuto}
+              onAdd={addBuilding}
+              onUpdate={updateBuilding}
+              onRemove={removeBuilding}
+              onDuplicate={duplicateBuilding}
+            />
+
+            <SpacesSection
+              scheme={active}
+              results={activeResult}
+              selectedId={selectedSpaceId}
+              onSelect={setSelectedSpaceId}
+              onDraw={(shape) => setDrawRequest({ shape, at: Date.now() })}
+              onUpdate={updateSpace}
+              onRemove={removeSpace}
+            />
+
+            <PresetsSection presets={presets} scheme={active} onApply={applyPreset} onSave={savePreset} onDelete={deletePreset} />
+
+            <div className="siteplan-section">
+              <div className="siteplan-group-title">Settings · {activeType.label}</div>
+              <p className="siteplan-muted siteplan-small">Starting from standard defaults. Change any number; ↺ puts it back.</p>
+              <SchemeSettings
+                key={`${active.id}-${active.assetType}`}
+                type={activeType}
+                overrides={active.overrides}
+                onChange={(overrides) => updateScheme(active.id, { overrides })}
+                idPrefix={active.id}
+                currentOrientationDeg={activeResult?.metrics?.orientationDeg}
+              />
             </div>
+
+            {draft.boundary && (
+              <button
+                className="siteplan-link-btn siteplan-danger-link"
+                onClick={() => { if (window.confirm('Clear the site boundary so you can draw it again?')) change('boundary', null); }}
+              >
+                Clear site boundary
+              </button>
+            )}
+            <p className="siteplan-muted siteplan-small">
+              A rules-based test fit: buildings and double-loaded parking bays lined up with the site&apos;s main edges.
+              Drive connections and grading aren&apos;t modelled. Flood and wetland layers are in the map&apos;s layer menu (top right).
+              {' '}Orientation {fmtDec(activeResult?.metrics?.orientationDeg || 0, 1)}°.
+            </p>
           </aside>
         </div>
       )}
-    </div>
-  );
-}
 
-function ResultsCard({ type, result }) {
-  if (!result) return null;
-  if (result.error && !result.metrics) return <div className="siteplan-results siteplan-muted">{result.error}</div>;
-  const m = result.metrics;
-  const y = yieldOf(type, m);
-  return (
-    <div className="siteplan-results">
-      {result.error && <p className="siteplan-warn">{result.error}</p>}
-      <div className="siteplan-yield">
-        <span className="siteplan-yield-value">{y.value}</span>
-        <span className="siteplan-yield-label">{y.label}</span>
-      </div>
-      <div className="siteplan-limits">
-        Limited by {result.limits.map((l) => <span key={l} className={`siteplan-limit siteplan-limit-${l}`}>{LIMIT_LABELS[l]}</span>)}
-      </div>
-      {m.unitsByType && m.unitsByType.length > 0 && (
-        <div className="siteplan-mix-result">
-          {m.unitsByType.map((u) => <span key={u.name}><b>{fmtInt(u.count)}</b> {u.name}</span>)}
-        </div>
+      {generating && (
+        <GeneratorModal boundary={draft.boundary} scheme={active} onClose={() => setGenerating(false)} onApply={applyOption} />
       )}
-      <dl className="siteplan-metrics">
-        {metricRows(type, m).map(([k, v]) => (
-          <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
-function CompareView({ schemes, results, onOpen }) {
-  // Union of every scheme's rows, in first-seen order, so mixed asset
-  // types line up where they share a measure.
-  const columns = schemes.map((s) => {
-    const type = getAssetType(s.assetType);
-    const r = results[s.id];
-    return { scheme: s, type, result: r, rows: Object.fromEntries(metricRows(type, r?.metrics)) };
-  });
-  const keys = [];
-  columns.forEach((c) => Object.keys(c.rows).forEach((k) => { if (!keys.includes(k)) keys.push(k); }));
-  return (
-    <div className="siteplan-compare">
-      <table>
-        <thead>
-          <tr>
-            <th />
-            {columns.map((c) => (
-              <th key={c.scheme.id}>
-                <button className="siteplan-link-btn" onClick={() => onOpen(c.scheme.id)}>{c.scheme.name}</button>
-                <div className="siteplan-muted siteplan-small">{c.type.label}</div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          <tr className="siteplan-compare-yield">
-            <td>Yield</td>
-            {columns.map((c) => {
-              const y = yieldOf(c.type, c.result?.metrics);
-              return <td key={c.scheme.id}><b>{y.value}</b> {y.label}</td>;
-            })}
-          </tr>
-          <tr>
-            <td>Limited by</td>
-            {columns.map((c) => (
-              <td key={c.scheme.id}>{(c.result?.limits || []).map((l) => LIMIT_LABELS[l]).join(', ') || c.result?.error || '-'}</td>
-            ))}
-          </tr>
-          {keys.map((k) => (
-            <tr key={k}>
-              <td>{k}</td>
-              {columns.map((c) => <td key={c.scheme.id}>{c.rows[k] ?? '-'}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

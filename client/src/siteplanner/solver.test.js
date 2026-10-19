@@ -187,3 +187,154 @@ test('a huge floor count is capped rather than hanging the page', () => {
   const r = solveScheme(rectSite(600, 400), scheme('mf-garden', { floors: 1000000, parkingRatio: 0 }));
   expect(r.metrics.floors).toBeLessThanOrEqual(100);
 });
+
+// ---- Spaces, hand-placed buildings, checks, pro forma -----------------
+
+// A rectangle of feet inside a rectSite, offset from its south-west corner.
+function rectIn(site, x0, y0, w, h) {
+  const [[lng, lat]] = site.coordinates[0];
+  const ftPerDegLat = 364000;
+  const ftPerDegLng = 364000 * Math.cos((lat * Math.PI) / 180);
+  const p = (x, y) => [lng + x / ftPerDegLng, lat + y / ftPerDegLat];
+  return { type: 'Polygon', coordinates: [[p(x0, y0), p(x0 + w, y0), p(x0 + w, y0 + h), p(x0, y0 + h), p(x0, y0)]] };
+}
+
+test('a no-build space takes ground away from the layout', () => {
+  const site = rectSite(600, 400);
+  const full = solveScheme(site, scheme('mf-garden'));
+  const cut = solveScheme(site, {
+    ...scheme('mf-garden'),
+    spaces: [{ id: 'p', name: 'Pond', kind: 'no-build', polygon: rectIn(site, 200, 100, 200, 200) }],
+  });
+  expect(cut.metrics.buildableSf).toBeLessThan(full.metrics.buildableSf - 35000);
+  expect(cut.metrics.units).toBeLessThan(full.metrics.units);
+  for (const b of cut.geometry.buildings) expect(insideBox(b, site)).toBe(true);
+});
+
+test('an asset space is solved on its own and added to the totals', () => {
+  const site = rectSite(800, 400);
+  const r = solveScheme(site, {
+    ...scheme('mf-garden'),
+    spaces: [{ id: 'r', name: 'Retail pad', kind: 'asset', assetType: 'retail', overrides: { setback: 0 }, polygon: rectIn(site, 560, 0, 240, 400) }],
+  });
+  const retail = r.spaces[0].result;
+  expect(retail.metrics.nsf).toBeGreaterThan(5000);
+  expect(r.totals.units).toBe(r.metrics.units);
+  expect(r.totals.gsf).toBeCloseTo(r.metrics.gsf + retail.metrics.gsf, 3);
+  expect(r.totals.parkingProvided).toBe(r.metrics.parkingProvided + retail.metrics.parkingProvided);
+  expect(r.proforma.kind).toBe('rental');
+  expect(r.proforma.noi).toBeCloseTo(r.spaces[0].result.proforma.noi + solveScheme(site, {
+    ...scheme('mf-garden'),
+    spaces: [{ id: 'r', name: 'Retail pad', kind: 'no-build', polygon: rectIn(site, 560, 0, 240, 400) }],
+  }).proforma.noi, 0);
+});
+
+test('hand-placed buildings set the footprint; parking fills around them', () => {
+  const site = rectSite(600, 400);
+  const auto = solveScheme(site, scheme('mf-garden'));
+  const [[lng, lat]] = site.coordinates[0];
+  const center = [lng + 300 / (364000 * Math.cos((lat * Math.PI) / 180)), lat + 200 / 364000];
+  const r = solveScheme(site, {
+    ...scheme('mf-garden'),
+    edits: { buildings: [{ id: 'b1', center, length: 250, depth: 65, angle: 0 }] },
+  });
+  expect(r.metrics.footprintSf).toBeCloseTo(250 * 65, 3);
+  expect(r.metrics.gsf).toBeCloseTo(250 * 65 * 3, 3);
+  expect(r.limits).toEqual(['manual']);
+  expect(r.geometry.buildings).toHaveLength(1);
+  expect(r.metrics.parkingSurface).toBeGreaterThan(0);
+  // A smaller building leaves more room for parking than the auto layout.
+  expect(r.metrics.parkingSurface).toBeGreaterThan(auto.metrics.parkingSurface);
+  expect(r.checks.find((c) => c.label === 'Setback').status).toBe('pass');
+  // Generated buildings come back as editable rectangles.
+  expect(auto.buildingRects.length).toBe(auto.geometry.buildings.length);
+  expect(auto.buildingRects[0].length).toBeGreaterThan(50);
+});
+
+test('a building over the setback line, or overlapping another, fails its check', () => {
+  const site = rectSite(600, 400);
+  const [[lng, lat]] = site.coordinates[0];
+  const at = (x, y) => [lng + x / (364000 * Math.cos((lat * Math.PI) / 180)), lat + y / 364000];
+  const r = solveScheme(site, {
+    ...scheme('mf-garden'),
+    edits: {
+      buildings: [
+        { id: 'edge', center: at(30, 200), length: 200, depth: 65, angle: 90 },
+        { id: 'a', center: at(300, 200), length: 200, depth: 65, angle: 0 },
+        { id: 'b', center: at(320, 220), length: 200, depth: 65, angle: 0, floors: 5 },
+      ],
+    },
+  });
+  expect(r.warnings.outside).toEqual(['edge']);
+  expect(r.warnings.overlaps).toEqual([['a', 'b']]);
+  expect(r.checks.find((c) => c.label === 'Setback').status).toBe('fail');
+  expect(r.checks.find((c) => c.label === 'Buildings overlap').status).toBe('fail');
+  expect(r.metrics.floors).toBe(5);
+});
+
+test('zoning checks: no limit, pass and fail', () => {
+  const site = rectSite(600, 400);
+  const open = solveScheme(site, scheme('mf-garden')).checks;
+  expect(open.find((c) => c.label === 'FAR').status).toBe('none');
+  expect(open.find((c) => c.label === 'Parking').status).toBe('pass');
+  const capped = solveScheme(site, scheme('mf-garden', { maxFar: 0.3 })).checks;
+  expect(capped.find((c) => c.label === 'FAR').status).toBe('pass');
+});
+
+test('pro forma: rental yield on cost and for-sale profit', () => {
+  const site = rectSite(600, 400);
+  const mf = solveScheme(site, scheme('mf-garden', { landCost: 2000000 })).proforma;
+  expect(mf.landCost).toBe(2000000);
+  expect(mf.totalCost).toBeGreaterThan(mf.hardCost);
+  expect(mf.noi).toBeGreaterThan(0);
+  expect(mf.yieldOnCost).toBeCloseTo(mf.noi / mf.totalCost, 9);
+  expect(mf.value).toBeCloseTo(mf.noi / 0.055, 3);
+  const th = solveScheme(rectSite(500, 400), scheme('townhome')).proforma;
+  expect(th.kind).toBe('sale');
+  expect(th.revenue).toBeGreaterThan(0);
+  expect(th.yieldOnCost).toBe(0);
+  expect(th.profit).toBeCloseTo(th.value - th.totalCost, 3);
+});
+
+// ---- Review fixes ------------------------------------------------------
+
+test('a building placed over a no-build space fails the setback check', () => {
+  const site = rectSite(600, 400);
+  const [[lng, lat]] = site.coordinates[0];
+  const at = (x, y) => [lng + x / (364000 * Math.cos((lat * Math.PI) / 180)), lat + y / 364000];
+  const r = solveScheme(site, {
+    ...scheme('mf-garden'),
+    spaces: [{ id: 'pond', name: 'Pond', kind: 'no-build', polygon: rectIn(site, 280, 180, 40, 40) }],
+    edits: { buildings: [{ id: 'b', center: at(300, 200), length: 200, depth: 65, angle: 0 }] },
+  });
+  expect(r.warnings.outside).toEqual(['b']);
+});
+
+test('converting the automatic layout to hand placement starts with no failures', () => {
+  const site = rectSite(600, 400);
+  const auto = solveScheme(site, scheme('mf-garden', { buildingGap: 0 }));
+  // Rounded the way the editor stores them.
+  const buildings = auto.buildingRects.map((b, i) => ({
+    id: `b${i}`,
+    center: [Number(b.center[0].toFixed(7)), Number(b.center[1].toFixed(7))],
+    length: Math.round(b.length),
+    depth: Math.round(b.depth),
+    angle: Math.round(b.angle * 10) / 10,
+  }));
+  const r = solveScheme(site, { ...scheme('mf-garden', { buildingGap: 0 }), edits: { buildings } });
+  expect(r.warnings.outside).toEqual([]);
+  expect(r.warnings.overlaps).toEqual([]);
+});
+
+test('an asset space hanging off the site only counts the part inside it', () => {
+  const site = rectSite(600, 400);
+  const inside = solveScheme(site, {
+    ...scheme('parking'),
+    spaces: [{ id: 'r', name: 'Pad', kind: 'asset', assetType: 'parking', overrides: { setback: 0 }, polygon: rectIn(site, 400, 0, 200, 400) }],
+  }).spaces[0].result.metrics.siteSf;
+  const hanging = solveScheme(site, {
+    ...scheme('parking'),
+    spaces: [{ id: 'r', name: 'Pad', kind: 'asset', assetType: 'parking', overrides: { setback: 0 }, polygon: rectIn(site, 400, 0, 400, 400) }],
+  }).spaces[0].result.metrics.siteSf;
+  expect(hanging).toBeCloseTo(inside, -2);
+});

@@ -15,6 +15,11 @@ export const MAX_BOUNDARY_POINTS = 1000;
 // numeric field, small enough that a row can't balloon.
 export const MAX_OVERRIDES_BYTES = 8000;
 
+export const MAX_SETTING_VALUE = 1e10;
+export const MAX_PLACED_BUILDINGS = 100;
+export const MAX_SPACES = 20;
+export const SPACE_KINDS = ['no-build', 'asset'];
+
 export class SitePlanValidationError extends Error {}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -109,7 +114,8 @@ function validateOverrides(value) {
       }
       out.rotation = v;
     } else {
-      if (!isFiniteNumber(v) || v < 0 || v > 1000000) {
+      // Up to 10 billion: land cost and other pro forma dollar inputs.
+      if (!isFiniteNumber(v) || v < 0 || v > MAX_SETTING_VALUE) {
         throw new SitePlanValidationError(`"${key}" must be a number from 0 up.`);
       }
       out[key] = v;
@@ -119,6 +125,72 @@ function validateOverrides(value) {
     throw new SitePlanValidationError('A scheme has too many settings.');
   }
   return out;
+}
+
+// Buildings placed by hand (Edit layout): a rectangle each, by centre,
+// length and depth in feet, and angle in degrees; floors optional.
+function validateEdits(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || !Array.isArray(value.buildings)) {
+    throw new SitePlanValidationError('Layout edits must list buildings.');
+  }
+  if (value.buildings.length > MAX_PLACED_BUILDINGS) {
+    throw new SitePlanValidationError(`Keep it to ${MAX_PLACED_BUILDINGS} buildings.`);
+  }
+  const ids = new Set();
+  const buildings = value.buildings.map((b) => {
+    if (!b || typeof b.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(b.id) || ids.has(b.id)) {
+      throw new SitePlanValidationError('Each building needs its own id.');
+    }
+    ids.add(b.id);
+    const c = b.center;
+    if (!Array.isArray(c) || !isFiniteNumber(c[0]) || !isFiniteNumber(c[1]) || Math.abs(c[0]) > 180 || Math.abs(c[1]) > 90) {
+      throw new SitePlanValidationError('A building is placed somewhere that isn\'t a valid location.');
+    }
+    for (const [key, min, max] of [['length', 1, 5000], ['depth', 1, 5000], ['angle', -360, 360]]) {
+      if (!isFiniteNumber(b[key]) || b[key] < min || b[key] > max) {
+        throw new SitePlanValidationError(`A building's ${key} must be between ${min} and ${max}.`);
+      }
+    }
+    const out = { id: b.id, center: [c[0], c[1]], length: b.length, depth: b.depth, angle: b.angle };
+    if (b.floors !== undefined && b.floors !== null) {
+      if (!Number.isInteger(b.floors) || b.floors < 1 || b.floors > 100) {
+        throw new SitePlanValidationError('A building\'s floors must be a whole number from 1 to 100.');
+      }
+      out.floors = b.floors;
+    }
+    return out;
+  });
+  return { buildings };
+}
+
+// Spaces drawn on the site: no-build areas, or areas with their own asset
+// type and settings.
+function validateSpaces(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new SitePlanValidationError('Spaces must be a list.');
+  if (value.length > MAX_SPACES) throw new SitePlanValidationError(`Keep it to ${MAX_SPACES} spaces.`);
+  const ids = new Set();
+  return value.map((sp) => {
+    if (!sp || typeof sp.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(sp.id) || ids.has(sp.id)) {
+      throw new SitePlanValidationError('Each space needs its own id.');
+    }
+    ids.add(sp.id);
+    const name = typeof sp.name === 'string' ? sp.name.trim() : '';
+    if (!name || name.length > 100) throw new SitePlanValidationError('Each space needs a name under 100 characters.');
+    if (!SPACE_KINDS.includes(sp.kind)) throw new SitePlanValidationError(`A space's kind must be one of ${SPACE_KINDS.join(', ')}`);
+    const polygon = validateBoundary(sp.polygon);
+    if (!polygon) throw new SitePlanValidationError('Each space needs a shape.');
+    const out = { id: sp.id, name, kind: sp.kind, polygon };
+    if (sp.kind === 'asset') {
+      if (!ASSET_TYPE_IDS.includes(sp.assetType)) {
+        throw new SitePlanValidationError(`assetType must be one of ${ASSET_TYPE_IDS.join(', ')}`);
+      }
+      out.assetType = sp.assetType;
+      out.overrides = validateOverrides(sp.overrides);
+    }
+    return out;
+  });
 }
 
 export function validateSchemes(value) {
@@ -138,8 +210,24 @@ export function validateSchemes(value) {
     if (!ASSET_TYPE_IDS.includes(s.assetType)) {
       throw new SitePlanValidationError(`assetType must be one of ${ASSET_TYPE_IDS.join(', ')}`);
     }
-    return { id: s.id, name, assetType: s.assetType, overrides: validateOverrides(s.overrides) };
+    const out = { id: s.id, name, assetType: s.assetType, overrides: validateOverrides(s.overrides) };
+    const edits = validateEdits(s.edits);
+    if (edits) out.edits = edits;
+    const spaces = validateSpaces(s.spaces);
+    if (spaces.length) out.spaces = spaces;
+    return out;
   });
+}
+
+// A saved preset (#4): an asset type and the settings it overrides,
+// reusable on any site.
+export function validatePreset({ name, assetType, overrides }) {
+  const text = typeof name === 'string' ? name.trim() : '';
+  if (!text || text.length > 100) throw new SitePlanValidationError('A preset needs a name under 100 characters.');
+  if (!ASSET_TYPE_IDS.includes(assetType)) {
+    throw new SitePlanValidationError(`assetType must be one of ${ASSET_TYPE_IDS.join(', ')}`);
+  }
+  return { name: text, assetType, overrides: validateOverrides(overrides) };
 }
 
 // The scheme a new site starts with.

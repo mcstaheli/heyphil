@@ -9,6 +9,7 @@ import {
   validateBoundary,
   validateMapView,
   validateName,
+  validatePreset,
   validateProjectId,
   validateSchemes,
 } from './site-plan-rules.js';
@@ -42,6 +43,21 @@ export async function createTables() {
       created_by_name VARCHAR(255),
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    )
+  `));
+
+  // Presets (#4): an asset type and its settings, saved to reuse on
+  // other sites.
+  await step('site_plan_presets table', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS site_plan_presets (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name VARCHAR(100) NOT NULL,
+      asset_type VARCHAR(40) NOT NULL,
+      overrides JSONB NOT NULL,
+      created_by_email VARCHAR(255),
+      created_by_name VARCHAR(255),
+      created_at TIMESTAMP DEFAULT NOW(),
       deleted_at TIMESTAMP
     )
   `));
@@ -167,6 +183,48 @@ export async function updatePlan(id, updates, expectedUpdatedAt) {
 export async function softDeletePlan(id) {
   const { rows } = await pool.query(
     'UPDATE site_plans SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+    [id]
+  );
+  return rows.length > 0;
+}
+
+// ---- Presets (#4) --------------------------------------------------------
+
+function mapPreset(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    assetType: row.asset_type,
+    overrides: row.overrides,
+    createdByEmail: row.created_by_email,
+    createdByName: row.created_by_name,
+    createdAt: row.created_at,
+  };
+}
+
+export async function listPresets() {
+  const { rows } = await pool.query('SELECT * FROM site_plan_presets WHERE deleted_at IS NULL ORDER BY name');
+  return rows.map(mapPreset);
+}
+
+export async function createPreset(fields, actor = {}) {
+  const p = validatePreset(fields);
+  const { rows } = await pool.query(
+    `INSERT INTO site_plan_presets (id, name, asset_type, overrides, created_by_email, created_by_name)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [randomUUID(), p.name, p.assetType, JSON.stringify(p.overrides), actor.email || null, actor.name || null]
+  );
+  return mapPreset(rows[0]);
+}
+
+export async function getPreset(id) {
+  const { rows } = await pool.query('SELECT * FROM site_plan_presets WHERE id = $1 AND deleted_at IS NULL', [id]);
+  return rows[0] ? mapPreset(rows[0]) : null;
+}
+
+export async function softDeletePreset(id) {
+  const { rows } = await pool.query(
+    'UPDATE site_plan_presets SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
     [id]
   );
   return rows.length > 0;

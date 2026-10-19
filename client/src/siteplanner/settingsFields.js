@@ -1,0 +1,192 @@
+import React, { useEffect, useState } from 'react';
+import { DEFAULT_MIX, defaultsFor, fieldsFor } from './assetTypes';
+
+// The settings form for a scheme or a space: every field of its asset
+// type, starting from the type's defaults, with changed ones highlighted
+// and ↺ to put one back.
+
+export const fmtInt = (n) => Math.round(n || 0).toLocaleString('en-US');
+export const fmtDec = (n, d = 2) => (n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+export const fmtPct = (n, d = 1) => `${fmtDec((n || 0) * 100, d)}%`;
+export const fmtMoney = (n) => {
+  const v = n || 0;
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if (abs >= 1e9) return `${sign}$${fmtDec(abs / 1e9, 2)}B`;
+  if (abs >= 1e6) return `${sign}$${fmtDec(abs / 1e6, 2)}M`;
+  if (abs >= 1e3) return `${sign}$${fmtDec(abs / 1e3, 0)}K`;
+  return `${sign}$${fmtDec(abs, 0)}`;
+};
+
+// A number input that lets you type freely ("1." on the way to "1.5")
+// and reports only valid numbers.
+export function NumberInput({ value, onChange, step, min = 0, max = 1e10, ...rest }) {
+  const [text, setText] = useState(String(value ?? ''));
+  useEffect(() => {
+    setText((t) => (Number(t) === value && t.trim() !== '' ? t : String(value ?? '')));
+  }, [value]);
+  return (
+    <input
+      type="number"
+      inputMode="decimal"
+      min={min}
+      max={max}
+      step={step || 1}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const n = Number(e.target.value);
+        if (e.target.value.trim() !== '' && Number.isFinite(n) && n >= min && n <= max) onChange(n);
+      }}
+      onBlur={() => setText(String(value ?? ''))}
+      {...rest}
+    />
+  );
+}
+
+function SettingField({ field, value, overridden, onChange, onReset }) {
+  return (
+    <label className={`siteplan-field ${overridden ? 'siteplan-field-changed' : ''}`}>
+      <span className="siteplan-field-label">
+        {field.label}
+        {field.unit && <span className="siteplan-field-unit"> {field.unit}</span>}
+      </span>
+      <span className="siteplan-field-input">
+        <NumberInput value={value} step={field.step} max={field.max} onChange={onChange} title={field.hint || ''} />
+        {overridden
+          ? <button type="button" className="siteplan-reset" onClick={onReset} title={`Back to the default (${field.default})`}>↺</button>
+          : <span className="siteplan-reset-spacer" />}
+      </span>
+    </label>
+  );
+}
+
+function MixEditor({ mix, overridden, onChange, onReset }) {
+  const update = (i, key, value) => onChange(mix.map((u, j) => (j === i ? { ...u, [key]: value } : u)));
+  const total = mix.reduce((s, u) => s + (u.pct || 0), 0);
+  return (
+    <div className={`siteplan-mix ${overridden ? 'siteplan-field-changed' : ''}`}>
+      <div className="siteplan-group-title">
+        Unit mix
+        {overridden && <button type="button" className="siteplan-reset" onClick={onReset} title="Back to the default mix">↺</button>}
+      </div>
+      <div className="siteplan-mix-row siteplan-mix-head"><span>Type</span><span>Size sf</span><span>Mix %</span><span /></div>
+      {mix.map((u, i) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <div className="siteplan-mix-row" key={i}>
+          <input value={u.name} maxLength={40} onChange={(e) => update(i, 'name', e.target.value)} />
+          <NumberInput value={u.size} min={1} max={100000} onChange={(n) => update(i, 'size', n)} />
+          <NumberInput value={u.pct} max={100} onChange={(n) => update(i, 'pct', n)} />
+          <button
+            type="button"
+            className="siteplan-mix-remove"
+            onClick={() => onChange(mix.filter((_, j) => j !== i))}
+            disabled={mix.length <= 1}
+            title="Remove this unit type"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <div className="siteplan-mix-foot">
+        <button
+          type="button"
+          className="siteplan-link-btn"
+          onClick={() => onChange([...mix, { name: 'New', size: 900, pct: 0 }])}
+          disabled={mix.length >= 12}
+        >
+          + Unit type
+        </button>
+        <span className={Math.abs(total - 100) > 0.01 ? 'siteplan-warn' : 'siteplan-muted'}>
+          {fmtDec(total, 0)}%{Math.abs(total - 100) > 0.01 ? ' (scaled to 100%)' : ''}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// Sets one override, dropping it when it equals the default.
+export function withOverride(type, overrides, key, value) {
+  const defaults = defaultsFor(type);
+  const next = { ...overrides };
+  if (value === undefined || JSON.stringify(value) === JSON.stringify(defaults[key])) delete next[key];
+  else next[key] = value;
+  return next;
+}
+
+// idPrefix keeps inputs distinct between schemes and spaces.
+// currentOrientationDeg is what "Fixed angle" starts from.
+export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOrientationDeg, groupsOpen }) {
+  const settings = { ...defaultsFor(type), ...overrides };
+  const fields = fieldsFor(type);
+  const groups = [...new Set(fields.map((f) => f.group))];
+  const set = (key, value) => onChange(withOverride(type, overrides, key, value));
+  const rotationAuto = settings.rotation === 'auto';
+  const [open, setOpen] = useState(() => new Set(groupsOpen || groups.filter((g) => g !== 'Pro forma')));
+  const toggle = (g) => setOpen((prev) => {
+    const next = new Set(prev);
+    if (next.has(g)) next.delete(g);
+    else next.add(g);
+    return next;
+  });
+
+  return (
+    <div className="siteplan-settings">
+      {type.hasMix && (
+        <MixEditor
+          mix={settings.mix || DEFAULT_MIX}
+          overridden={'mix' in overrides}
+          onChange={(mix) => set('mix', mix)}
+          onReset={() => set('mix', undefined)}
+        />
+      )}
+      {groups.map((g) => {
+        const changed = fields.filter((f) => f.group === g && f.key in overrides).length;
+        return (
+          <div key={g} className="siteplan-group">
+            <button type="button" className="siteplan-group-title siteplan-group-toggle" onClick={() => toggle(g)}>
+              {open.has(g) ? '▾' : '▸'} {g}
+              {changed > 0 && <span className="siteplan-changed-count">{changed} changed</span>}
+            </button>
+            {open.has(g) && fields.filter((f) => f.group === g).map((f) => (
+              <SettingField
+                key={`${idPrefix}-${f.key}`}
+                field={f}
+                value={settings[f.key]}
+                overridden={f.key in overrides}
+                onChange={(n) => set(f.key, n)}
+                onReset={() => set(f.key, undefined)}
+              />
+            ))}
+            {open.has(g) && g === 'Site' && (
+              <>
+                <label className={`siteplan-field ${rotationAuto ? '' : 'siteplan-field-changed'}`}>
+                  <span className="siteplan-field-label">Orientation</span>
+                  <span className="siteplan-field-input">
+                    <select
+                      value={rotationAuto ? 'auto' : 'fixed'}
+                      onChange={(e) => set('rotation', e.target.value === 'auto' ? undefined : Math.round(currentOrientationDeg || 0))}
+                    >
+                      <option value="auto">Best fit</option>
+                      <option value="fixed">Fixed angle</option>
+                    </select>
+                    <span className="siteplan-reset-spacer" />
+                  </span>
+                </label>
+                {!rotationAuto && (
+                  <label className="siteplan-field siteplan-field-changed">
+                    <span className="siteplan-field-label">Angle<span className="siteplan-field-unit"> ° from east</span></span>
+                    <span className="siteplan-field-input">
+                      <NumberInput value={settings.rotation} max={360} onChange={(n) => set('rotation', n)} />
+                      <span className="siteplan-reset-spacer" />
+                    </span>
+                  </label>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
