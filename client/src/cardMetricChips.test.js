@@ -10,12 +10,12 @@ function isoDaysFromToday(n) {
 const chip = (card, key) => getCardMetricChips(card).find((c) => c.key === key);
 
 describe('budget chip', () => {
-  test('a budget cut to $0 after locking reads as drift from plan, not spend progress (#33)', () => {
+  test('a budget cut to $0 after locking reads as drift from plan, flagged red, with no "vs plan" label (#33, #35)', () => {
     const card = {
       budget: [{ id: 1, amount: 0, actual: 0 }],
       budgetLocks: [{ items: [{ id: 1, amount: 5550000 }] }]
     };
-    expect(chip(card, 'budget')).toMatchObject({ text: '-$5.5M vs plan', className: 'over' });
+    expect(chip(card, 'budget')).toMatchObject({ text: '-$5.5M', className: 'over' });
   });
 
   test('unchanged since the lock reads "on plan", whatever has been spent', () => {
@@ -31,7 +31,7 @@ describe('budget chip', () => {
       budget: [{ id: 1, amount: 150000 }, { id: 2, isHeading: true, amount: 999 }],
       budgetLocks: [{ items: [{ id: 1, amount: 100000 }] }]
     };
-    expect(chip(card, 'budget')).toMatchObject({ text: '+$50K vs plan', className: 'over' });
+    expect(chip(card, 'budget')).toMatchObject({ text: '+$50K', className: 'over' });
   });
 
   test('no lock yet shows the planned total', () => {

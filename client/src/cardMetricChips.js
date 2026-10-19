@@ -10,10 +10,10 @@ function latest(locks) {
 }
 
 // The board's mini-card chips. Value shows the goal (what we're aiming
-// for) since that's motivating on its own. Budget and Timeline each say
-// what their number is ("vs plan", "left", "late") - bare "-$5.5M" or
-// "0d" chips read as spend progress or a countdown when they were
-// neither (#33).
+// for) since that's motivating on its own. Timeline says what its
+// number is ("left", "late") - a bare "0d" read as a countdown when it
+// was slippage (#33). Budget is the drift from the locked plan, red when
+// there is any, with no label (#35); its hover title spells it out.
 export function getCardMetricChips(card) {
   const chips = [];
 
@@ -35,7 +35,7 @@ export function getCardMetricChips(card) {
       chips.push({
         key: 'budget',
         icon: '🎯',
-        text: drift === 0 ? 'on plan' : `${drift > 0 ? '+' : ''}${formatCompactMoney(drift)} vs plan`,
+        text: drift === 0 ? 'on plan' : `${drift > 0 ? '+' : ''}${formatCompactMoney(drift)}`,
         className: drift === 0 ? '' : 'over',
         title: `Budget ${formatCompactMoney(planned)} now, ${formatCompactMoney(locked)} when locked`
       });
