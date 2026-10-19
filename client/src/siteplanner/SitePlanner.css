@@ -1,0 +1,509 @@
+/* Site Planner (Dev Tools -> Site Planner). Same gradient banner as the
+   other tools; the editor is a full-height map with a settings panel. */
+.siteplan-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #f5f7fa;
+}
+
+.siteplan-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.siteplan-header h2 { margin: 0 0 4px; }
+
+.siteplan-subtitle {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+}
+
+.siteplan-primary-btn {
+  background: rgba(255, 255, 255, 0.95);
+  color: #5a4fcf;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.siteplan-list {
+  padding: 24px 30px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  align-content: start;
+  overflow-y: auto;
+}
+
+.siteplan-card {
+  text-align: left;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: inherit;
+  color: inherit;
+}
+
+.siteplan-card:hover { border-color: #667eea; box-shadow: 0 2px 10px rgba(102, 126, 234, 0.15); }
+.siteplan-card-name { font-weight: 700; font-size: 16px; }
+.siteplan-card-project { color: #5a4fcf; font-size: 13px; }
+.siteplan-card-schemes { display: flex; flex-wrap: wrap; gap: 4px; }
+.siteplan-card-foot { color: #6b7280; font-size: 12px; }
+
+.siteplan-chip {
+  background: #eef0fb;
+  color: #4338ca;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.siteplan-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #6b7280;
+  padding: 40px 0;
+}
+
+.siteplan-muted { color: #6b7280; }
+.siteplan-small { font-size: 12px; }
+.siteplan-pad { padding: 24px; }
+.siteplan-error { color: #dc2626; }
+.siteplan-warn { color: #b45309; }
+
+.siteplan-form { display: flex; flex-direction: column; gap: 14px; }
+.siteplan-form label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 13px; }
+.siteplan-form input, .siteplan-form select {
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.siteplan-modal { max-width: 460px; }
+
+/* As on the Design board, the shared footer rules would otherwise
+   stretch and spread the buttons. */
+.siteplan-modal-footer.modal-footer .modal-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+/* ---- Editor ---- */
+.siteplan-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.siteplan-back { color: white; text-decoration: none; font-weight: 600; white-space: nowrap; }
+
+.siteplan-name {
+  font-size: 18px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: white;
+  padding: 6px 10px;
+  min-width: 180px;
+}
+
+.siteplan-name:focus { border-color: rgba(255, 255, 255, 0.6); outline: none; }
+
+.siteplan-project {
+  background: rgba(255, 255, 255, 0.95);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  max-width: 220px;
+}
+
+.siteplan-save { font-size: 12px; color: rgba(255, 255, 255, 0.85); }
+.siteplan-save-error, .siteplan-save-conflict { color: #fde68a; font-weight: 600; }
+.siteplan-header-spacer { flex: 1; }
+
+.siteplan-toggle {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.siteplan-toggle.on { background: white; color: #5a4fcf; }
+
+.siteplan-delete.btn-danger {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: white;
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.siteplan-banner {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.siteplan-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.siteplan-map-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.siteplan-map {
+  position: absolute;
+  inset: 0;
+}
+
+.siteplan-search {
+  position: absolute;
+  top: 10px;
+  left: 60px;
+  z-index: 1000;
+  display: flex;
+  gap: 6px;
+  width: min(420px, calc(100% - 180px));
+}
+
+.siteplan-search input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  font-size: 14px;
+  min-width: 0;
+}
+
+.siteplan-search > button {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: #5a4fcf;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.siteplan-search-results {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  right: 0;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.siteplan-search-results button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: white;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.siteplan-search-results button:hover { background: #eef0fb; }
+.siteplan-search-note { padding: 8px 10px; font-size: 13px; color: #6b7280; }
+
+.siteplan-map-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(17, 24, 39, 0.85);
+  color: white;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  max-width: 80%;
+  text-align: center;
+  pointer-events: none;
+}
+
+.siteplan-legend {
+  position: absolute;
+  right: 10px;
+  bottom: 24px;
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 6px;
+  padding: 6px 10px;
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  flex-wrap: wrap;
+  max-width: 60%;
+}
+
+.siteplan-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+
+.lg-boundary { border: 2px solid #ff9f1c; }
+.lg-setback { border: 1.5px dashed #6b7280; }
+.lg-building { background: #7b6cf6; }
+.lg-parking { background: #374151; }
+.lg-lot { background: #4ade80; }
+.lg-street { background: #6b7280; }
+.lg-truck { background: #9ca3af; border: 1px dashed #4b5563; }
+
+.siteplan-panel {
+  width: 380px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: white;
+  border-left: 1px solid #e5e7eb;
+  padding: 12px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.siteplan-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.siteplan-tab {
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font: inherit;
+}
+
+.siteplan-tab.active { border-color: #667eea; background: #eef0fb; }
+.siteplan-tab-name { font-weight: 600; font-size: 13px; }
+.siteplan-tab-yield { font-size: 11px; color: #6b7280; }
+.siteplan-tab-add { justify-content: center; color: #5a4fcf; font-weight: 600; font-size: 13px; }
+
+.siteplan-scheme-head { display: flex; align-items: center; gap: 10px; }
+
+.siteplan-scheme-name {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.siteplan-scheme-name:hover, .siteplan-scheme-name:focus { border-color: #d1d5db; outline: none; }
+
+.siteplan-type { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: #374151; }
+.siteplan-type select { padding: 8px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 14px; }
+
+.siteplan-results {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.siteplan-yield { display: flex; align-items: baseline; gap: 6px; }
+.siteplan-yield-value { font-size: 32px; font-weight: 800; color: #4338ca; }
+.siteplan-yield-label { color: #4b5563; font-weight: 600; }
+
+.siteplan-limits { font-size: 12px; color: #6b7280; margin: 4px 0 8px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+
+.siteplan-limit {
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-weight: 600;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.siteplan-limit-parking { background: #fee2e2; color: #b91c1c; }
+.siteplan-limit-far, .siteplan-limit-coverage, .siteplan-limit-height { background: #fef3c7; color: #92400e; }
+.siteplan-limit-site { background: #dcfce7; color: #166534; }
+
+.siteplan-mix-result { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; margin-bottom: 8px; }
+
+.siteplan-metrics {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.siteplan-metrics dt { color: #6b7280; }
+.siteplan-metrics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+.siteplan-settings { display: flex; flex-direction: column; gap: 10px; }
+.siteplan-group { display: flex; flex-direction: column; gap: 4px; }
+
+.siteplan-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.siteplan-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.siteplan-field-changed { background: #fffbeb; }
+.siteplan-field-label { color: #374151; }
+.siteplan-field-unit { color: #9ca3af; font-size: 12px; }
+.siteplan-field-input { display: flex; align-items: center; gap: 4px; }
+
+.siteplan-field-input input, .siteplan-field-input select {
+  width: 96px;
+  padding: 5px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: right;
+}
+
+.siteplan-field-input select { text-align: left; width: 110px; }
+
+.siteplan-reset {
+  border: none;
+  background: none;
+  color: #b45309;
+  cursor: pointer;
+  font-size: 15px;
+  width: 18px;
+  padding: 0;
+}
+
+.siteplan-reset-spacer { width: 18px; display: inline-block; }
+
+.siteplan-mix { display: flex; flex-direction: column; gap: 4px; padding: 2px 4px; border-radius: 6px; }
+
+.siteplan-mix-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 64px 20px;
+  gap: 6px;
+  align-items: center;
+}
+
+.siteplan-mix-row input {
+  padding: 5px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.siteplan-mix-row input[type='number'] { text-align: right; }
+.siteplan-mix-head { font-size: 11px; color: #9ca3af; }
+
+.siteplan-mix-remove {
+  border: none;
+  background: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.siteplan-mix-remove:disabled { visibility: hidden; }
+.siteplan-mix-foot { display: flex; justify-content: space-between; font-size: 12px; }
+
+.siteplan-link-btn {
+  border: none;
+  background: none;
+  color: #5a4fcf;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0;
+  text-align: left;
+}
+
+.siteplan-editor-header .siteplan-link-btn { color: #fde68a; }
+.siteplan-danger-link { color: #dc2626; }
+
+.siteplan-compare { padding: 20px; overflow: auto; flex: 1; }
+
+.siteplan-compare table {
+  border-collapse: collapse;
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 13px;
+  min-width: 480px;
+}
+
+.siteplan-compare th, .siteplan-compare td {
+  padding: 8px 14px;
+  border-bottom: 1px solid #f3f4f6;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.siteplan-compare th:first-child, .siteplan-compare td:first-child { text-align: left; color: #6b7280; }
+.siteplan-compare th { background: #f9fafb; vertical-align: top; }
+.siteplan-compare-yield td { font-size: 15px; color: #4338ca; }
+
+@media (max-width: 900px) {
+  .siteplan-workspace { flex-direction: column; overflow-y: auto; }
+  .siteplan-map-wrap { flex: none; height: 60vh; }
+  .siteplan-panel { width: auto; border-left: none; border-top: 1px solid #e5e7eb; overflow: visible; }
+  .siteplan-search { left: 50px; width: calc(100% - 110px); }
+  .siteplan-legend { max-width: calc(100% - 20px); }
+}

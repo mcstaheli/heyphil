@@ -24,6 +24,12 @@ const GROUPS = [
     icon: '🤝',
     apps: [{ path: '/shared/design', label: 'Design' }],
   },
+  {
+    id: 'dev',
+    label: 'Dev Tools',
+    icon: '🏗️',
+    apps: [{ path: '/dev/site-planner', label: 'Site Planner' }],
+  },
 ];
 
 function Sidebar({ user, onLogout }) {

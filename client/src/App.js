@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import './App.css';
@@ -22,6 +22,11 @@ import { deriveGridInputs } from './strategyGridMath';
 import AssigneeInput from './AssigneeInput';
 import { ResourceIcon } from './ProjectResources';
 import { detectSource, kindLabel, quickOpenLinks } from './resources';
+
+// The Site Planner brings its own map libraries, so it loads only when opened.
+const SitePlanner = lazy(() => import('./siteplanner/SitePlanner'));
+const SitePlanEditor = lazy(() => import('./siteplanner/SitePlanEditor'));
+const routeFallback = <div className="loading">Loading...</div>;
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 const WS_URL = process.env.REACT_APP_WS_URL || API_BASE_URL;
@@ -315,6 +320,8 @@ function App() {
           <Route path="/labs/cashflow" element={<Cashflow />} />
           <Route path="/labs/improvements" element={<Improvements />} />
           <Route path="/shared/design" element={<DesignBoard />} />
+          <Route path="/dev/site-planner" element={<Suspense fallback={routeFallback}><SitePlanner /></Suspense>} />
+          <Route path="/dev/site-planner/:planId" element={<Suspense fallback={routeFallback}><SitePlanEditor /></Suspense>} />
           <Route path="/settings" element={<SettingsPage user={user} onLogout={handleLogout} />} />
           <Route path="*" element={<Navigate to="/labs/board" replace />} />
         </Routes>
