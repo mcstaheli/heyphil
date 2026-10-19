@@ -11,6 +11,6 @@ export function initRealtime(ioInstance) {
 export function broadcastChange(event, data) {
   if (!io) return;
   const clientCount = io.engine.clientsCount;
-  console.log(`📡 Broadcasting ${event} to ${clientCount} clients:`, data.id || data.improvementId || '');
+  console.log(`📡 Broadcasting ${event} to ${clientCount} clients:`, data.id || data.improvementId || data.requestId || data.request?.id || '');
   io.emit(event, data);
 }

@@ -14,13 +14,25 @@ const LABS_APPS = [
   { path: '/labs/improvements', label: 'Improvements' },
 ];
 
+// Each sidebar group: a heading that opens and closes its list of apps.
+// An app with an accessKey shows only to people granted it (Settings).
+const GROUPS = [
+  { id: 'labs', label: 'Labs', icon: '🧪', apps: LABS_APPS },
+  {
+    id: 'shared',
+    label: 'Shared Service Tools',
+    icon: '🤝',
+    apps: [{ path: '/shared/design', label: 'Design' }],
+  },
+];
+
 function Sidebar({ user, onLogout }) {
-  const [labsOpen, setLabsOpen] = useState(true);
+  const [openGroups, setOpenGroups] = useState(() => Object.fromEntries(GROUPS.map((g) => [g.id, true])));
   const [collapsed, setCollapsed] = useState(false);
   const [access, setAccess] = useState({});
 
   useEffect(() => {
-    const gatedKeys = [...new Set(LABS_APPS.map((a) => a.accessKey).filter(Boolean))];
+    const gatedKeys = [...new Set(GROUPS.flatMap((g) => g.apps).map((a) => a.accessKey).filter(Boolean))];
     const token = localStorage.getItem('authToken');
     gatedKeys.forEach((key) => {
       fetch(`${API_BASE_URL}/api/access/${key}`, {
@@ -32,18 +44,18 @@ function Sidebar({ user, onLogout }) {
     });
   }, []);
 
-  const visibleLabsApps = LABS_APPS.filter((app) => !app.accessKey || access[app.accessKey]);
+  const visibleApps = (group) => group.apps.filter((app) => !app.accessKey || access[app.accessKey]);
 
-  // Subcategories (the Labs links) only ever show as text, so they're
-  // meaningless in the icon-only collapsed rail - clicking the Labs
+  // Subcategories (a group's links) only ever show as text, so they're
+  // meaningless in the icon-only collapsed rail - clicking a group
   // heading while collapsed expands the sidebar back out instead of just
   // toggling the accordion in place.
-  const handleLabsToggle = () => {
+  const handleGroupToggle = (id) => {
     if (collapsed) {
       setCollapsed(false);
-      setLabsOpen(true);
+      setOpenGroups((prev) => ({ ...prev, [id]: true }));
     } else {
-      setLabsOpen((open) => !open);
+      setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
     }
   };
 
@@ -61,33 +73,42 @@ function Sidebar({ user, onLogout }) {
       </div>
 
       <nav className="sidebar-nav">
-        <button
-          className="sidebar-group-toggle"
-          onClick={handleLabsToggle}
-          aria-expanded={labsOpen}
-          title="Labs"
-        >
-          <span className="sidebar-link-icon">🧪</span>
-          {!collapsed && (
-            <>
-              Labs
-              <span className={`sidebar-chevron ${labsOpen ? 'open' : ''}`}>▸</span>
-            </>
-          )}
-        </button>
-        {!collapsed && labsOpen && (
-          <div className="sidebar-group-items">
-            {visibleLabsApps.map((app) => (
-              <NavLink
-                key={app.path}
-                to={app.path}
-                className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+        {GROUPS.map((group) => {
+          const apps = visibleApps(group);
+          if (apps.length === 0) return null;
+          const open = openGroups[group.id];
+          return (
+            <React.Fragment key={group.id}>
+              <button
+                className="sidebar-group-toggle"
+                onClick={() => handleGroupToggle(group.id)}
+                aria-expanded={open}
+                title={group.label}
               >
-                {app.label}
-              </NavLink>
-            ))}
-          </div>
-        )}
+                <span className="sidebar-link-icon">{group.icon}</span>
+                {!collapsed && (
+                  <>
+                    {group.label}
+                    <span className={`sidebar-chevron ${open ? 'open' : ''}`}>▸</span>
+                  </>
+                )}
+              </button>
+              {!collapsed && open && (
+                <div className="sidebar-group-items">
+                  {apps.map((app) => (
+                    <NavLink
+                      key={app.path}
+                      to={app.path}
+                      className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+                    >
+                      {app.label}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
 
         <NavLink
           to="/settings"

@@ -16,6 +16,7 @@ import * as boardDb from './board-db.js';
 import * as orgchartDb from './orgchart-db.js';
 import * as cashflowDb from './cashflow-db.js';
 import * as improvementsDb from './improvements-db.js';
+import * as designDb from './design-db.js';
 import pool from './db.js';
 import { getTypingStatus } from './typing-status.js';
 import { JWT_SECRET, requireAuth, requireAdmin } from './auth-middleware.js';
@@ -27,6 +28,7 @@ import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin
 import { sendStandupReminders, previewStandupReminders } from './reminders.js';
 import cashflowRouter from './routes/cashflow.js';
 import improvementsRouter from './routes/improvements.js';
+import designRouter from './routes/design.js';
 import { initRealtime } from './realtime.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -200,6 +202,9 @@ async function autoMigrate() {
   `));
 
   await runMigrationStep('improvements table', () => improvementsDb.createTables());
+
+  // Shared Service Tools -> Design board.
+  await runMigrationStep('design_requests table', () => designDb.createTables());
 
   // Team management moved from the per-board Settings modal up to the
   // global Settings page (per request - "govern them across Apps" rather
@@ -446,6 +451,7 @@ app.get('/api/access/:appKey', requireAuth, async (req, res) => {
 
 app.use('/api/cashflow', cashflowRouter);
 app.use('/api/improvements', improvementsRouter);
+app.use('/api/design', designRouter);
 
 // Google Sheets API with Service Account
 const getSheets = () => {

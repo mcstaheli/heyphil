@@ -7,6 +7,7 @@ import Landing from './Landing';
 import OrgCharts from './OrgCharts';
 import Cashflow from './Cashflow';
 import Improvements from './Improvements';
+import DesignBoard from './DesignBoard';
 import Settings from './Settings';
 import SettingsPage from './SettingsPage';
 import ProjectDetail from './ProjectDetail';
@@ -313,6 +314,7 @@ function App() {
           <Route path="/labs/orgcharts" element={<OrgCharts />} />
           <Route path="/labs/cashflow" element={<Cashflow />} />
           <Route path="/labs/improvements" element={<Improvements />} />
+          <Route path="/shared/design" element={<DesignBoard />} />
           <Route path="/settings" element={<SettingsPage user={user} onLogout={handleLogout} />} />
           <Route path="*" element={<Navigate to="/labs/board" replace />} />
         </Routes>
