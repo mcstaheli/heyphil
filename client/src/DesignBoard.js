@@ -138,7 +138,7 @@ function RequestModal({ request, projects, canDelete, onClose, onSave, onDelete 
         </div>
         <div className="modal-footer design-modal-footer">
           {!isNew && canDelete
-            ? <button type="button" className="design-delete" onClick={() => onDelete(request)}>Delete</button>
+            ? <button type="button" className="btn-danger design-delete" onClick={() => onDelete(request)}>Delete</button>
             : <span />}
           <div className="modal-actions">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>

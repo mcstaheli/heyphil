@@ -258,13 +258,18 @@
   align-items: center;
 }
 
-.design-delete {
-  background: none;
-  border: none;
-  color: #dc3545;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 0;
+/* The shared .modal-footer .modal-actions rule stretches the actions to
+   full width and a later .modal-actions rule spreads them apart, which
+   pushed Cancel up against Delete and Save to the far edge. Here Delete
+   sits on the left and Cancel/Save stay together on the right. */
+.design-modal-footer.modal-footer .modal-actions {
+  width: auto;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.design-delete.btn-danger {
+  padding: 12px 24px;
 }
 
 @media (max-width: 600px) {
