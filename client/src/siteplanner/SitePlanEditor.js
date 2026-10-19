@@ -3,10 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import SitePlanMap from './SitePlanMap';
 import GeneratorModal from './GeneratorModal';
 import { loadProjects, searchAddress, sitePlansApi } from './api';
-import { ASSET_TYPES, effectiveSettings, getAssetType } from './assetTypes';
+import { ASSET_TYPES, COMMON_FIELDS, effectiveSettings, getAssetType } from './assetTypes';
 import { makeProjection } from './geometry';
-import { solveScheme, supportsManualLayout } from './solver';
-import { NumberInput, SchemeSettings, fmtDec } from './settingsFields';
+import { hasSurfaceParking, solveScheme, supportsManualLayout } from './solver';
+import { NumberInput, OrientationField, SchemeSettings, fmtDec, fmtInt, withOverride } from './settingsFields';
 import { CompareView, ResultsCard, planMetrics, yieldOf } from './results';
 import './SitePlanner.css';
 
@@ -257,6 +257,124 @@ function SpacesSection({ scheme, results, selectedId, onSelect, onDraw, onUpdate
   );
 }
 
+const STALL_ANGLES = COMMON_FIELDS.find((f) => f.key === 'stallAngle').options;
+
+// Parking: what the lot holds by stall type, how it's laid out, the areas
+// drawn by hand, and the driveway entries.
+function ParkingSection({ scheme, type, result, selectedAreaId, onSelectArea, onDraw, onUpdateArea, onRemoveArea, onSetOverride, onRemoveEntry, onAddEntry }) {
+  if (!hasSurfaceParking(type)) return null;
+  const settings = effectiveSettings(scheme);
+  const p = result?.parking;
+  const t = result?.totals?.stallTypes;
+  const areas = scheme.parkingAreas || [];
+  const selected = areas.find((a) => a.id === selectedAreaId);
+  const areaInfo = Object.fromEntries((p?.areas || []).map((a) => [a.id, a]));
+  const entries = p?.entries || [];
+  return (
+    <div className="siteplan-section">
+      <div className="siteplan-section-head">
+        <span className="siteplan-group-title">Parking</span>
+        {p && <span className="siteplan-muted siteplan-small">{fmtInt(result.totals?.parkingSurface ?? result.metrics.parkingSurface)} surface stalls</span>}
+      </div>
+      {t && t.total > 0 && (
+        <div className="siteplan-stall-types">
+          <span><b>{fmtInt(t.standard)}</b> standard</span>
+          {t.compact > 0 && <span><b>{fmtInt(t.compact)}</b> compact</span>}
+          <span className="siteplan-ada-chip"><b>{fmtInt(t.ada)}</b> accessible ({fmtInt(t.van)} van)</span>
+          {t.ev > 0 && <span><b>{fmtInt(t.ev)}</b> EV-ready</span>}
+        </div>
+      )}
+      {p && p.rawStalls > 0 && (
+        <p className="siteplan-muted siteplan-small">
+          {fmtInt(result.totals?.sfPerStall ?? p.sfPerStall)} sf of paving per stall · {fmtDec(result.totals?.stallsPerAcre ?? p.stallsPerAcre, 0)} stalls per paved acre
+          {p.perimeterDrive ? ' · perimeter drive on' : ''}
+          {p.disconnected ? ` · ${p.disconnected} bay${p.disconnected === 1 ? '' : 's'} can't reach the drive (red)` : ''}
+        </p>
+      )}
+      <label className="siteplan-field">
+        <span className="siteplan-field-label">Stall angle</span>
+        <span className="siteplan-field-input">
+          <select value={settings.stallAngle} onChange={(e) => onSetOverride('stallAngle', Number(e.target.value))}>
+            {STALL_ANGLES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
+          <span className="siteplan-reset-spacer" />
+        </span>
+      </label>
+      <OrientationField
+        label="Parking orientation"
+        value={settings.parkingRotation}
+        currentDeg={result?.metrics?.parkingOrientationDeg}
+        onChange={(v) => onSetOverride('parkingRotation', v)}
+      />
+      <p className="siteplan-muted siteplan-small">
+        Best fit tries every 5° for each open piece of ground. Bays between buildings follow the buildings.
+      </p>
+
+      <div className="siteplan-section-head">
+        <span className="siteplan-small"><b>Parking areas</b></span>
+        <span>
+          <button type="button" className="siteplan-small-btn" onClick={() => onDraw('Rectangle')}>+ Rectangle</button>
+          <button type="button" className="siteplan-small-btn" onClick={() => onDraw('Polygon')}>+ Shape</button>
+        </span>
+      </div>
+      {areas.length === 0 && (
+        <p className="siteplan-muted siteplan-small">
+          Draw where parking should go. Buildings are re-planned in the ground that&apos;s left, so making an area bigger
+          moves the buildings.
+        </p>
+      )}
+      {areas.map((a, i) => (
+        <button type="button" key={a.id} className={`siteplan-space-row ${a.id === selectedAreaId ? 'active' : ''}`} onClick={() => onSelectArea(a.id)}>
+          <span className="siteplan-space-swatch parking" />
+          <span className="siteplan-space-name">Parking area {i + 1}</span>
+          <span className="siteplan-muted siteplan-small">
+            {fmtInt(areaInfo[a.id]?.stalls || 0)} stalls · {Number.isFinite(a.angle) ? `${fmtDec(a.angle, 0)}°` : `best fit${areaInfo[a.id]?.orientationDeg !== null && areaInfo[a.id]?.orientationDeg !== undefined ? ` (${fmtDec(areaInfo[a.id].orientationDeg, 0)}°)` : ''}`}
+          </span>
+        </button>
+      ))}
+      {selected && (
+        <div className="siteplan-space-edit">
+          <OrientationField
+            label="Stall orientation"
+            value={Number.isFinite(selected.angle) ? selected.angle : 'auto'}
+            currentDeg={areaInfo[selected.id]?.orientationDeg}
+            onChange={(v) => onUpdateArea(selected.id, { angle: v === undefined ? 'auto' : v })}
+          />
+          <label className="siteplan-field">
+            <span className="siteplan-field-label">Stall angle</span>
+            <span className="siteplan-field-input">
+              <select
+                value={selected.stallAngle || ''}
+                onChange={(e) => onUpdateArea(selected.id, { stallAngle: e.target.value ? Number(e.target.value) : undefined })}
+              >
+                <option value="">Same as the scheme</option>
+                {STALL_ANGLES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </select>
+              <span className="siteplan-reset-spacer" />
+            </span>
+          </label>
+          <p className="siteplan-muted siteplan-small">Reshape, drag or rotate the area with the map&apos;s edit tools; drag ⟳ to turn its stalls.</p>
+          <button type="button" className="siteplan-link-btn siteplan-danger-link" onClick={() => onRemoveArea(selected.id)}>Remove parking area</button>
+        </div>
+      )}
+
+      <div className="siteplan-section-head">
+        <span className="siteplan-small"><b>Entries</b></span>
+        <button type="button" className="siteplan-small-btn" onClick={onAddEntry} disabled={!result?.metrics}>+ Entry</button>
+      </div>
+      {entries.map((e, i) => (
+        <div key={e.id} className="siteplan-preset-row">
+          <span className={e.reaches ? '' : 'siteplan-neg'}>
+            Entry {i + 1}{e.auto ? ' (automatic - on the longest edge)' : ''}{e.reaches ? '' : ' - doesn\'t reach the drive'}
+          </span>
+          {!e.auto && <button type="button" className="siteplan-link-btn siteplan-danger-link" onClick={() => onRemoveEntry(e.id)}>×</button>}
+        </div>
+      ))}
+      <p className="siteplan-muted siteplan-small">Drag an IN marker along the boundary to move an entry.</p>
+    </div>
+  );
+}
+
 // Presets (#4): save a scheme's asset type and settings, apply them on
 // any site.
 function PresetsSection({ presets, scheme, onApply, onSave, onDelete }) {
@@ -296,6 +414,7 @@ function SitePlanEditor() {
   const [drawRequest, setDrawRequest] = useState(null);
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
   const [selectedSpaceId, setSelectedSpaceId] = useState(null);
+  const [selectedAreaId, setSelectedAreaId] = useState(null);
   const [saveState, setSaveState] = useState('saved'); // saved | pending | saving | error | conflict
   const [saveError, setSaveError] = useState(null);
 
@@ -412,6 +531,7 @@ function SitePlanEditor() {
   useEffect(() => {
     setSelectedBuildingId(null);
     setSelectedSpaceId(null);
+    setSelectedAreaId(null);
   }, [activeId]);
 
   const buildingLabel = useCallback((i, b) => {
@@ -554,6 +674,75 @@ function SitePlanEditor() {
     setSpaces(spacesNow().filter((sp) => sp.id !== id));
     setSelectedSpaceId(null);
   };
+
+  // ---- Parking ----
+  const schemeById = () => draftRef.current.schemes.find((s) => s.id === activeId) || draftRef.current.schemes[0];
+
+  const onAreaDrawn = useCallback((polygon) => {
+    const scheme = schemeById();
+    const existing = scheme.parkingAreas || [];
+    if (existing.length >= 30) return;
+    const area = { id: newId(), polygon, angle: 'auto' };
+    updateScheme(scheme.id, { parkingAreas: [...existing, area] });
+    setSelectedAreaId(area.id);
+  }, [activeId, updateScheme]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateArea = useCallback((id, patch) => {
+    const scheme = schemeById();
+    const parkingAreas = (scheme.parkingAreas || []).map((a) => {
+      if (a.id !== id) return a;
+      const next = { ...a, ...patch };
+      Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
+      return next;
+    });
+    updateScheme(scheme.id, { parkingAreas });
+  }, [activeId, updateScheme]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const removeArea = (id) => {
+    const rest = (currentScheme().parkingAreas || []).filter((a) => a.id !== id);
+    updateScheme(active.id, { parkingAreas: rest.length ? rest : undefined });
+    setSelectedAreaId(null);
+  };
+
+  const setOverrideKey = (key, value) => {
+    const scheme = currentScheme();
+    updateScheme(scheme.id, { overrides: withOverride(getAssetType(scheme.assetType), scheme.overrides || {}, key, value) });
+  };
+
+  // Moving the automatic entry makes it a real one; the list then holds
+  // every entry by hand.
+  const onEntryMove = useCallback((id, point, auto) => {
+    const scheme = schemeById();
+    const list = scheme.entries || [];
+    const entries = auto ? [{ id: newId(), point }] : list.map((e) => (e.id === id ? { ...e, point } : e));
+    updateScheme(scheme.id, { entries });
+  }, [activeId, updateScheme]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addEntry = () => {
+    if (!boundary) return;
+    const scheme = currentScheme();
+    const list = scheme.entries || [];
+    if (list.length >= 10) return;
+    // Start the new one on the boundary corner farthest from the others.
+    const ring = boundary.coordinates[0].slice(0, -1);
+    const existing = list.length ? list.map((e) => e.point) : (activeResult?.geometry?.entries || []).map((e) => e.point);
+    const far = ring.reduce((best, p) => {
+      const d = Math.min(...existing.map((q) => Math.hypot(p[0] - q[0], p[1] - q[1])), Infinity);
+      return !best || d > best.d ? { d, p } : best;
+    }, null);
+    const keep = list.length ? list : existing.map((point) => ({ id: newId(), point }));
+    updateScheme(scheme.id, { entries: [...keep, { id: newId(), point: far.p }] });
+  };
+
+  const removeEntry = (id) => {
+    const rest = (currentScheme().entries || []).filter((e) => e.id !== id);
+    updateScheme(active.id, { entries: rest.length ? rest : undefined });
+  };
+
+  const areaInfo = useMemo(
+    () => Object.fromEntries((activeResult?.parking?.areas || []).map((a) => [a.id, a.orientationDeg])),
+    [activeResult]
+  );
 
   // ---- Presets (#4) ----
   async function savePreset() {
@@ -733,6 +922,14 @@ function SitePlanEditor() {
               selectedBuildingId={selectedBuildingId}
               onSelectBuilding={setSelectedBuildingId}
               onBuildingChange={updateBuilding}
+              parkingAreas={hasSurfaceParking(activeType) ? (active.parkingAreas || []) : []}
+              areaInfo={areaInfo}
+              selectedAreaId={selectedAreaId}
+              onSelectArea={setSelectedAreaId}
+              onAreaChange={(id, polygon) => updateArea(id, { polygon })}
+              onAreaDrawn={onAreaDrawn}
+              onAreaAngle={(id, angle) => updateArea(id, { angle })}
+              onEntryMove={onEntryMove}
             />
             {!draft.boundary && (
               <div className="siteplan-map-hint">
@@ -744,10 +941,12 @@ function SitePlanEditor() {
               <span><i className="lg-setback" />Setback</span>
               <span><i className="lg-building" />Building</span>
               <span><i className="lg-parking" />Parking</span>
+              {hasSurfaceParking(activeType) && <><span><i className="lg-drive" />Drive</span><span><i className="lg-ada" />Accessible</span></>}
+              {(active.parkingAreas || []).length > 0 && <span><i className="lg-parkarea" />Parking area</span>}
               {(active.spaces || []).some((sp) => sp.kind === 'no-build') && <span><i className="lg-nobuild" />No-build</span>}
               {(active.spaces || []).some((sp) => sp.kind === 'asset') && <span><i className="lg-space" />Space</span>}
               {activeType.mode === 'lots' && <><span><i className="lg-lot" />Lots</span><span><i className="lg-street" />Streets</span></>}
-              {activeType.mode === 'industrial' && <span><i className="lg-truck" />Truck court</span>}
+              {activeType.mode === 'industrial' && <><span><i className="lg-truck" />Truck court</span><span><i className="lg-trailer" />Trailers</span></>}
             </div>
           </div>
 
@@ -814,9 +1013,23 @@ function SitePlanEditor() {
               results={activeResult}
               selectedId={selectedSpaceId}
               onSelect={setSelectedSpaceId}
-              onDraw={(shape) => setDrawRequest({ shape, at: Date.now() })}
+              onDraw={(shape) => setDrawRequest({ target: 'space', shape, at: Date.now() })}
               onUpdate={updateSpace}
               onRemove={removeSpace}
+            />
+
+            <ParkingSection
+              scheme={active}
+              type={activeType}
+              result={activeResult}
+              selectedAreaId={selectedAreaId}
+              onSelectArea={setSelectedAreaId}
+              onDraw={(shape) => setDrawRequest({ target: 'parking', shape, at: Date.now() })}
+              onUpdateArea={updateArea}
+              onRemoveArea={removeArea}
+              onSetOverride={setOverrideKey}
+              onAddEntry={addEntry}
+              onRemoveEntry={removeEntry}
             />
 
             <PresetsSection presets={presets} scheme={active} onApply={applyPreset} onSave={savePreset} onDelete={deletePreset} />
@@ -831,6 +1044,7 @@ function SitePlanEditor() {
                 onChange={(overrides) => updateScheme(active.id, { overrides })}
                 idPrefix={active.id}
                 currentOrientationDeg={activeResult?.metrics?.orientationDeg}
+                currentParkingDeg={activeResult?.metrics?.parkingOrientationDeg}
               />
             </div>
 

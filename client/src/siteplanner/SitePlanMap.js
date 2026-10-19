@@ -71,6 +71,13 @@ const STYLES = {
   truck: { color: '#d1d5db', weight: 1, fillColor: '#9ca3af', fillOpacity: 0.45, dashArray: '4 4', pmIgnore: true, interactive: false },
   spaceNoBuild: { color: '#10b981', weight: 2, dashArray: '5 4', fillColor: '#34d399', fillOpacity: 0.3 },
   spaceAsset: { color: '#f43f5e', weight: 2, fillColor: '#fb7185', fillOpacity: 0.25 },
+  parkingArea: { color: '#38bdf8', weight: 2, dashArray: '8 5', fillColor: '#0ea5e9', fillOpacity: 0.08 },
+  parkingBad: { color: '#ef4444', weight: 2, fillColor: '#374151', fillOpacity: 0.55, pmIgnore: true, interactive: false },
+  island: { color: '#15803d', weight: 0.5, fillColor: '#22c55e', fillOpacity: 0.85, pmIgnore: true, interactive: false },
+  ada: { color: '#1d4ed8', weight: 0.5, fillColor: '#3b82f6', fillOpacity: 0.9, pmIgnore: true, interactive: false },
+  drive: { color: '#9ca3af', weight: 0.5, fillColor: '#4b5563', fillOpacity: 0.55, pmIgnore: true, interactive: false },
+  trailer: { color: '#fde68a', weight: 1, fillColor: '#78716c', fillOpacity: 0.55, pmIgnore: true, interactive: false },
+  trailerStripe: { color: '#fde68a', weight: 0.75, opacity: 0.9, pmIgnore: true, interactive: false },
 };
 
 const geoToLatLngs = (geometry) => geometry.coordinates[0].slice(0, -1).map(([lng, lat]) => [lat, lng]);
@@ -103,10 +110,39 @@ const handleIcon = (kind) => L.divIcon({
   iconAnchor: [11, 11],
 });
 
+// The nearest point on the boundary to a dragged entry, as [lng, lat].
+function snapToBoundary(boundary, [lng, lat]) {
+  const ring = boundary.coordinates[0];
+  const proj = makeProjection(ring);
+  const p = proj.toFeet([lng, lat]);
+  let best = null;
+  for (let i = 0; i + 1 < ring.length; i++) {
+    const a = proj.toFeet(ring[i]);
+    const b = proj.toFeet(ring[i + 1]);
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len2 = dx * dx + dy * dy;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+    const q = [a[0] + t * dx, a[1] + t * dy];
+    const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (!best || d < best.d) best = { d, q };
+  }
+  const [la, ln] = proj.toLatLng(best.q);
+  return [Number(ln.toFixed(7)), Number(la.toFixed(7))];
+}
+
+const entryIcon = (auto, reaches) => L.divIcon({
+  className: `siteplan-entry ${auto ? 'auto' : ''} ${reaches ? '' : 'bad'}`,
+  html: 'IN',
+  iconSize: [26, 18],
+  iconAnchor: [13, 9],
+});
+
 function SitePlanMap({
   boundary, initialView, layout, spaceLayouts, flyTo, onBoundaryChange, buildingLabel,
   spaces, selectedSpaceId, onSelectSpace, onSpaceChange, onSpaceDrawn, drawRequest,
   placed, badBuildingIds, selectedBuildingId, onSelectBuilding, onBuildingChange,
+  parkingAreas, areaInfo, selectedAreaId, onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
 }) {
   const elRef = useRef(null);
   const mapRef = useRef(null);
@@ -115,12 +151,21 @@ function SitePlanMap({
   const layoutGroupRef = useRef(null);
   const spaceGroupRef = useRef(null);
   const spaceLayersRef = useRef(new Map()); // id -> { layer, json }
+  const areaGroupRef = useRef(null);
+  const areaLayersRef = useRef(new Map()); // id -> { layer, json }
+  const areaHandleGroupRef = useRef(null);
+  const entryGroupRef = useRef(null);
   const placedGroupRef = useRef(null);
   const lastEmittedRef = useRef(null);
   const drawTargetRef = useRef(null);
   // Callbacks change every render; the map's listeners read them here.
   const cb = useRef({});
-  cb.current = { onBoundaryChange, onSelectSpace, onSpaceChange, onSpaceDrawn, onSelectBuilding, onBuildingChange };
+  cb.current = {
+    onBoundaryChange, onSelectSpace, onSpaceChange, onSpaceDrawn, onSelectBuilding, onBuildingChange,
+    onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
+  };
+  const boundaryRef = useRef(boundary);
+  boundaryRef.current = boundary;
 
   // Hooks the drawn boundary up so reshaping, dragging or rotating it
   // reports back.
@@ -156,6 +201,9 @@ function SitePlanMap({
     L.control.scale({ imperial: true, metric: false }).addTo(map);
     layoutGroupRef.current = L.layerGroup().addTo(map);
     spaceGroupRef.current = L.featureGroup().addTo(map);
+    areaGroupRef.current = L.featureGroup().addTo(map);
+    areaHandleGroupRef.current = L.layerGroup().addTo(map);
+    entryGroupRef.current = L.layerGroup().addTo(map);
     placedGroupRef.current = L.layerGroup().addTo(map);
 
     map.pm.addControls({
@@ -175,11 +223,13 @@ function SitePlanMap({
     });
     map.pm.setGlobalOptions({ allowSelfIntersection: false, snappable: true });
     map.on('pm:create', (e) => {
-      if (drawTargetRef.current === 'space') {
+      const target = drawTargetRef.current;
+      if (target === 'space' || target === 'parking') {
         drawTargetRef.current = null;
         const geometry = e.layer.toGeoJSON().geometry;
-        map.removeLayer(e.layer); // it comes back as a space once saved
-        cb.current.onSpaceDrawn(geometry);
+        map.removeLayer(e.layer); // it comes back as a space or parking area once saved
+        if (target === 'space') cb.current.onSpaceDrawn(geometry);
+        else cb.current.onAreaDrawn(geometry);
         return;
       }
       adoptBoundary(e.layer)();
@@ -188,6 +238,7 @@ function SitePlanMap({
     map.on('click', () => {
       cb.current.onSelectBuilding?.(null);
       cb.current.onSelectSpace?.(null);
+      cb.current.onSelectArea?.(null);
     });
 
     if (boundary) {
@@ -236,11 +287,11 @@ function SitePlanMap({
     map.setView([flyTo.lat, flyTo.lng], flyTo.zoom);
   }, [flyTo]);
 
-  // "+ Space" asks the map to start drawing one.
+  // "+ Space" / "+ Parking area" asks the map to start drawing one.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !drawRequest) return;
-    drawTargetRef.current = 'space';
+    drawTargetRef.current = drawRequest.target || 'space';
     map.pm.enableDraw(drawRequest.shape || 'Rectangle', { snappable: true });
   }, [drawRequest]);
 
@@ -289,6 +340,81 @@ function SitePlanMap({
     }
   }, [spaces, selectedSpaceId]);
 
+  // Parking areas: Geoman-editable like spaces, plus a ⟳ handle on the
+  // selected one that sets which way its stalls face.
+  useEffect(() => {
+    const group = areaGroupRef.current;
+    const handles = areaHandleGroupRef.current;
+    if (!group) return;
+    const layers = areaLayersRef.current;
+    const wanted = new Map((parkingAreas || []).map((a) => [a.id, a]));
+    for (const [id, entry] of layers) {
+      if (!wanted.has(id)) {
+        group.removeLayer(entry.layer);
+        layers.delete(id);
+      }
+    }
+    handles.clearLayers();
+    for (const a of wanted.values()) {
+      const json = JSON.stringify(a.polygon);
+      let entry = layers.get(a.id);
+      if (entry && entry.json !== json) {
+        group.removeLayer(entry.layer);
+        entry = null;
+      }
+      if (!entry) {
+        const layer = L.polygon(geoToLatLngs(a.polygon));
+        const emit = () => {
+          const geometry = layer.toGeoJSON().geometry;
+          layers.get(a.id).json = JSON.stringify(geometry);
+          cb.current.onAreaChange(a.id, geometry);
+        };
+        layer.on('pm:edit', emit);
+        layer.on('pm:dragend', emit);
+        layer.on('pm:rotateend', emit);
+        layer.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          cb.current.onSelectArea(a.id);
+        });
+        group.addLayer(layer);
+        entry = { layer, json };
+        layers.set(a.id, entry);
+      }
+      entry.layer.setStyle({ ...STYLES.parkingArea, weight: a.id === selectedAreaId ? 4 : STYLES.parkingArea.weight });
+      if (a.id === selectedAreaId) {
+        const ring = a.polygon.coordinates[0].slice(0, -1);
+        const centre = [ring.reduce((t, p) => t + p[0], 0) / ring.length, ring.reduce((t, p) => t + p[1], 0) / ring.length];
+        const proj = makeProjection([centre]);
+        const deg = Number.isFinite(a.angle) ? a.angle : (areaInfo?.[a.id] ?? 0);
+        const at = (d) => proj.toLatLng([Math.cos(d * Math.PI / 180) * 70, Math.sin(d * Math.PI / 180) * 70]);
+        L.polyline([proj.toLatLng([0, 0]), at(deg)], { color: '#38bdf8', weight: 2, dashArray: '4 4', pmIgnore: true, interactive: false }).addTo(handles);
+        const m = L.marker(at(deg), { icon: handleIcon('rotate'), draggable: true, pmIgnore: true, zIndexOffset: 1000 }).addTo(handles);
+        m.bindTooltip('Drag to turn the stalls', { direction: 'top' });
+        m.on('dragend', (ev) => {
+          const { lat, lng } = ev.target.getLatLng();
+          const [x, y] = proj.toFeet([lng, lat]);
+          cb.current.onAreaAngle(a.id, Math.round(((Math.atan2(y, x) * 180) / Math.PI) * 10) / 10);
+        });
+      }
+    }
+  }, [parkingAreas, selectedAreaId, areaInfo]);
+
+  // Driveway entries: drag along the boundary; they snap to it.
+  useEffect(() => {
+    const group = entryGroupRef.current;
+    if (!group) return;
+    group.clearLayers();
+    for (const e of layout?.entries || []) {
+      const m = L.marker([e.point[1], e.point[0]], { icon: entryIcon(e.auto, e.reaches), draggable: true, pmIgnore: true, zIndexOffset: 900 }).addTo(group);
+      m.bindTooltip(e.auto ? 'Entry (placed automatically) - drag along the boundary' : 'Entry - drag along the boundary', { direction: 'top' });
+      m.on('dragend', (ev) => {
+        if (!boundaryRef.current) return;
+        const { lat, lng } = ev.target.getLatLng();
+        cb.current.onEntryMove(e.id, snapToBoundary(boundaryRef.current, [lng, lat]), e.auto);
+      });
+    }
+  }, [layout]);
+
   // The solver's layout (and each asset space's). With buildings placed
   // by hand, those are drawn by the placed-building layer instead.
   useEffect(() => {
@@ -297,11 +423,19 @@ function SitePlanMap({
     group.clearLayers();
     const draw = (g, withBuildings) => {
       if (!g) return;
+      (g.drives || []).forEach((rings) => L.polygon(rings, STYLES.drive).addTo(group));
+      (g.entryDrives || []).forEach((r) => L.polygon(r, STYLES.drive).addTo(group));
       (g.streets || []).forEach((r) => L.polygon(r, STYLES.street).addTo(group));
       (g.truckCourts || []).forEach((r) => L.polygon(r, STYLES.truck).addTo(group));
+      (g.trailers || []).forEach((t) => {
+        L.polygon(t.outline, STYLES.trailer).addTo(group);
+        t.stalls.forEach((line) => L.polyline(line, STYLES.trailerStripe).addTo(group));
+      });
       (g.parking || []).forEach((p) => {
-        L.polygon(p.outline, STYLES.parking).addTo(group);
+        L.polygon(p.outline, p.connected === false ? STYLES.parkingBad : STYLES.parking).addTo(group);
         p.stalls.forEach((line) => L.polyline(line, STYLES.stall).addTo(group));
+        (p.islands || []).forEach((r) => L.polygon(r, STYLES.island).addTo(group));
+        (p.ada || []).forEach((r) => L.polygon(r, STYLES.ada).addTo(group));
       });
       (g.lots || []).forEach((r) => L.polygon(r, STYLES.lot).addTo(group));
       if (withBuildings) {

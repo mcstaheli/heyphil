@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { effectiveSettings, fieldsFor, getAssetType } from './assetTypes';
+import { hasSurfaceParking } from './solver';
 import { MAX_OPTIONS, buildCombos, countCombos, filterAndSort, runOptions } from './generator';
 import { NumberInput, fmtDec, fmtInt, fmtMoney, fmtPct } from './settingsFields';
 import { yieldOf } from './results';
@@ -7,9 +8,14 @@ import { yieldOf } from './results';
 // "Generate options": pick up to three settings to sweep, run every
 // combination, filter by goals, and turn the one you like into a scheme.
 
-const SUGGESTED = ['floors', 'buildingDepth', 'parkingRatio', 'lotWidth', 'maxBuildingDepth', 'maxBuildingLength', 'stallWidth'];
+const SUGGESTED = ['floors', 'buildingDepth', 'parkingRatio', 'lotWidth', 'maxBuildingDepth', 'maxBuildingLength', 'stallAngle', 'parkingRotation'];
+
+// Parking orientation is swept as an angle; "Best fit" isn't a number.
+const PARKING_ORIENTATION = { key: 'parkingRotation', label: 'Parking orientation', unit: '°', step: 15, group: 'Parking' };
 
 function defaultSweep(field, current) {
+  if (field.options) return { key: field.key, values: field.options.map(([v]) => v) };
+  if (field.key === 'parkingRotation') return { key: field.key, from: 0, to: 165, step: 15 };
   if (field.key === 'floors') return { key: 'floors', from: Math.max(1, current - 1), to: current + 2, step: 1 };
   const step = field.step || (current >= 100 ? 10 : current >= 20 ? 5 : 1);
   return { key: field.key, from: Math.max(0, current - 2 * step), to: current + 2 * step, step };
@@ -18,7 +24,10 @@ function defaultSweep(field, current) {
 function GeneratorModal({ boundary, scheme, onClose, onApply }) {
   const type = getAssetType(scheme.assetType);
   const settings = effectiveSettings(scheme);
-  const numeric = fieldsFor(type).filter((f) => f.group !== 'Pro forma');
+  const numeric = [
+    ...fieldsFor(type).filter((f) => f.group !== 'Pro forma'),
+    ...(hasSurfaceParking(type) ? [PARKING_ORIENTATION] : []),
+  ];
   const [sweeps, setSweeps] = useState(() => SUGGESTED
     .map((k) => numeric.find((f) => f.key === k))
     .filter(Boolean)
@@ -78,12 +87,18 @@ function GeneratorModal({ boundary, scheme, onClose, onApply }) {
                     </option>
                   ))}
                 </select>
-                <span>from</span>
-                <NumberInput value={sw.from} step={fieldOf(sw.key)?.step} onChange={(n) => setSweeps((l) => l.map((x, j) => (j === i ? { ...x, from: n } : x)))} />
-                <span>to</span>
-                <NumberInput value={sw.to} step={fieldOf(sw.key)?.step} onChange={(n) => setSweeps((l) => l.map((x, j) => (j === i ? { ...x, to: n } : x)))} />
-                <span>step</span>
-                <NumberInput value={sw.step} min={0.01} step={fieldOf(sw.key)?.step} onChange={(n) => setSweeps((l) => l.map((x, j) => (j === i ? { ...x, step: n } : x)))} />
+                {Array.isArray(sw.values) ? (
+                  <span className="siteplan-muted">every option: {sw.values.map((v) => fieldOf(sw.key)?.options?.find(([x]) => x === v)?.[1] || v).join(', ')}</span>
+                ) : (
+                  <>
+                    <span>from</span>
+                    <NumberInput value={sw.from} step={fieldOf(sw.key)?.step} onChange={(n) => setSweeps((l) => l.map((x, j) => (j === i ? { ...x, from: n } : x)))} />
+                    <span>to</span>
+                    <NumberInput value={sw.to} step={fieldOf(sw.key)?.step} onChange={(n) => setSweeps((l) => l.map((x, j) => (j === i ? { ...x, to: n } : x)))} />
+                    <span>step</span>
+                    <NumberInput value={sw.step} min={0.01} step={fieldOf(sw.key)?.step} onChange={(n) => setSweeps((l) => l.map((x, j) => (j === i ? { ...x, step: n } : x)))} />
+                  </>
+                )}
                 <button type="button" className="siteplan-mix-remove" onClick={() => setSweeps((l) => l.filter((_, j) => j !== i))} title="Remove">×</button>
               </div>
             ))}
@@ -158,7 +173,7 @@ function GeneratorModal({ boundary, scheme, onClose, onApply }) {
                     {shown.slice(0, 50).map((o, idx) => (
                       // eslint-disable-next-line react/no-array-index-key
                       <tr key={idx}>
-                        {sweeps.map((sw) => <td key={sw.key}>{fmtDec(o.combo[sw.key], (String(sw.step).split('.')[1] || '').length)}</td>)}
+                        {sweeps.map((sw) => <td key={sw.key}>{fmtDec(o.combo[sw.key], Array.isArray(sw.values) ? 0 : (String(sw.step).split('.')[1] || '').length)}</td>)}
                         <td><b>{fmtInt(o.yield)}</b></td>
                         <td>{fmtDec(o.far)}</td>
                         <td>{fmtInt(o.parkingProvided)} / {fmtInt(o.parkingRequired)}</td>

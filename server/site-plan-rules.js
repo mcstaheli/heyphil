@@ -6,7 +6,7 @@
 // them directly.
 
 // Mirrors the ids in client/src/siteplanner/assetTypes.js - keep in sync.
-export const ASSET_TYPE_IDS = ['mf-garden', 'mf-podium', 'townhome', 'sfr', 'hotel', 'industrial', 'retail', 'parking'];
+export const ASSET_TYPE_IDS = ['mf-garden', 'mf-podium', 'townhome', 'sfr', 'hotel', 'industrial', 'retail', 'parking', 'garage'];
 
 export const MAX_NAME_LENGTH = 200;
 export const MAX_SCHEMES = 12;
@@ -19,6 +19,9 @@ export const MAX_SETTING_VALUE = 1e10;
 export const MAX_PLACED_BUILDINGS = 100;
 export const MAX_SPACES = 20;
 export const SPACE_KINDS = ['no-build', 'asset'];
+export const MAX_PARKING_AREAS = 30;
+export const MAX_ENTRIES = 10;
+export const STALL_ANGLES = [90, 60, 45];
 
 export class SitePlanValidationError extends Error {}
 
@@ -108,11 +111,11 @@ function validateOverrides(value) {
         }
         return { name: u.name.trim(), size: u.size, pct: u.pct };
       });
-    } else if (key === 'rotation') {
+    } else if (key === 'rotation' || key === 'parkingRotation') {
       if (v !== 'auto' && !(isFiniteNumber(v) && v >= -360 && v <= 360)) {
         throw new SitePlanValidationError('Orientation must be auto or an angle in degrees.');
       }
-      out.rotation = v;
+      out[key] = v;
     } else {
       // Up to 10 billion: land cost and other pro forma dollar inputs.
       if (!isFiniteNumber(v) || v < 0 || v > MAX_SETTING_VALUE) {
@@ -193,6 +196,52 @@ function validateSpaces(value) {
   });
 }
 
+// Parking areas drawn by hand: a shape each, with a stall orientation
+// ('auto' or degrees) and optionally their own stall angle.
+function validateParkingAreas(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new SitePlanValidationError('Parking areas must be a list.');
+  if (value.length > MAX_PARKING_AREAS) throw new SitePlanValidationError(`Keep it to ${MAX_PARKING_AREAS} parking areas.`);
+  const ids = new Set();
+  return value.map((a) => {
+    if (!a || typeof a.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(a.id) || ids.has(a.id)) {
+      throw new SitePlanValidationError('Each parking area needs its own id.');
+    }
+    ids.add(a.id);
+    const polygon = validateBoundary(a.polygon);
+    if (!polygon) throw new SitePlanValidationError('Each parking area needs a shape.');
+    const angle = a.angle === undefined || a.angle === null ? 'auto' : a.angle;
+    if (angle !== 'auto' && !(isFiniteNumber(angle) && angle >= -360 && angle <= 360)) {
+      throw new SitePlanValidationError('A parking area\'s orientation must be auto or an angle in degrees.');
+    }
+    const out = { id: a.id, polygon, angle };
+    if (a.stallAngle !== undefined && a.stallAngle !== null) {
+      if (!STALL_ANGLES.includes(a.stallAngle)) throw new SitePlanValidationError(`Stall angle must be one of ${STALL_ANGLES.join(', ')}.`);
+      out.stallAngle = a.stallAngle;
+    }
+    return out;
+  });
+}
+
+// Driveway entries: a point each on (or near) the boundary.
+function validateEntries(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new SitePlanValidationError('Entries must be a list.');
+  if (value.length > MAX_ENTRIES) throw new SitePlanValidationError(`Keep it to ${MAX_ENTRIES} entries.`);
+  const ids = new Set();
+  return value.map((e) => {
+    if (!e || typeof e.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(e.id) || ids.has(e.id)) {
+      throw new SitePlanValidationError('Each entry needs its own id.');
+    }
+    ids.add(e.id);
+    const p = e.point;
+    if (!Array.isArray(p) || !isFiniteNumber(p[0]) || !isFiniteNumber(p[1]) || Math.abs(p[0]) > 180 || Math.abs(p[1]) > 90) {
+      throw new SitePlanValidationError('An entry is somewhere that isn\'t a valid location.');
+    }
+    return { id: e.id, point: [p[0], p[1]] };
+  });
+}
+
 export function validateSchemes(value) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new SitePlanValidationError('A site needs at least one scheme.');
@@ -215,6 +264,10 @@ export function validateSchemes(value) {
     if (edits) out.edits = edits;
     const spaces = validateSpaces(s.spaces);
     if (spaces.length) out.spaces = spaces;
+    const parkingAreas = validateParkingAreas(s.parkingAreas);
+    if (parkingAreas.length) out.parkingAreas = parkingAreas;
+    const entries = validateEntries(s.entries);
+    if (entries.length) out.entries = entries;
     return out;
   });
 }

@@ -178,7 +178,7 @@ test('townhomes taller than the height limit lose floors, not just get a chip', 
 });
 
 test('industrial tries the max depth even off the 20 ft step', () => {
-  const r = solveScheme(rectSite(800, 600), scheme('industrial', { minBuildingDepth: 180, maxBuildingDepth: 210, rotation: 0 }));
+  const r = solveScheme(rectSite(800, 600), scheme('industrial', { minBuildingDepth: 180, maxBuildingDepth: 210, rotation: 0, perimeterDrive: 0, trailerStallsPerDock: 0 }));
   // 760 ft wide inside the setback, so a 210 ft deep building is 159,600 sf.
   expect(r.metrics.footprintSf).toBeGreaterThan(200 * 760);
 });

@@ -9,6 +9,7 @@
 //   lots       - rows of lots facing internal streets
 //   industrial - one deep building with a truck court and car parking
 //   parking    - parking bays only
+//   garage     - a parking structure filling its site
 
 export const DEFAULT_MIX = [
   { name: 'Studio', size: 550, pct: 10 },
@@ -23,9 +24,19 @@ export const COMMON_FIELDS = [
   { key: 'maxHeight', label: 'Max height', unit: 'ft', default: 0, hint: '0 = no limit', group: 'Zoning' },
   { key: 'maxFar', label: 'Max FAR', unit: '', default: 0, step: 0.1, hint: '0 = no limit', group: 'Zoning' },
   { key: 'maxCoverage', label: 'Max lot coverage', unit: '%', default: 0, hint: '0 = no limit', group: 'Zoning' },
+  { key: 'stallAngle', label: 'Stall angle', unit: '', default: 90, group: 'Parking', options: [[90, '90° · two-way aisle'], [60, '60° · one-way aisle'], [45, '45° · one-way aisle']] },
   { key: 'stallWidth', label: 'Stall width', unit: 'ft', default: 9, step: 0.5, group: 'Parking' },
   { key: 'stallDepth', label: 'Stall depth', unit: 'ft', default: 18, step: 0.5, group: 'Parking' },
-  { key: 'aisleWidth', label: 'Drive aisle', unit: 'ft', default: 24, group: 'Parking' },
+  { key: 'aisleWidth', label: 'Drive aisle (90°)', unit: 'ft', default: 24, group: 'Parking' },
+  { key: 'aisle60', label: 'One-way aisle (60°)', unit: 'ft', default: 18, group: 'Parking' },
+  { key: 'aisle45', label: 'One-way aisle (45°)', unit: 'ft', default: 13, group: 'Parking' },
+  { key: 'perimeterDrive', label: 'Perimeter drive', unit: '', default: 1, group: 'Parking', options: [[1, 'On - a loop road inside the setback'], [0, 'Off']] },
+  { key: 'islandEvery', label: 'Landscape island every', unit: 'stalls', default: 0, hint: '0 = none', group: 'Parking' },
+  { key: 'endIslands', label: 'End islands', unit: '', default: 0, group: 'Parking', options: [[0, 'Off'], [1, 'At both ends of each row']] },
+  { key: 'compactPct', label: 'Compact stalls', unit: '%', default: 0, group: 'Parking' },
+  { key: 'compactWidth', label: 'Compact stall width', unit: 'ft', default: 8, step: 0.5, group: 'Parking' },
+  { key: 'evPct', label: 'EV-ready stalls', unit: '%', default: 0, group: 'Parking' },
+  { key: 'sharedParking', label: 'Shared parking (mixed use)', unit: '', default: 1, group: 'Parking', options: [[1, 'On - uses share by time of day'], [0, 'Off - add up each use']] },
 ];
 
 const f = (key, label, unit, def, extra = {}) => ({ key, label, unit, default: def, group: 'Program', ...extra });
@@ -121,6 +132,8 @@ export const ASSET_TYPES = [
       f('maxBuildingDepth', 'Max building depth', 'ft', 600),
       f('truckCourt', 'Truck court depth', 'ft', 130),
       f('dockSpacing', 'Dock door spacing', 'ft', 12),
+      f('trailerStallsPerDock', 'Trailer stalls required', 'per dock', 0.5, { step: 0.05 }),
+      f('trailerDepth', 'Trailer stall depth', 'ft', 53),
       f('parkingRatio', 'Car parking required', 'per 1,000 sf', 1, { step: 0.05 }),
     ],
   },
@@ -145,6 +158,17 @@ export const ASSET_TYPES = [
     mode: 'parking',
     yieldKind: 'stalls',
     fields: [],
+  },
+  {
+    id: 'garage',
+    label: 'Parking garage',
+    mode: 'garage',
+    yieldKind: 'stalls',
+    fields: [
+      f('levels', 'Levels', '', 4, { max: 20 }),
+      f('floorToFloor', 'Floor-to-floor', 'ft', 10.5, { step: 0.5 }),
+      f('sfPerGarageStall', 'Garage area per stall', 'sf', 330),
+    ],
   },
 ];
 
@@ -176,6 +200,7 @@ export const PROFORMA_FIELDS = {
   industrial: [...COST_FIELDS(85), pf('rentPerSfYear', 'Rent (NNN)', '$ / sf / yr', 9, { step: 0.25 }), ...RENTAL_FIELDS(5, 8, 5.75)],
   retail: [...COST_FIELDS(160), pf('rentPerSfYear', 'Rent (NNN)', '$ / sf / yr', 28, { step: 0.5 }), ...RENTAL_FIELDS(7, 10, 6.5)],
   parking: [...COST_FIELDS(0), pf('revenuePerStallMonth', 'Revenue', '$ / stall / mo', 75), ...RENTAL_FIELDS(10, 20, 7)],
+  garage: [...COST_FIELDS(0), pf('revenuePerStallMonth', 'Revenue', '$ / stall / mo', 110), ...RENTAL_FIELDS(10, 25, 7)],
 };
 
 export function getAssetType(id) {
@@ -192,6 +217,7 @@ export function defaultsFor(type) {
   const out = Object.fromEntries(fieldsFor(type).map((fd) => [fd.key, fd.default]));
   if (type.hasMix) out.mix = DEFAULT_MIX;
   out.rotation = 'auto';
+  out.parkingRotation = 'auto';
   return out;
 }
 

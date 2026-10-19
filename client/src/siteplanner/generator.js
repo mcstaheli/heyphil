@@ -4,13 +4,15 @@ import { getAssetType } from './assetTypes';
 import { solveScheme } from './solver';
 import { planMetrics, yieldOf } from './results';
 
-export const MAX_OPTIONS = 1500;
+export const MAX_OPTIONS = 1000;
 
-// Every combination of the sweeps ([{ key, from, to, step }]), as
-// override objects. Values are rounded to the step's decimals so 0.1
-// steps don't drift (0.30000000000000004).
+// Every combination of the sweeps ([{ key, from, to, step }], or
+// [{ key, values }] for a choice like stall angle), as override objects.
+// Values are rounded to the step's decimals so 0.1 steps don't drift
+// (0.30000000000000004).
 export function buildCombos(sweeps) {
-  const lists = sweeps.map(({ key, from, to, step }) => {
+  const lists = sweeps.map(({ key, from, to, step, values: fixed }) => {
+    if (Array.isArray(fixed)) return fixed.map((v) => [key, v]);
     const lo = Math.min(from, to);
     const hi = Math.max(from, to);
     const st = step > 0 ? step : 1;
@@ -30,7 +32,8 @@ export function buildCombos(sweeps) {
 }
 
 export function countCombos(sweeps) {
-  return sweeps.reduce((n, { from, to, step }) => {
+  return sweeps.reduce((n, { from, to, step, values }) => {
+    if (Array.isArray(values)) return n * values.length;
     const st = step > 0 ? step : 1;
     return n * (Math.floor((Math.abs(to - from) + 1e-9) / st) + 1);
   }, 1);

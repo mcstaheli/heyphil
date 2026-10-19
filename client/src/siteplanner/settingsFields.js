@@ -52,7 +52,13 @@ function SettingField({ field, value, overridden, onChange, onReset }) {
         {field.unit && <span className="siteplan-field-unit"> {field.unit}</span>}
       </span>
       <span className="siteplan-field-input">
-        <NumberInput value={value} step={field.step} max={field.max} onChange={onChange} title={field.hint || ''} />
+        {field.options
+          ? (
+            <select className="siteplan-field-select" value={value} onChange={(e) => onChange(Number(e.target.value))}>
+              {field.options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+          )
+          : <NumberInput value={value} step={field.step} max={field.max} onChange={onChange} title={field.hint || ''} />}
         {overridden
           ? <button type="button" className="siteplan-reset" onClick={onReset} title={`Back to the default (${field.default})`}>↺</button>
           : <span className="siteplan-reset-spacer" />}
@@ -114,14 +120,42 @@ export function withOverride(type, overrides, key, value) {
   return next;
 }
 
+// "Best fit" or a fixed angle, for building or parking orientation.
+// currentDeg is what "Fixed angle" starts from.
+export function OrientationField({ label, value, currentDeg, onChange }) {
+  const auto = value === 'auto' || value === undefined;
+  return (
+    <>
+      <label className={`siteplan-field ${auto ? '' : 'siteplan-field-changed'}`}>
+        <span className="siteplan-field-label">{label}</span>
+        <span className="siteplan-field-input">
+          <select value={auto ? 'auto' : 'fixed'} onChange={(e) => onChange(e.target.value === 'auto' ? undefined : Math.round(currentDeg || 0))}>
+            <option value="auto">Best fit</option>
+            <option value="fixed">Fixed angle</option>
+          </select>
+          <span className="siteplan-reset-spacer" />
+        </span>
+      </label>
+      {!auto && (
+        <label className="siteplan-field siteplan-field-changed">
+          <span className="siteplan-field-label">Angle<span className="siteplan-field-unit"> ° from east</span></span>
+          <span className="siteplan-field-input">
+            <NumberInput value={value} min={-360} max={360} onChange={onChange} />
+            <span className="siteplan-reset-spacer" />
+          </span>
+        </label>
+      )}
+    </>
+  );
+}
+
 // idPrefix keeps inputs distinct between schemes and spaces.
-// currentOrientationDeg is what "Fixed angle" starts from.
-export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOrientationDeg, groupsOpen }) {
+// currentOrientationDeg / currentParkingDeg are what "Fixed angle" starts from.
+export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOrientationDeg, currentParkingDeg, groupsOpen }) {
   const settings = { ...defaultsFor(type), ...overrides };
   const fields = fieldsFor(type);
   const groups = [...new Set(fields.map((f) => f.group))];
   const set = (key, value) => onChange(withOverride(type, overrides, key, value));
-  const rotationAuto = settings.rotation === 'auto';
   const [open, setOpen] = useState(() => new Set(groupsOpen || groups.filter((g) => g !== 'Pro forma')));
   const toggle = (g) => setOpen((prev) => {
     const next = new Set(prev);
@@ -159,30 +193,10 @@ export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOri
               />
             ))}
             {open.has(g) && g === 'Site' && (
-              <>
-                <label className={`siteplan-field ${rotationAuto ? '' : 'siteplan-field-changed'}`}>
-                  <span className="siteplan-field-label">Orientation</span>
-                  <span className="siteplan-field-input">
-                    <select
-                      value={rotationAuto ? 'auto' : 'fixed'}
-                      onChange={(e) => set('rotation', e.target.value === 'auto' ? undefined : Math.round(currentOrientationDeg || 0))}
-                    >
-                      <option value="auto">Best fit</option>
-                      <option value="fixed">Fixed angle</option>
-                    </select>
-                    <span className="siteplan-reset-spacer" />
-                  </span>
-                </label>
-                {!rotationAuto && (
-                  <label className="siteplan-field siteplan-field-changed">
-                    <span className="siteplan-field-label">Angle<span className="siteplan-field-unit"> ° from east</span></span>
-                    <span className="siteplan-field-input">
-                      <NumberInput value={settings.rotation} max={360} onChange={(n) => set('rotation', n)} />
-                      <span className="siteplan-reset-spacer" />
-                    </span>
-                  </label>
-                )}
-              </>
+              <OrientationField label="Building orientation" value={settings.rotation} currentDeg={currentOrientationDeg} onChange={(v) => set('rotation', v)} />
+            )}
+            {open.has(g) && g === 'Parking' && (
+              <OrientationField label="Parking orientation" value={settings.parkingRotation} currentDeg={currentParkingDeg} onChange={(v) => set('parkingRotation', v)} />
             )}
           </div>
         );

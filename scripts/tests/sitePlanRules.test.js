@@ -112,3 +112,22 @@ test('validatePreset', () => {
   assert.throws(() => validatePreset({ name: '', assetType: 'mf-podium' }), SitePlanValidationError);
   assert.throws(() => validatePreset({ name: 'X', assetType: 'castle' }), SitePlanValidationError);
 });
+
+test('schemes keep parking areas and entries, checked', () => {
+  const out = one({
+    parkingAreas: [{ id: 'p1', polygon: square, angle: 30, stallAngle: 60 }, { id: 'p2', polygon: square }],
+    entries: [{ id: 'e1', point: [-111.9, 40.7] }],
+    overrides: { parkingRotation: 15, stallAngle: 45 },
+  });
+  assert.equal(out.parkingAreas[0].angle, 30);
+  assert.equal(out.parkingAreas[0].stallAngle, 60);
+  assert.equal(out.parkingAreas[1].angle, 'auto');
+  assert.deepEqual(out.entries[0].point, [-111.9, 40.7]);
+  assert.equal(out.overrides.parkingRotation, 15);
+  assert.throws(() => one({ parkingAreas: [{ id: 'p', polygon: square, stallAngle: 30 }] }), SitePlanValidationError);
+  assert.throws(() => one({ parkingAreas: [{ id: 'p', polygon: square, angle: 'sideways' }] }), SitePlanValidationError);
+  assert.throws(() => one({ parkingAreas: [{ id: 'p' }] }), SitePlanValidationError);
+  assert.throws(() => one({ entries: [{ id: 'e', point: [999, 0] }] }), SitePlanValidationError);
+  assert.throws(() => one({ overrides: { parkingRotation: 'north' } }), SitePlanValidationError);
+  assert.equal(one({ assetType: 'garage' }).assetType, 'garage');
+});

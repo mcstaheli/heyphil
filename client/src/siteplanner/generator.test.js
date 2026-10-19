@@ -45,3 +45,10 @@ test('an option ignores hand placement and keeps the scheme other settings', () 
   expect(o.yield).toBeGreaterThan(30);
   expect(o.parkingRequired).toBe(Math.ceil(o.yield * 1));
 });
+
+test('a choice sweeps every option', () => {
+  const combos = buildCombos([{ key: 'stallAngle', values: [90, 60, 45] }, { key: 'floors', from: 2, to: 3, step: 1 }]);
+  expect(combos).toHaveLength(6);
+  expect(countCombos([{ key: 'stallAngle', values: [90, 60, 45] }, { from: 2, to: 3, step: 1 }])).toBe(6);
+  expect(new Set(combos.map((c) => c.stallAngle))).toEqual(new Set([90, 60, 45]));
+});
