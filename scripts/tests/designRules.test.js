@@ -73,3 +73,89 @@ test('isUuid: path ids are checked before they reach the database', () => {
   assert.equal(isUuid('abc'), false);
   assert.equal(isUuid(undefined), false);
 });
+
+import {
+  DESIGN_PRIORITIES,
+  DESIGN_OPTION_LISTS,
+  buildDraftEmail,
+  cleanFilename,
+  isPreviewableType,
+  stageAfterPosting,
+  validateJournalEntry,
+  validateOptionList,
+  validatePriority,
+} from '../../server/design-rules.js';
+
+test('priorities: urgent to low, and only those', () => {
+  assert.deepEqual(DESIGN_PRIORITIES, ['urgent', 'high', 'normal', 'low']);
+  assert.equal(validatePriority('high'), 'high');
+  assert.throws(() => validatePriority('critical'), DesignValidationError);
+});
+
+test('client priority list matches the server', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../client/src/designOptions.js', import.meta.url), 'utf8');
+  const ids = [...src.matchAll(/\{ id: '([a-z]+)', label:/g)].map((m) => m[1]);
+  assert.deepEqual(ids, DESIGN_PRIORITIES);
+});
+
+test('validateOptionList: trims, drops blanks and repeats, caps', () => {
+  assert.deepEqual(validateOptionList([' Poster ', '', 'poster', 'Logo'], 'Types'), ['Poster', 'Logo']);
+  assert.throws(() => validateOptionList('Poster', 'Types'), DesignValidationError);
+  assert.throws(() => validateOptionList([5], 'Types'), DesignValidationError);
+  assert.throws(() => validateOptionList(['x'.repeat(101)], 'Types'), DesignValidationError);
+  assert.throws(() => validateOptionList(Array.from({ length: 51 }, (_, i) => `t${i}`), 'Types'), DesignValidationError);
+  assert.ok(DESIGN_OPTION_LISTS.deliverableTypes.includes('Poster'));
+  assert.ok(DESIGN_OPTION_LISTS.outputTypes.includes('Google Slides'));
+});
+
+test('validateJournalEntry: only people-posted kinds, safe links', () => {
+  assert.deepEqual(validateJournalEntry({ kind: 'draft', body: ' v2 ', link: 'https://x.com/a' }), { kind: 'draft', body: 'v2', link: 'https://x.com/a' });
+  assert.throws(() => validateJournalEntry({ kind: 'status', body: 'x' }), DesignValidationError);
+  assert.throws(() => validateJournalEntry({ kind: 'comment', link: 'javascript:alert(1)' }), DesignValidationError);
+});
+
+test('stageAfterPosting: a draft goes to In Review, a final to Delivered', () => {
+  assert.equal(stageAfterPosting('draft', 'in-design'), 'in-review');
+  assert.equal(stageAfterPosting('draft', 'revisions'), 'in-review');
+  assert.equal(stageAfterPosting('draft', 'in-review'), null);
+  assert.equal(stageAfterPosting('draft', 'on-hold'), null);
+  assert.equal(stageAfterPosting('final', 'in-review'), 'delivered');
+  assert.equal(stageAfterPosting('final', 'delivered'), null);
+  assert.equal(stageAfterPosting('comment', 'requested'), null);
+});
+
+test('cleanFilename: no paths, no control characters or quotes, capped', () => {
+  assert.equal(cleanFilename('..%2F..%2Fetc%2Fpasswd'), 'passwd');
+  assert.equal(cleanFilename('C:\\Users\\me\\poster.pdf'), 'poster.pdf');
+  assert.equal(cleanFilename('bad"\nname.png'), 'badname.png');
+  assert.equal(cleanFilename(''), 'file');
+  const long = cleanFilename(`${'a'.repeat(300)}.pdf`);
+  assert.equal(long.length, 200);
+  assert.ok(long.endsWith('.pdf'));
+});
+
+test('isPreviewableType: images and PDF, never SVG or HTML', () => {
+  assert.equal(isPreviewableType('image/png'), true);
+  assert.equal(isPreviewableType('application/pdf'), true);
+  assert.equal(isPreviewableType('image/svg+xml'), false);
+  assert.equal(isPreviewableType('text/html'), false);
+});
+
+test('buildDraftEmail: addressed to the requester, escaped, links to the card', () => {
+  const email = buildDraftEmail({
+    request: { id: 'abc', deliverable: 'Lobby <sign>', projectTitle: 'Zion', requesterName: 'Chad Staheli', requesterEmail: 'chad@x.com' },
+    entry: { body: 'Look at\nthe colours', link: 'https://drive.google.com/x' },
+    authorName: 'Kallie Lowery',
+    appUrl: 'https://heyphil.bot',
+    attachmentName: 'v2.pdf',
+  });
+  assert.equal(email.to, 'chad@x.com');
+  assert.match(email.subject, /Draft ready for your comments: Lobby <sign>/);
+  assert.match(email.html, /Hi Chad,/);
+  assert.match(email.html, /Lobby &lt;sign&gt; \(Zion\)/);
+  assert.match(email.html, /Look at<br>the colours/);
+  assert.match(email.html, /https:\/\/heyphil\.bot\/shared\/design\?request=abc/);
+  assert.match(email.html, /v2\.pdf/);
+  assert.doesNotMatch(email.html, /<sign>/);
+});

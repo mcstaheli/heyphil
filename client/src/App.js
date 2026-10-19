@@ -319,7 +319,7 @@ function App() {
           <Route path="/labs/orgcharts" element={<OrgCharts />} />
           <Route path="/labs/cashflow" element={<Cashflow />} />
           <Route path="/labs/improvements" element={<Improvements />} />
-          <Route path="/shared/design" element={<DesignBoard />} />
+          <Route path="/shared/design" element={<DesignBoard user={user} />} />
           <Route path="/dev/site-planner" element={<Suspense fallback={routeFallback}><SitePlanner /></Suspense>} />
           <Route path="/dev/site-planner/:planId" element={<Suspense fallback={routeFallback}><SitePlanEditor /></Suspense>} />
           <Route path="/settings" element={<SettingsPage user={user} onLogout={handleLogout} />} />

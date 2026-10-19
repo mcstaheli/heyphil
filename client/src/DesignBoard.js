@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { designDaysBadge } from './designDays';
+import { PRIORITIES, compareRequests } from './designOptions';
+import RequestModal from './DesignRequestModal';
 import './DesignBoard.css';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -42,41 +45,22 @@ function formatDate(iso) {
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-const EMPTY_FORM = { deliverable: '', projectId: '', designer: '', dueDate: '', link: '', notes: '', status: 'requested' };
+const LIST_LABELS = { deliverableTypes: 'Deliverable types', outputTypes: 'Output file types' };
 
-function RequestModal({ request, projects, canDelete, onClose, onSave, onDelete }) {
-  const isNew = !request;
-  const [initial] = useState(() => (request
-    ? {
-      deliverable: request.deliverable || '',
-      projectId: request.projectId || '',
-      designer: request.designer || '',
-      dueDate: request.dueDate || '',
-      link: request.link || '',
-      notes: request.notes || '',
-      status: request.status,
-    }
-    : EMPTY_FORM));
-  const [form, setForm] = useState(initial);
+// The board's settings gear: the dropdown lists, one option per line.
+function OptionsModal({ options, onClose, onSaved }) {
+  const [text, setText] = useState(() => Object.fromEntries(Object.entries(options).map(([k, v]) => [k, v.join('\n')])));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   async function handleSave(e) {
     e.preventDefault();
-    if (!form.deliverable.trim()) {
-      setError('Add the deliverable.');
-      return;
-    }
     setSaving(true);
     setError(null);
-    // An edit sends only what changed here, so saving can't undo a move
-    // or edit someone else made while this was open.
-    const changes = isNew
-      ? form
-      : Object.fromEntries(Object.entries(form).filter(([key, value]) => value !== initial[key]));
     try {
-      if (Object.keys(changes).length > 0) await onSave(changes);
+      const body = Object.fromEntries(Object.entries(text).map(([k, v]) => [k, v.split('\n')]));
+      const { options: saved } = await send('PUT', '/settings/options', body);
+      onSaved(saved);
       onClose();
     } catch (err) {
       setError(err.message);
@@ -87,64 +71,22 @@ function RequestModal({ request, projects, canDelete, onClose, onSave, onDelete 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <form className="modal-content design-modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSave}>
-        <div className="modal-header">
-          <h2>{isNew ? 'New design request' : `Design #${request.seqNum}`}</h2>
-        </div>
+        <div className="modal-header"><h2>Design board settings</h2></div>
         <div className="modal-body design-form">
-          <label>
-            Deliverable
-            <input value={form.deliverable} onChange={set('deliverable')} placeholder="e.g. Lobby signage package" maxLength={300} autoFocus={isNew} />
-          </label>
-          <label>
-            Project
-            <select value={form.projectId} onChange={set('projectId')}>
-              <option value="">No project</option>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
-            </select>
-          </label>
-          <div className="design-form-row">
-            <label>
-              Designer
-              <input value={form.designer} onChange={set('designer')} placeholder="Who's on it" maxLength={255} />
+          <p className="design-muted">One option per line. Removing one doesn&apos;t change requests that already use it.</p>
+          {Object.keys(text).map((key) => (
+            <label key={key}>
+              {LIST_LABELS[key] || key}
+              <textarea rows={8} value={text[key]} onChange={(e) => setText((t) => ({ ...t, [key]: e.target.value }))} />
             </label>
-            <label>
-              Due
-              <input type="date" value={form.dueDate} onChange={set('dueDate')} />
-            </label>
-          </div>
-          {!isNew && (
-            <label>
-              Stage
-              <select value={form.status} onChange={set('status')}>
-                {COLUMNS.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-              </select>
-            </label>
-          )}
-          <label>
-            Files link
-            <input value={form.link} onChange={set('link')} placeholder="https://drive.google.com/..." />
-          </label>
-          <label>
-            Notes
-            <textarea rows={4} value={form.notes} onChange={set('notes')} placeholder="Brief, sizes, references, feedback..." />
-          </label>
-          {!isNew && (
-            <p className="design-meta">
-              Requested {request.requesterName ? `by ${request.requesterName} ` : ''}on {formatDate(request.requestedAt)}
-              {request.deliveredAt ? ` · delivered ${formatDate(request.deliveredAt)}` : ''}
-            </p>
-          )}
+          ))}
           {error && <p className="design-error">{error}</p>}
         </div>
         <div className="modal-footer design-modal-footer">
-          {!isNew && canDelete
-            ? <button type="button" className="btn-danger design-delete" onClick={() => onDelete(request)}>Delete</button>
-            : <span />}
+          <span />
           <div className="modal-actions">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-            <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : isNew ? 'Add request' : 'Save'}
-            </button>
+            <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
           </div>
         </div>
       </form>
@@ -152,21 +94,30 @@ function RequestModal({ request, projects, canDelete, onClose, onSave, onDelete 
   );
 }
 
-function DesignBoard() {
+const PRIORITY_LABEL = Object.fromEntries(PRIORITIES.map((p) => [p.id, p.label]));
+
+function DesignBoard({ user }) {
   const [requests, setRequests] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [people, setPeople] = useState([]);
+  const [options, setOptions] = useState({ deliverableTypes: [], outputTypes: [] });
   const [canDelete, setCanDelete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // null | 'new' | request
+  const [editingOptions, setEditingOptions] = useState(false);
+  const [detailsVersion, setDetailsVersion] = useState(0);
   const [draggedId, setDraggedId] = useState(null);
   const [projectFilter, setProjectFilter] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedId = searchParams.get('request');
 
   const load = useCallback(() => {
     send('GET', '')
       .then((data) => {
         setRequests(data.requests || []);
         setCanDelete(!!data.canDelete);
+        if (data.options) setOptions(data.options);
         setLoading(false);
       })
       .catch((err) => {
@@ -186,7 +137,23 @@ function DesignBoard() {
         setProjects(live);
       })
       .catch(() => {});
+    fetch(`${API_BASE_URL}/api/people`, { headers: authHeaders() })
+      .then((res) => res.json())
+      .then((data) => setPeople((data.people || []).map((p) => ({ name: p.name, email: p.email }))))
+      .catch(() => {});
   }, []);
+
+  // A link from the "draft ready" email (?request=<id>) opens that card.
+  useEffect(() => {
+    if (!linkedId || loading) return;
+    const match = requests.find((r) => r.id === linkedId);
+    if (match) setEditing((prev) => prev || match);
+  }, [linkedId, loading, requests]);
+
+  const closeModal = () => {
+    setEditing(null);
+    if (linkedId) setSearchParams({}, { replace: true });
+  };
 
   const upsert = useCallback((request) => {
     setRequests((prev) => (prev.some((r) => r.id === request.id)
@@ -196,6 +163,8 @@ function DesignBoard() {
 
   // Live updates, so a request added or moved anywhere shows up here.
   const socketRef = useRef(null);
+  const editingIdRef = useRef(null);
+  editingIdRef.current = editing && editing !== 'new' ? editing.id : null;
   useEffect(() => {
     socketRef.current = io(WS_URL, { transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
     socketRef.current.on('design:created', ({ request }) => upsert(request));
@@ -207,19 +176,21 @@ function DesignBoard() {
       setRequests((prev) => prev.filter((r) => r.id !== requestId));
       setEditing((prev) => (prev && prev !== 'new' && prev.id === requestId ? null : prev));
     });
+    socketRef.current.on('design:details', ({ requestId }) => {
+      if (requestId === editingIdRef.current) setDetailsVersion((v) => v + 1);
+    });
+    socketRef.current.on('design:options', ({ options: next }) => setOptions(next));
     return () => socketRef.current.disconnect();
   }, [upsert]);
 
-  // Oldest request first in each column, so the longest wait is on top.
+  // Most urgent first in each column, then the longest wait.
   const byColumn = useMemo(() => {
     const grouped = Object.fromEntries(COLUMNS.map((c) => [c.id, []]));
     for (const r of requests) {
       if (projectFilter && r.projectId !== projectFilter) continue;
       (grouped[r.status] || grouped.requested).push(r);
     }
-    for (const list of Object.values(grouped)) {
-      list.sort((a, b) => new Date(a.requestedAt) - new Date(b.requestedAt));
-    }
+    for (const list of Object.values(grouped)) list.sort(compareRequests);
     return grouped;
   }, [requests, projectFilter]);
 
@@ -243,7 +214,7 @@ function DesignBoard() {
     try {
       await send('DELETE', `/${request.id}`);
       setRequests((prev) => prev.filter((r) => r.id !== request.id));
-      setEditing(null);
+      closeModal();
     } catch (err) {
       window.alert(err.message);
     }
@@ -279,6 +250,7 @@ function DesignBoard() {
               {projectsWithRequests.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
             </select>
           )}
+          <button className="design-gear-btn" onClick={() => setEditingOptions(true)} title="Board settings: deliverable and output types" aria-label="Board settings">⚙️</button>
           <button className="design-new-btn" onClick={() => setEditing('new')}>+ New request</button>
         </div>
       </div>
@@ -298,10 +270,11 @@ function DesignBoard() {
             <div className="design-column-cards">
               {byColumn[col.id].map((r) => {
                 const badge = designDaysBadge(r);
+                const priority = r.priority || 'normal';
                 return (
                   <div
                     key={r.id}
-                    className="design-card"
+                    className={`design-card design-card-priority-${priority}`}
                     draggable
                     onDragStart={() => setDraggedId(r.id)}
                     onDragEnd={() => setDraggedId(null)}
@@ -309,16 +282,29 @@ function DesignBoard() {
                   >
                     <div className="design-card-top">
                       <span className="design-seq">#{r.seqNum}</span>
+                      {priority !== 'normal' && (
+                        <span className={`design-priority-badge design-priority-${priority}`}>{PRIORITY_LABEL[priority]}</span>
+                      )}
                       {badge && <span className={`design-days design-days-${badge.level}`} title={badge.title}>{badge.text}</span>}
                     </div>
                     <div className="design-deliverable">{r.deliverable}</div>
+                    {(r.deliverableType || r.outputType || r.dimensions) && (
+                      <div className="design-card-tags">
+                        {r.deliverableType && <span className="design-tag">{r.deliverableType}</span>}
+                        {(r.outputType || r.dimensions) && (
+                          <span className="design-tag design-tag-output">{[r.outputType, r.dimensions].filter(Boolean).join(' · ')}</span>
+                        )}
+                      </div>
+                    )}
                     <div className={`design-project ${r.projectTitle ? '' : 'design-project-none'}`}>
                       {r.projectTitle || 'No project'}
                     </div>
-                    {(r.designer || r.dueDate) && (
+                    {(r.designer || r.dueDate || r.journalCount > 0 || r.attachmentCount > 0) && (
                       <div className="design-card-foot">
                         {r.designer && <span>🎨 {r.designer}</span>}
                         {r.dueDate && <span>Due {formatDate(r.dueDate)}</span>}
+                        {r.journalCount > 0 && <span title="Comments, drafts and finals">💬 {r.journalCount}</span>}
+                        {r.attachmentCount > 0 && <span title="Files">📎 {r.attachmentCount}</span>}
                       </div>
                     )}
                   </div>
@@ -334,11 +320,18 @@ function DesignBoard() {
           key={editing === 'new' ? 'new' : editing.id}
           request={editing === 'new' ? null : editing}
           projects={projects}
+          people={people}
+          options={options}
+          user={user}
           canDelete={canDelete}
-          onClose={() => setEditing(null)}
+          detailsVersion={detailsVersion}
+          onClose={closeModal}
           onSave={save}
           onDelete={remove}
         />
+      )}
+      {editingOptions && (
+        <OptionsModal options={options} onClose={() => setEditingOptions(false)} onSaved={setOptions} />
       )}
     </div>
   );
