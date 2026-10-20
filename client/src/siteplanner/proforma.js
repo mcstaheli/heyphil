@@ -12,7 +12,8 @@ export function proformaFor(type, s, m) {
   const hardCost = m.gsf * (s.hardCostPerSf || 0)
     + (m.parkingSurface || 0) * (s.surfaceStallCost || 0)
     + (m.parkingStructured || 0) * (s.structuredStallCost || 0)
-    + homes * (s.lotDevCost || 0);
+    + homes * (s.lotDevCost || 0)
+    + (m.itMw || 0) * (s.costPerMw || 0);
   const landCost = s.landCost || 0;
   const softCost = hardCost * pct(s.softCostPct);
   const totalCost = landCost + hardCost + softCost;
@@ -38,6 +39,8 @@ export function proformaFor(type, s, m) {
       out.gpr = (m.nsf * (s.rentPerSfMonth || 0) + m.units * (s.otherIncomePerUnitMonth || 0)) * 12;
     } else if (type.yieldKind === 'keys') {
       out.gpr = m.keys * (s.adr || 0) * 365 * pct(s.occupancyPct);
+    } else if (type.yieldKind === 'mw') {
+      out.gpr = (m.itMw || 0) * 1000 * (s.rentPerKwMonth || 0) * 12;
     } else if (type.yieldKind === 'stalls') {
       out.gpr = m.parkingProvided * (s.revenuePerStallMonth || 0) * 12;
     } else {

@@ -10,6 +10,7 @@
 //   industrial - one deep building with a truck court and car parking
 //   parking    - parking bays only
 //   garage     - a parking structure filling its site
+//   datacenter - data halls with an equipment yard, sized by IT load
 
 export const DEFAULT_MIX = [
   { name: 'Studio', size: 550, pct: 10 },
@@ -135,6 +136,9 @@ export const ASSET_TYPES = [
       f('truckCourt', 'Truck court depth', 'ft', 130),
       f('dockSpacing', 'Dock door spacing', 'ft', 12),
       f('trailerStallsPerDock', 'Trailer stalls required', 'per dock', 0.5, { step: 0.05 }),
+      f('minTruckCourt', 'Truck court needed (WB-67)', 'ft', 120, { hint: 'depth a 53 ft trailer needs to back into a dock' }),
+      f('truckAisleWidth', 'Truck drive width', 'ft', 30),
+      f('truckTurnRadius', 'Truck turning radius', 'ft', 45, { hint: 'centre-line radius for a WB-67 tractor-trailer' }),
       f('trailerDepth', 'Trailer stall depth', 'ft', 53),
       f('parkingRatio', 'Car parking required', 'per 1,000 sf', 1, { step: 0.05 }),
     ],
@@ -169,11 +173,30 @@ export const ASSET_TYPES = [
     fields: [
       f('levels', 'Levels', '', 4, { max: 20 }),
       f('floorToFloor', 'Floor-to-floor', 'ft', 10.5, { step: 0.5 }),
-      f('rampType', 'Ramp', '', 0, { options: [[0, 'Sloped floors - parking on the ramp'], [1, 'Express ramp - flat floors']] }),
+      f('rampType', 'Ramp', '', 0, { options: [[0, 'Sloped floors - parking on the ramp'], [1, 'Express ramp - flat floors'], [2, 'Helix ramp - flat floors']] }),
       f('rampSlope', 'Ramp slope', '%', 5, { step: 0.5, hint: 'parking ramps 6.67% max; express ramps up to 12-15%' }),
-      f('rampWidth', 'Express ramp width', 'ft', 24),
+      f('rampWidth', 'Ramp lane width', 'ft', 24),
+      f('helixRadius', 'Helix inside radius', 'ft', 25),
       f('cores', 'Stair / elevator cores', '', 2, { max: 6 }),
       f('coreSize', 'Core size', 'ft', 20),
+    ],
+  },
+  {
+    id: 'datacenter',
+    label: 'Data center',
+    mode: 'datacenter',
+    yieldKind: 'mw',
+    fields: [
+      f('floors', 'Floors', '', 1, { max: 4 }),
+      f('floorToFloor', 'Floor-to-floor', 'ft', 24, { step: 0.5 }),
+      f('minBuildingDepth', 'Min building depth', 'ft', 200),
+      f('maxBuildingDepth', 'Max building depth', 'ft', 400),
+      f('yardDepth', 'Equipment yard depth', 'ft', 90, { hint: 'generators, chillers, transformers along the building' }),
+      f('whiteSpacePct', 'Data hall share of floor area', '%', 50),
+      f('wattsPerSf', 'IT load density', 'W / sf of data hall', 200),
+      f('generatorMw', 'Generator size', 'MW', 3, { step: 0.25 }),
+      f('redundancyPct', 'Generator redundancy', '%', 25),
+      f('parkingRatio', 'Parking required', 'per 1,000 sf', 0.3, { step: 0.05 }),
     ],
   },
 ];
@@ -207,6 +230,7 @@ export const PROFORMA_FIELDS = {
   retail: [...COST_FIELDS(160), pf('rentPerSfYear', 'Rent (NNN)', '$ / sf / yr', 28, { step: 0.5 }), ...RENTAL_FIELDS(7, 10, 6.5)],
   parking: [...COST_FIELDS(0), pf('revenuePerStallMonth', 'Revenue', '$ / stall / mo', 75), ...RENTAL_FIELDS(10, 20, 7)],
   garage: [...COST_FIELDS(0), pf('revenuePerStallMonth', 'Revenue', '$ / stall / mo', 110), ...RENTAL_FIELDS(10, 25, 7)],
+  datacenter: [...COST_FIELDS(0), pf('costPerMw', 'Build cost', '$ / MW of IT load', 11000000, { step: 100000 }), pf('rentPerKwMonth', 'Rent', '$ / kW / mo', 140), ...RENTAL_FIELDS(2, 30, 6.25)],
 };
 
 export function getAssetType(id) {

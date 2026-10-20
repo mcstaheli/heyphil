@@ -19,6 +19,7 @@ export function yieldOf(type, m) {
     case 'units': return { value: fmtInt(m.units), label: type.mode === 'lots' ? 'homes' : 'units', raw: m.units };
     case 'keys': return { value: fmtInt(m.keys), label: 'keys', raw: m.keys };
     case 'stalls': return { value: fmtInt(m.parkingProvided), label: 'stalls', raw: m.parkingProvided };
+    case 'mw': return { value: fmtDec(m.itMw, 1), label: 'MW of IT load', raw: m.itMw };
     default: return { value: fmtInt(m.nsf), label: type.mode === 'industrial' ? 'sf building' : 'sf leasable', raw: m.nsf };
   }
 }
@@ -42,6 +43,7 @@ export function metricRows(type, m) {
     if (m.units || m.keys) rows.push(['Density', `${fmtDec(m.density, 1)} per acre`]);
     rows.push(['FAR', fmtDec(m.far)], ['Lot coverage', fmtPct(m.coverage)]);
     if (m.docks) rows.push(['Dock doors', fmtInt(m.docks)]);
+    if (m.itMw) rows.push(['IT load', `${fmtDec(m.itMw, 1)} MW`], ['Generators', fmtInt(m.generators)]);
     rows.push(['Parking required', fmtInt(m.parkingRequired)]);
   }
   const parts = [];
@@ -160,9 +162,10 @@ export function ResultsCard({ type, result }) {
   );
 }
 
-export function CompareView({ schemes, results, onOpen }) {
-  // Union of every scheme's rows, in first-seen order, so mixed asset
-  // types line up where they share a measure.
+// Each scheme's rows (quantities then pro forma), plus the union of their
+// labels in first-seen order, so mixed asset types line up where they
+// share a measure. Used by Compare and the report export.
+export function compareColumns(schemes, results, extraRows = () => []) {
   const columns = schemes.map((s) => {
     const type = getAssetType(s.assetType);
     const r = results[s.id];
@@ -171,11 +174,16 @@ export function CompareView({ schemes, results, onOpen }) {
       scheme: s,
       type,
       result: r,
-      rows: Object.fromEntries([...metricRows(type, m), ...proformaRows(r?.proforma)]),
+      rows: Object.fromEntries([...extraRows(s, type, r, m), ...metricRows(type, m), ...proformaRows(r?.proforma)]),
     };
   });
   const keys = [];
   columns.forEach((c) => Object.keys(c.rows).forEach((k) => { if (!keys.includes(k)) keys.push(k); }));
+  return { columns, keys };
+}
+
+export function CompareView({ schemes, results, onOpen }) {
+  const { columns, keys } = compareColumns(schemes, results);
   return (
     <div className="siteplan-compare">
       <table>

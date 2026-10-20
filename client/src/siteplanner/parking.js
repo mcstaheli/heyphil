@@ -248,7 +248,9 @@ export const MIN_ONE_WAY_WIDTH = 12;
 // drive's edge, the site boundary.
 // fromBay: the aisle starts at a bay's end by design (routed, or kept
 // from routing), so its start isn't a dead end.
-export function analyzeAisle(pts, { width, twoWay, turnRadius, connectsTo, fromBay = false }) {
+// truck: checked as a truck route - turns on the centre line against the
+// truck radius, and the truck width as the minimum.
+export function analyzeAisle(pts, { width, twoWay, turnRadius, connectsTo, fromBay = false, truck = null }) {
   const issues = [];
   for (let i = 1; i + 1 < pts.length; i++) {
     const [ax, ay] = pts[i - 1];
@@ -264,6 +266,12 @@ export function analyzeAisle(pts, { width, twoWay, turnRadius, connectsTo, fromB
     // straight can give half its length to this corner. That's the curve
     // along the centre line; the inside edge is half the width tighter.
     const centre = Math.min(l1, l2) / 2 / Math.tan(turn / 2);
+    if (truck) {
+      if (centre + 1e-6 < truck.turnRadius) {
+        issues.push({ kind: 'turn', at: [bx, by], text: `Too tight for trucks: ${Math.round(centre)} ft radius, a WB-67 needs ${Math.round(truck.turnRadius)} ft` });
+      }
+      continue;
+    }
     const inside = centre - width / 2;
     if (inside + 1e-6 < turnRadius) {
       issues.push({
@@ -273,9 +281,9 @@ export function analyzeAisle(pts, { width, twoWay, turnRadius, connectsTo, fromB
       });
     }
   }
-  const minWidth = twoWay ? MIN_TWO_WAY_WIDTH : MIN_ONE_WAY_WIDTH;
+  const minWidth = truck ? truck.width : twoWay ? MIN_TWO_WAY_WIDTH : MIN_ONE_WAY_WIDTH;
   if (width < minWidth) {
-    issues.push({ kind: 'width', at: pts[Math.floor(pts.length / 2)], text: `${Math.round(width)} ft is narrow for ${twoWay ? 'two-way' : 'one-way'} traffic (${minWidth} ft min)` });
+    issues.push({ kind: 'width', at: pts[Math.floor(pts.length / 2)], text: `${Math.round(width)} ft is narrow for ${truck ? 'trucks' : twoWay ? 'two-way' : 'one-way'} traffic (${minWidth} ft min)` });
   }
   for (const end of fromBay ? [pts[pts.length - 1]] : [pts[0], pts[pts.length - 1]]) {
     if (!connectsTo.length || distanceToRings(connectsTo, end) > width) {

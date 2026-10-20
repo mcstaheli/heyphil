@@ -173,7 +173,7 @@ function SitePlanMap({
   spaces, selectedSpaceId, onSelectSpace, onSpaceChange, onSpaceDrawn, drawRequest,
   placed, badBuildingIds, selectedBuildingId, onSelectBuilding, onBuildingChange,
   parkingAreas, areaInfo, selectedAreaId, onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
-  driveAisles, selectedAisleId, onSelectAisle, onAisleChange, onAisleDrawn,
+  driveAisles, selectedAisleId, onSelectAisle, onAisleChange, onAisleDrawn, truckMode,
 }) {
   const elRef = useRef(null);
   const mapRef = useRef(null);
@@ -486,9 +486,13 @@ function SitePlanMap({
         entry = { layer, json };
         layers.set(a.id, entry);
       }
-      entry.layer.setStyle({ ...STYLES.aisleLine, weight: a.id === selectedAisleId ? 6 : STYLES.aisleLine.weight });
+      entry.layer.setStyle({
+        ...STYLES.aisleLine,
+        color: a.truck && truckMode ? '#f97316' : STYLES.aisleLine.color,
+        weight: a.id === selectedAisleId ? 6 : STYLES.aisleLine.weight,
+      });
     }
-  }, [driveAisles, selectedAisleId]);
+  }, [driveAisles, selectedAisleId, truckMode]);
 
   // Driveway entries: drag along the boundary; they snap to it.
   useEffect(() => {
@@ -518,6 +522,7 @@ function SitePlanMap({
       (g.entryDrives || []).forEach((r) => L.polygon(r, STYLES.drive).addTo(group));
       (g.streets || []).forEach((r) => L.polygon(r, STYLES.street).addTo(group));
       (g.truckCourts || []).forEach((r) => L.polygon(r, STYLES.truck).addTo(group));
+      (g.yards || []).forEach((r) => L.polygon(r, { ...STYLES.truck, fillColor: '#1f2937', interactive: true }).bindTooltip('Equipment yard', { sticky: true }).addTo(group));
       (g.trailers || []).forEach((t) => {
         L.polygon(t.outline, STYLES.trailer).addTo(group);
         t.stalls.forEach((line) => L.polyline(line, STYLES.trailerStripe).addTo(group));
@@ -525,6 +530,7 @@ function SitePlanMap({
       if (g.garage) {
         L.polygon(g.garage.outline, STYLES.garage).addTo(group);
         if (g.garage.ramp) L.polygon(g.garage.ramp, STYLES.ramp).bindTooltip(g.garage.rampLabel, { sticky: true }).addTo(group);
+        if (g.garage.helix) L.polygon(g.garage.helix, STYLES.ramp).bindTooltip(g.garage.rampLabel, { sticky: true }).addTo(group);
         g.garage.cores.forEach((r) => L.polygon(r, STYLES.core).addTo(group));
       }
       (g.parking || []).forEach((p) => {

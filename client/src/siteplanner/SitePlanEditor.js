@@ -8,6 +8,7 @@ import { makeProjection } from './geometry';
 import { aisleWidthOf, hasSurfaceParking, solveScheme, supportsManualLayout } from './solver';
 import { NumberInput, OrientationField, SchemeSettings, fmtDec, fmtInt, withOverride } from './settingsFields';
 import { CompareView, ResultsCard, planMetrics, yieldOf } from './results';
+import { reportHtml, reportTable, toCsv } from './report';
 import './SitePlanner.css';
 
 // Dev Tools -> Site Planner -> a site: the map on the left, the schemes
@@ -414,6 +415,18 @@ function ParkingSection({
                 <span className="siteplan-reset-spacer" />
               </span>
             </label>
+            {type.mode === 'industrial' && (
+              <label className="siteplan-field">
+                <span className="siteplan-field-label">Trucks use it</span>
+                <span className="siteplan-field-input">
+                  <select value={a.truck ? 'yes' : 'no'} onChange={(e) => onUpdateAisle(a.id, { truck: e.target.value === 'yes' ? true : undefined })}>
+                    <option value="no">No</option>
+                    <option value="yes">Yes - check for a WB-67</option>
+                  </select>
+                  <span className="siteplan-reset-spacer" />
+                </span>
+              </label>
+            )}
             <label className="siteplan-field">
               <span className="siteplan-field-label">Width<span className="siteplan-field-unit"> ft</span></span>
               <span className="siteplan-field-input">
@@ -458,10 +471,17 @@ function GarageSection({ result }) {
         <dt>Levels</dt><dd>{fmtInt(g.levels)}</dd>
         <dt>Stalls</dt><dd>{fmtInt(g.types.total)} ({fmtInt(g.types.ada)} accessible, {fmtInt(g.types.van)} van)</dd>
         <dt>Area per stall</dt><dd>{fmtInt(g.gsfPerStall)} sf</dd>
-        <dt>Ramp</dt><dd>{g.rampType === 'none' ? 'None (single deck)' : `${g.rampType === 'express' ? 'Express ramp' : 'Sloped floors'} at ${fmtDec(g.slopePct, 1)}%`}</dd>
-        <dt>Length needed</dt><dd className={g.fits ? '' : 'siteplan-neg'}>{fmtInt(g.required)} ft of {fmtInt(g.longSide)} ft</dd>
+        <dt>Ramp</dt><dd>{g.rampType === 'none' ? 'None (single deck)' : `${{ express: 'Express ramp', helix: 'Helix ramp', sloped: 'Sloped floors' }[g.rampType]} at ${fmtDec(g.slopePct, 1)}%`}</dd>
+        <dt>{g.rampType === 'helix' ? 'Length for helix + aisles' : 'Length needed'}</dt><dd className={g.fits ? '' : 'siteplan-neg'}>{fmtInt(g.required)} ft of {fmtInt(g.longSide)} ft</dd>
       </dl>
-      {!g.fits && <p className="siteplan-neg siteplan-small">The ramp doesn&apos;t fit: {g.note}. Lengthen the garage, raise the slope or switch ramp type.</p>}
+      {!g.fits && (
+        <p className="siteplan-neg siteplan-small">
+          The ramp doesn&apos;t fit: {g.note}.
+          {g.rampType === 'helix'
+            ? ' Widen the helix (inside radius or lane), lower the floor-to-floor, or switch ramp type.'
+            : ' Lengthen the garage, change the slope, or switch ramp type.'}
+        </p>
+      )}
       <p className="siteplan-muted siteplan-small">The map shows a typical level: bays, cores (dark), end aisles and the ramp (orange; the dot is uphill).</p>
     </div>
   );
@@ -849,7 +869,14 @@ function SitePlanEditor() {
 
   const updateAisle = useCallback((id, patch) => {
     const scheme = schemeById();
-    updateScheme(scheme.id, { driveAisles: (scheme.driveAisles || []).map((a) => (a.id === id ? { ...a, ...patch } : a)) });
+    updateScheme(scheme.id, {
+      driveAisles: (scheme.driveAisles || []).map((a) => {
+        if (a.id !== id) return a;
+        const next = { ...a, ...patch };
+        Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
+        return next;
+      }),
+    });
   }, [activeId, updateScheme]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The routed aisles become drawn ones you can edit; routing then has
@@ -926,6 +953,39 @@ function SitePlanEditor() {
     setGenerating(false);
   }
 
+  // ---- Reports ----
+  const fileBase = () => (draft.name || 'site').replace(/[^\w -]+/g, '').trim().replace(/\s+/g, '-') || 'site';
+  function downloadCsv() {
+    // A byte-order mark so Excel reads it as UTF-8 (°, ✓).
+    const blob = new Blob(['\ufeff', toCsv(reportTable(draft.schemes, results))], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fileBase()}-schemes.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+  function printReport() {
+    const win = window.open('', '_blank');
+    if (!win) {
+      window.alert('Your browser blocked the report window - allow pop-ups for HeyPhil and try again.');
+      return;
+    }
+    const project = projects.find((p) => p.id === draft.projectId);
+    win.document.write(reportHtml({
+      siteName: draft.name,
+      projectTitle: project?.title,
+      schemes: draft.schemes,
+      results,
+      generatedAt: new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+    }));
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  }
+
   async function deleteSite() {
     if (!window.confirm(`Delete "${draft.name}"? This cannot be undone.`)) return;
     clearTimeout(timerRef.current);
@@ -998,6 +1058,8 @@ function SitePlanEditor() {
           </button>
         )}
         <span className="siteplan-header-spacer" />
+        <button className="siteplan-toggle" onClick={downloadCsv} disabled={!draft.boundary} title="Every scheme's numbers as a spreadsheet">⬇ CSV</button>
+        <button className="siteplan-toggle" onClick={printReport} disabled={!draft.boundary} title="A printable report of every scheme">🖨 Report</button>
         <button className="siteplan-toggle" onClick={() => setGenerating(true)} disabled={!draft.boundary} title="Try many combinations and keep the best">
           ✨ Generate options
         </button>
@@ -1066,6 +1128,7 @@ function SitePlanEditor() {
               onSelectAisle={setSelectedAisleId}
               onAisleChange={(id, line) => updateAisle(id, { line })}
               onAisleDrawn={onAisleDrawn}
+              truckMode={activeType.mode === 'industrial'}
             />
             {!draft.boundary && (
               <div className="siteplan-map-hint">

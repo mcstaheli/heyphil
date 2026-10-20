@@ -6,7 +6,7 @@
 // them directly.
 
 // Mirrors the ids in client/src/siteplanner/assetTypes.js - keep in sync.
-export const ASSET_TYPE_IDS = ['mf-garden', 'mf-podium', 'townhome', 'sfr', 'hotel', 'industrial', 'retail', 'parking', 'garage'];
+export const ASSET_TYPE_IDS = ['mf-garden', 'mf-podium', 'townhome', 'sfr', 'hotel', 'industrial', 'retail', 'parking', 'garage', 'datacenter'];
 
 export const MAX_NAME_LENGTH = 200;
 export const MAX_SCHEMES = 12;
@@ -268,6 +268,8 @@ function validateDriveAisles(value) {
     const out = { id: a.id, line: { type: 'LineString', coordinates: coords.map((p) => [p[0], p[1]]) }, twoWay: a.twoWay !== false };
     // Kept from automatic routing: starts at a bay's end on purpose.
     if (a.fromBay === true) out.fromBay = true;
+    // Marked as a truck route (industrial): checked for a WB-67.
+    if (a.truck === true) out.truck = true;
     if (a.width !== undefined && a.width !== null) {
       if (!isFiniteNumber(a.width) || a.width < 8 || a.width > 80) throw new SitePlanValidationError('A drive aisle\'s width must be 8 to 80 ft.');
       out.width = a.width;

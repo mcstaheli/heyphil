@@ -148,3 +148,9 @@ test('a kept routed aisle keeps its fromBay mark', () => {
   assert.equal(one({ driveAisles: [{ id: 'a', line, fromBay: true }] }).driveAisles[0].fromBay, true);
   assert.equal(one({ driveAisles: [{ id: 'a', line, fromBay: 'yes' }] }).driveAisles[0].fromBay, undefined);
 });
+
+test('truck aisles and the data center type are accepted', () => {
+  const line = { type: 'LineString', coordinates: [[-111.9, 40.7], [-111.899, 40.7]] };
+  assert.equal(one({ driveAisles: [{ id: 'a', line, truck: true }] }).driveAisles[0].truck, true);
+  assert.equal(one({ assetType: 'datacenter' }).assetType, 'datacenter');
+});

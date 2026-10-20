@@ -349,3 +349,51 @@ test('review fixes: fromBay aisles have no dead start; routes not drawn inside s
   const spaceResult = r.spaces[0].result;
   expect(spaceResult.parking.routedAisles).toEqual([]);
 });
+
+// ---- Helix, data center, trucks ------------------------------------------
+
+test('helix ramp: fits in a corner, slope from its lap', () => {
+  const g = solveScheme(rectSite(300, 180), scheme('garage', { setback: 0, rampType: 2, helixRadius: 25, rampWidth: 24 }));
+  expect(g.garage.rampType).toBe('helix');
+  expect(g.garage.slopePct).toBeCloseTo((10.5 / (2 * Math.PI * 37)) * 100, 1);
+  expect(g.garage.fits).toBe(true);
+  expect(g.geometry.garage.helix).not.toBeNull();
+  // A tiny helix is too steep.
+  const steep = solveScheme(rectSite(300, 180), scheme('garage', { setback: 0, rampType: 2, helixRadius: 10, rampWidth: 10, floorToFloor: 14 }));
+  expect(steep.garage.fits).toBe(false);
+});
+
+test('data center: IT load, generators, yard and a per-kW pro forma', () => {
+  const r = solveScheme(rectSite(900, 700), scheme('datacenter'));
+  expect(r.metrics.itMw).toBeGreaterThan(5);
+  expect(r.metrics.itMw).toBeCloseTo((r.metrics.gsf * 0.5 * 200) / 1e6, 6);
+  expect(r.metrics.generators).toBe(Math.ceil((r.metrics.itMw * 1.25) / 3));
+  expect(r.geometry.yards.length).toBeGreaterThan(0);
+  expect(r.proforma.gpr).toBeCloseTo(r.metrics.itMw * 1000 * 140 * 12, 0);
+  expect(r.proforma.hardCost).toBeGreaterThanOrEqual(r.metrics.itMw * 11000000);
+});
+
+test('truck access: court depth and drive width checked for industrial', () => {
+  const ok = solveScheme(rectSite(900, 700), scheme('industrial', { aisleWidth: 30 }));
+  expect(ok.checks.find((c) => c.label === 'Truck access').status).toBe('pass');
+  // Out of the box the loop road is built at truck width, so it passes.
+  const plain = solveScheme(rectSite(900, 700), scheme('industrial'));
+  expect(plain.checks.find((c) => c.label === 'Truck access').status).toBe('pass');
+  // With no loop road and no truck aisle, there's no truck drive.
+  const narrow = solveScheme(rectSite(900, 700), scheme('industrial', { perimeterDrive: 0 }));
+  expect(narrow.checks.find((c) => c.label === 'Truck access').actual).toMatch(/no truck drive/);
+  const shallow = solveScheme(rectSite(900, 700), scheme('industrial', { aisleWidth: 30, truckCourt: 100 }));
+  expect(shallow.checks.find((c) => c.label === 'Truck access').actual).toMatch(/court only 100/);
+  // A truck aisle is checked against the truck radius on its centre line.
+  const t = analyzeAisle([[0, 0], [60, 0], [60, 60]], { width: 30, twoWay: true, turnRadius: 25, connectsTo: [], truck: { width: 30, turnRadius: 45 } });
+  expect(t.some((x) => x.kind === 'turn' && /WB-67/.test(x.text))).toBe(true);
+});
+
+
+test('review fixes: data center falls back to parking; old ramp values; CSV formulas', () => {
+  const tiny = solveScheme(rectSite(260, 200), scheme('datacenter'));
+  expect(tiny.error).toBeNull();
+  expect(tiny.metrics.itMw).toBe(0);
+  const legacy = solveScheme(rectSite(300, 160), scheme('garage', { setback: 0, rampType: true, rampSlope: 12 }));
+  expect(legacy.garage.rampType).toBe('express');
+});
