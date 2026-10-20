@@ -3,7 +3,7 @@ import L from 'leaflet';
 import '@geoman-io/leaflet-geoman-free';
 import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
-import { makeProjection } from './geometry';
+import { makeProjection, pointInShape } from './geometry';
 import { findStall, parseSelection, stallKey } from './SelectionBar';
 import { placedPieces } from './buildings';
 
@@ -244,6 +244,30 @@ function SitePlanMap({
   const boundaryRef = useRef(boundary);
   boundaryRef.current = boundary;
 
+  // The main layout's generated buildings and bays, for clicks that land
+  // on the boundary above them (set when the layout is drawn).
+  const layoutHitRef = useRef({ buildings: [], bays: [] });
+  const hitLayout = (ll) => {
+    if (!cb.current.onSelectGenerated) return false;
+    const { buildings, bays } = layoutHitRef.current;
+    const b = buildings.findIndex((ring) => pointInShape([ring], ll));
+    if (b >= 0) {
+      cb.current.onSelectGenerated('auto', b);
+      return true;
+    }
+    const stall = findStall(bays, ll);
+    if (stall) {
+      cb.current.onSelectGenerated('stall', parseSelection(stallKey(stall.slot)).id);
+      return true;
+    }
+    const bay = bays.findIndex((p) => pointInShape([p.outline], ll));
+    if (bay >= 0) {
+      cb.current.onSelectGenerated('bay', bay);
+      return true;
+    }
+    return false;
+  };
+
   // Hooks the drawn boundary up so reshaping, dragging or rotating it
   // reports back.
   const adoptBoundary = (layer) => {
@@ -333,6 +357,9 @@ function SitePlanMap({
         cb.current.onParcelPick?.(e.latlng.lat, e.latlng.lng);
         return;
       }
+      // The site boundary is drawn on top (so it can be reshaped) and takes
+      // clicks meant for the layout under it: find what's there instead.
+      if (!map.pm.globalDrawModeEnabled() && hitLayout([e.latlng.lat, e.latlng.lng])) return;
       cb.current.onSelectBuilding?.(null);
       cb.current.onSelectSpace?.(null);
       cb.current.onSelectArea?.(null);
@@ -757,6 +784,7 @@ function SitePlanMap({
     const [selKind, selId] = (selectedGenerated || ':').split(':');
     const selected = { kind: selKind, index: Number(selId), point: selKind === 'stall' ? selId.split(',').map(Number) : null };
     if (layout?.setback) layout.setback.forEach((ring) => L.polygon(ring, STYLES.setback).addTo(group));
+    layoutHitRef.current = { buildings: placed ? [] : (layout?.buildings || []), bays: layout?.parking || [] };
     draw(layout, !placed);
     (spaceLayouts || []).forEach((g) => draw(g, true));
     // The boundary stays on top so it can still be grabbed and edited.
