@@ -47,6 +47,14 @@ const OVERLAYS = [
     attribution: 'Contours: USGS The National Map',
   },
   {
+    label: 'Parcels - lot lines (zoom in)',
+    tiles: 'https://tiles.arcgis.com/tiles/KzeiCaQsMoeCfoCq/arcgis/rest/services/Regrid_Nationwide_Parcel_Boundaries_v1/MapServer/tile/{z}/{y}/{x}',
+    minZoom: 15,
+    maxNativeZoom: 17,
+    opacity: 0.9,
+    attribution: 'Parcels: Regrid via Esri Living Atlas',
+  },
+  {
     label: 'Shaded relief',
     tiles: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSShadedReliefOnly/MapServer/tile/{z}/{y}/{x}',
     maxNativeZoom: 16,
@@ -174,6 +182,7 @@ function SitePlanMap({
   placed, badBuildingIds, selectedBuildingId, onSelectBuilding, onBuildingChange,
   parkingAreas, areaInfo, selectedAreaId, onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
   driveAisles, selectedAisleId, onSelectAisle, onAisleChange, onAisleDrawn, truckMode,
+  parcelPicking, onParcelPick, parcelHighlight, terrainPoints,
 }) {
   const elRef = useRef(null);
   const mapRef = useRef(null);
@@ -196,8 +205,11 @@ function SitePlanMap({
   cb.current = {
     onBoundaryChange, onSelectSpace, onSpaceChange, onSpaceDrawn, onSelectBuilding, onBuildingChange,
     onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
-    onSelectAisle, onAisleChange, onAisleDrawn,
+    onSelectAisle, onAisleChange, onAisleDrawn, onParcelPick,
   };
+  const pickingRef = useRef(false);
+  pickingRef.current = !!parcelPicking;
+  const parcelLayerRef = useRef(null);
   const boundaryRef = useRef(boundary);
   boundaryRef.current = boundary;
 
@@ -231,7 +243,7 @@ function SitePlanMap({
       const opacity = o.opacity ?? 0.55;
       let layer;
       if (o.tiles) {
-        layer = L.tileLayer(o.tiles, { maxNativeZoom: o.maxNativeZoom, maxZoom: 21, opacity, attribution: o.attribution });
+        layer = L.tileLayer(o.tiles, { minZoom: o.minZoom || 0, maxNativeZoom: o.maxNativeZoom, maxZoom: 21, opacity, attribution: o.attribution });
       } else if (o.wms) {
         layer = L.tileLayer.wms(o.wms, { layers: o.wmsLayers, format: 'image/png', transparent: true, minZoom: o.minZoom, maxZoom: 21, opacity, attribution: o.attribution });
       } else {
@@ -283,7 +295,11 @@ function SitePlanMap({
       adoptBoundary(e.layer)();
     });
     map.on('pm:drawend', () => { drawTargetRef.current = null; });
-    map.on('click', () => {
+    map.on('click', (e) => {
+      if (pickingRef.current) {
+        cb.current.onParcelPick?.(e.latlng.lat, e.latlng.lng);
+        return;
+      }
       cb.current.onSelectBuilding?.(null);
       cb.current.onSelectSpace?.(null);
       cb.current.onSelectArea?.(null);
@@ -376,7 +392,8 @@ function SitePlanMap({
         layer.on('pm:rotateend', emit);
         layer.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
-          cb.current.onSelectSpace(sp.id);
+          if (pickingRef.current) cb.current.onParcelPick?.(e.latlng.lat, e.latlng.lng);
+          else cb.current.onSelectSpace(sp.id);
         });
         group.addLayer(layer);
         entry = { layer, json };
@@ -423,7 +440,8 @@ function SitePlanMap({
         layer.on('pm:rotateend', emit);
         layer.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
-          cb.current.onSelectArea(a.id);
+          if (pickingRef.current) cb.current.onParcelPick?.(e.latlng.lat, e.latlng.lng);
+          else cb.current.onSelectArea(a.id);
         });
         group.addLayer(layer);
         entry = { layer, json };
@@ -480,7 +498,8 @@ function SitePlanMap({
         layer.on('pm:rotateend', emit);
         layer.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
-          cb.current.onSelectAisle(a.id);
+          if (pickingRef.current) cb.current.onParcelPick?.(e.latlng.lat, e.latlng.lng);
+          else cb.current.onSelectAisle(a.id);
         });
         group.addLayer(layer);
         entry = { layer, json };
@@ -493,6 +512,46 @@ function SitePlanMap({
       });
     }
   }, [driveAisles, selectedAisleId, truckMode]);
+
+  // Picking a parcel: a crosshair while waiting for the click, and the
+  // picked parcel outlined.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getContainer().style.cursor = parcelPicking ? 'crosshair' : '';
+  }, [parcelPicking]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (parcelLayerRef.current) {
+      map.removeLayer(parcelLayerRef.current);
+      parcelLayerRef.current = null;
+    }
+    if (parcelHighlight) {
+      parcelLayerRef.current = L.polygon(geoToLatLngs(parcelHighlight), { color: '#e11d48', weight: 3, dashArray: '6 4', fillColor: '#fb7185', fillOpacity: 0.15, pmIgnore: true, interactive: false }).addTo(map);
+    }
+  }, [parcelHighlight]);
+
+  // Terrain samples as small dots, darker where higher, with their elevation.
+  const terrainGroupRef = useRef(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!terrainGroupRef.current) terrainGroupRef.current = L.layerGroup().addTo(map);
+    const group = terrainGroupRef.current;
+    group.clearLayers();
+    if (!terrainPoints || !terrainPoints.length) return;
+    const zs = terrainPoints.map((p) => p.z);
+    const lo = Math.min(...zs);
+    const span = Math.max(1, Math.max(...zs) - lo);
+    for (const p of terrainPoints) {
+      const t = (p.z - lo) / span;
+      const shade = Math.round(230 - t * 170);
+      L.circleMarker([p.lat, p.lng], { radius: 4, weight: 1, color: '#78350f', fillColor: `rgb(${shade}, ${Math.round(shade * 0.8)}, ${Math.round(shade * 0.5)})`, fillOpacity: 0.9, pmIgnore: true })
+        .bindTooltip(`${Math.round(p.z).toLocaleString('en-US')} ft`, { direction: 'top' })
+        .addTo(group);
+    }
+  }, [terrainPoints]);
 
   // Driveway entries: drag along the boundary; they snap to it.
   useEffect(() => {
@@ -602,6 +661,10 @@ function SitePlanMap({
       // would cut a drag short.
       poly.on('mousedown', (e) => {
         L.DomEvent.stopPropagation(e);
+        if (pickingRef.current) {
+          cb.current.onParcelPick?.(e.latlng.lat, e.latlng.lng);
+          return;
+        }
         map.dragging.disable();
         const start = e.latlng;
         const startCenter = [...b.center];

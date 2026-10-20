@@ -9,6 +9,10 @@ import { aisleWidthOf, hasSurfaceParking, solveScheme, supportsManualLayout } fr
 import { NumberInput, OrientationField, SchemeSettings, fmtDec, fmtInt, withOverride } from './settingsFields';
 import { CompareView, ResultsCard, planMetrics, yieldOf } from './results';
 import { reportHtml, reportTable, toCsv } from './report';
+import { parcelAt } from './parcels';
+import { analyzeTerrain, fetchElevations, samplePoints, STEEP_PAD_PCT } from './terrain';
+import Massing3D from './Massing3D';
+import HelpModal from './HelpModal';
 import './SitePlanner.css';
 
 // Dev Tools -> Site Planner -> a site: the map on the left, the schemes
@@ -528,6 +532,11 @@ function SitePlanEditor() {
   const [selectedSpaceId, setSelectedSpaceId] = useState(null);
   const [selectedAreaId, setSelectedAreaId] = useState(null);
   const [selectedAisleId, setSelectedAisleId] = useState(null);
+  const [parcelPicking, setParcelPicking] = useState(false);
+  const [parcel, setParcel] = useState(null); // { loading } | { parcel } | { reason } | { error }
+  const [show3d, setShow3d] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [terrain, setTerrain] = useState(null); // { key, samples } | { key, loading } | { key, error }
   const [saveState, setSaveState] = useState('saved'); // saved | pending | saving | error | conflict
   const [saveError, setSaveError] = useState(null);
 
@@ -953,6 +962,60 @@ function SitePlanEditor() {
     setGenerating(false);
   }
 
+  // ---- Terrain: sampled once per boundary, analysed against the active
+  // scheme's buildings ----
+  const boundaryKey = boundary ? JSON.stringify(boundary.coordinates[0]) : null;
+  async function checkTerrain() {
+    if (!boundary) return;
+    const key = boundaryKey;
+    setTerrain({ key, loading: true });
+    try {
+      const samples = await fetchElevations(samplePoints(boundary, 30));
+      setTerrain(samples.length ? { key, samples } : { key, error: 'No elevations came back - the USGS service may be busy; try again.' });
+    } catch (err) {
+      setTerrain({ key, error: err.message });
+    }
+  }
+  const terrainStats = useMemo(() => {
+    if (!terrain?.samples || terrain.key !== boundaryKey) return null;
+    // Slope and relief need only the samples; pads need the buildings
+    // (garage footprints included), when the scheme has them.
+    const footprintsOf = (g) => [...(g?.buildings || []), ...(g?.garage ? g.garage.outline : [])];
+    const buildings = [
+      ...footprintsOf(activeResult?.geometry),
+      ...(activeResult?.spaces || []).flatMap((sp) => footprintsOf(sp.result?.geometry)),
+    ];
+    return analyzeTerrain(boundary, terrain.samples, buildings);
+  }, [terrain, boundaryKey, boundary, activeResult]);
+
+  // ---- Parcels ----
+  // Only the latest lookup's answer is shown; closing the card or picking
+  // again makes an earlier, slower one stale.
+  const parcelRequestRef = useRef(0);
+  const closeParcel = () => {
+    parcelRequestRef.current++;
+    setParcel(null);
+  };
+  const onParcelPick = useCallback(async (lat, lng) => {
+    const id = ++parcelRequestRef.current;
+    setParcelPicking(false);
+    setParcel({ loading: true });
+    try {
+      const found = await parcelAt(lat, lng);
+      if (id === parcelRequestRef.current) setParcel(found);
+    } catch (err) {
+      if (id === parcelRequestRef.current) setParcel({ error: err.message });
+    }
+  }, []);
+
+  const useParcelAsSite = () => {
+    const boundary = parcel?.parcel?.boundary;
+    if (!boundary) return;
+    if (draftRef.current.boundary && !window.confirm('Replace the site boundary with this parcel?')) return;
+    change('boundary', boundary);
+    closeParcel();
+  };
+
   // ---- Reports ----
   const fileBase = () => (draft.name || 'site').replace(/[^\w -]+/g, '').trim().replace(/\s+/g, '-') || 'site';
   function downloadCsv() {
@@ -979,6 +1042,7 @@ function SitePlanEditor() {
       projectTitle: project?.title,
       schemes: draft.schemes,
       results,
+      boundary: draft.boundary,
       generatedAt: new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
     }));
     win.document.close();
@@ -1058,6 +1122,8 @@ function SitePlanEditor() {
           </button>
         )}
         <span className="siteplan-header-spacer" />
+        <button className="siteplan-toggle" onClick={() => setShowHelp(true)} title="How the Site Planner works">?</button>
+        <button className="siteplan-toggle" onClick={() => setShow3d(true)} disabled={!draft.boundary || !activeResult?.geometry} title="See the scheme in 3D">◆ 3D</button>
         <button className="siteplan-toggle" onClick={downloadCsv} disabled={!draft.boundary} title="Every scheme's numbers as a spreadsheet">⬇ CSV</button>
         <button className="siteplan-toggle" onClick={printReport} disabled={!draft.boundary} title="A printable report of every scheme">🖨 Report</button>
         <button className="siteplan-toggle" onClick={() => setGenerating(true)} disabled={!draft.boundary} title="Try many combinations and keep the best">
@@ -1096,6 +1162,41 @@ function SitePlanEditor() {
                 change('mapView', view);
               }}
             />
+            <button
+              type="button"
+              className={`siteplan-parcel-btn ${parcelPicking ? 'on' : ''}`}
+              onClick={() => { closeParcel(); setParcelPicking((p) => !p); }}
+              title="Click a parcel on the map to see its details and use it as the site"
+            >
+              {parcelPicking ? 'Click a parcel…' : '▦ Pick a parcel'}
+            </button>
+            {parcel && (
+              <div className="siteplan-parcel-card">
+                <button type="button" className="siteplan-parcel-close" onClick={closeParcel} aria-label="Close">×</button>
+                {parcel.loading && <p className="siteplan-muted">Looking up the parcel…</p>}
+                {parcel.error && <p className="siteplan-neg">{parcel.error}</p>}
+                {parcel.reason && <p className="siteplan-muted">{parcel.reason}</p>}
+                {parcel.parcel && (
+                  <>
+                    <div className="siteplan-parcel-title">{parcel.parcel.address || 'Parcel'}{parcel.parcel.city ? `, ${parcel.parcel.city}` : ''}</div>
+                    <dl className="siteplan-metrics">
+                      <dt>Parcel ID</dt><dd>{parcel.parcel.id || '-'}</dd>
+                      <dt>Area</dt><dd>{parcel.parcel.acres ? `${fmtDec(parcel.parcel.acres)} ac` : '-'}</dd>
+                      <dt>County</dt><dd>{parcel.parcel.county || '-'}</dd>
+                      <dt>Ownership</dt><dd>{parcel.parcel.ownership || '-'}</dd>
+                      {parcel.parcel.asOf && <><dt>Data as of</dt><dd>{parcel.parcel.asOf}</dd></>}
+                    </dl>
+                    {parcel.parcel.countyUrl && /^https?:\/\//.test(parcel.parcel.countyUrl) && (
+                      <a className="siteplan-small" href={parcel.parcel.countyUrl} target="_blank" rel="noopener noreferrer">County assessor records</a>
+                    )}
+                    <button type="button" className="btn-primary siteplan-parcel-use" onClick={useParcelAsSite} disabled={!parcel.parcel.boundary}>
+                      Use as site boundary
+                    </button>
+                    <p className="siteplan-muted siteplan-small">Utah statewide parcels (UGRC) - general purpose, not the legal record.</p>
+                  </>
+                )}
+              </div>
+            )}
             <SitePlanMap
               boundary={draft.boundary}
               initialView={draft.mapView}
@@ -1129,6 +1230,10 @@ function SitePlanEditor() {
               onAisleChange={(id, line) => updateAisle(id, { line })}
               onAisleDrawn={onAisleDrawn}
               truckMode={activeType.mode === 'industrial'}
+              parcelPicking={parcelPicking}
+              onParcelPick={onParcelPick}
+              parcelHighlight={parcel?.parcel?.boundary || null}
+              terrainPoints={terrain?.key === boundaryKey ? terrain?.samples : null}
             />
             {!draft.boundary && (
               <div className="siteplan-map-hint">
@@ -1239,6 +1344,37 @@ function SitePlanEditor() {
 
             <GarageSection result={activeResult} />
 
+            <div className="siteplan-section">
+              <div className="siteplan-section-head">
+                <span className="siteplan-group-title">Terrain</span>
+                <button type="button" className="siteplan-small-btn" onClick={checkTerrain} disabled={!draft.boundary || terrain?.loading}>
+                  {terrain?.loading ? 'Sampling…' : terrainStats ? '↻ Resample' : '⛰ Check terrain'}
+                </button>
+              </div>
+              {!terrainStats && !terrain?.error && (
+                <p className="siteplan-muted siteplan-small">Samples ground elevation across the site (USGS) for slope and a rough cut/fill estimate.</p>
+              )}
+              {terrain?.error && terrain.key === boundaryKey && <p className="siteplan-neg siteplan-small">{terrain.error}</p>}
+              {terrainStats && (
+                <>
+                  <dl className="siteplan-metrics">
+                    <dt>Elevation</dt><dd>{fmtInt(terrainStats.lowFt)}-{fmtInt(terrainStats.highFt)} ft</dd>
+                    <dt>Relief</dt><dd>{fmtDec(terrainStats.reliefFt, 1)} ft</dd>
+                    <dt>Overall slope</dt><dd>{fmtDec(terrainStats.gradePct, 1)}%</dd>
+                    <dt>Earth moved (pads)</dt><dd>{fmtInt(terrainStats.cutCy + terrainStats.fillCy)} cy</dd>
+                  </dl>
+                  {terrainStats.steepPads > 0 && (
+                    <p className="siteplan-neg siteplan-small">
+                      {terrainStats.steepPads} building{terrainStats.steepPads === 1 ? ' sits' : 's sit'} on ground steeper than {STEEP_PAD_PCT}% - expect retaining walls or stepped floors.
+                    </p>
+                  )}
+                  <p className="siteplan-muted siteplan-small">
+                    From {terrainStats.samples} USGS 3DEP elevation points. Each building sits on one flat pad at its average ground level, so its cut and fill balance ({fmtInt(terrainStats.cutCy)} cy each way). A rough check, not a grading plan.
+                  </p>
+                </>
+              )}
+            </div>
+
             <PresetsSection presets={presets} scheme={active} onApply={applyPreset} onSave={savePreset} onDelete={deletePreset} />
 
             <div className="siteplan-section">
@@ -1272,6 +1408,8 @@ function SitePlanEditor() {
         </div>
       )}
 
+      {show3d && activeResult?.geometry && <Massing3D boundary={draft.boundary} result={activeResult} onClose={() => setShow3d(false)} />}
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
       {generating && (
         <GeneratorModal boundary={draft.boundary} scheme={active} onClose={() => setGenerating(false)} onApply={applyOption} />
       )}

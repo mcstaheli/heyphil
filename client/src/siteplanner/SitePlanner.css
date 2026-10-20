@@ -757,3 +757,58 @@
   padding: 6px 8px;
   font-size: 12px;
 }
+
+/* ---- Parcels ---- */
+.siteplan-parcel-btn {
+  position: absolute;
+  top: 10px;
+  right: 60px;
+  z-index: 1000;
+  border: 1px solid #d1d5db;
+  background: white;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.siteplan-parcel-btn.on { background: #e11d48; color: white; border-color: #e11d48; }
+
+.siteplan-parcel-card {
+  position: absolute;
+  top: 52px;
+  right: 10px;
+  z-index: 1000;
+  width: 280px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.siteplan-parcel-title { font-weight: 700; padding-right: 18px; }
+.siteplan-parcel-close { position: absolute; top: 6px; right: 8px; border: none; background: none; font-size: 18px; cursor: pointer; color: #6b7280; }
+.siteplan-parcel-use { padding: 6px 12px !important; font-size: 13px !important; align-self: flex-start; }
+
+/* ---- 3D massing ---- */
+.siteplan-3d-modal { max-width: 1000px; width: 100%; }
+.siteplan-3d-wrap { width: 100%; background: #f8fafc; border-radius: 8px; cursor: grab; touch-action: none; }
+.siteplan-3d-wrap:active { cursor: grabbing; }
+.siteplan-3d-controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
+.siteplan-3d-controls label { display: flex; align-items: center; gap: 8px; }
+
+
+/* ---- Help ---- */
+.siteplan-help-modal { max-width: 720px; width: 100%; }
+.siteplan-help-body { max-height: calc(100vh - 220px); overflow-y: auto; font-size: 14px; line-height: 1.5; }
+.siteplan-help-steps { padding-left: 20px; display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
+.siteplan-help-body h3 { font-size: 14px; margin: 12px 0 6px; }
+.siteplan-help-terms { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 12px; font-size: 13px; }
+.siteplan-help-terms dt { font-weight: 700; }
+.siteplan-help-terms dd { margin: 0; color: #374151; }

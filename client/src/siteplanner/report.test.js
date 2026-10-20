@@ -33,7 +33,7 @@ test('printable report escapes names', () => {
   const html = reportHtml({ siteName: '<b>Lot</b>', projectTitle: 'Zion', schemes, results, generatedAt: 'Oct 20' });
   expect(html).toContain('&lt;b&gt;Lot&lt;/b&gt;');
   expect(html).not.toContain('<b>Lot</b>');
-  expect(html).toContain('zoning check');
+  expect(html).toContain('class="checks"');
 });
 
 
@@ -41,4 +41,10 @@ test('a scheme name that looks like a formula opens as text', () => {
   const csv = toCsv({ header: ['', '=HYPERLINK("x")'], rows: [['Profit', '-$5.5M']] });
   expect(csv.split('\r\n')[0]).toBe('"","\'=HYPERLINK(""x"")"');
   expect(csv).toContain('"-$5.5M"');
+});
+
+test('the report includes a plan drawing per scheme', () => {
+  const html = reportHtml({ siteName: 'Lot', schemes, results, generatedAt: 'Oct 20', boundary: site });
+  expect((html.match(/<svg/g) || []).length).toBe(schemes.length);
+  expect(html).toMatch(/ft<\/text>/);
 });

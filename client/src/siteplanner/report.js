@@ -1,5 +1,6 @@
 // Report export for a site: every scheme's numbers side by side, as a CSV
 // to open in Excel or Sheets, or as a printable page.
+import { makeProjection } from './geometry';
 import { compareColumns, yieldOf } from './results';
 
 // One table: a header row (scheme names), then a row per measure.
@@ -29,17 +30,60 @@ export function toCsv(table) {
   return [table.header.map(safe), ...table.rows].map((r) => r.map(cell).join(',')).join('\r\n');
 }
 
+// A plan drawing of one scheme as SVG: the site, setback, drives,
+// parking, lots, yards and buildings, north up, with a scale bar.
+export function planSvg(boundary, result, { width = 520, height = 340 } = {}) {
+  if (!boundary || !result?.geometry) return '';
+  const proj = makeProjection(boundary.coordinates[0]);
+  const site = boundary.coordinates[0].slice(0, -1).map(proj.toFeet);
+  const xs = site.map((p) => p[0]);
+  const ys = site.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const pad = 14;
+  const k = Math.min((width - 2 * pad) / (x1 - x0 || 1), (height - 2 * pad - 18) / (y1 - y0 || 1));
+  const pt = ([x, y]) => `${(pad + (x - x0) * k).toFixed(1)},${(height - pad - 18 - (y - y0) * k).toFixed(1)}`;
+  const fromLatLng = (ring) => ring.map(([lat, lng]) => proj.toFeet([lng, lat]));
+  const shape = (ring, fill, stroke = 'none', extra = '') => `<polygon points="${ring.map(pt).join(' ')}" fill="${fill}" stroke="${stroke}" ${extra}/>`;
+  const parts = [];
+  const draw = (g) => {
+    if (!g) return;
+    (g.drives || []).forEach((rings) => parts.push(shape(fromLatLng(rings[0]), '#9ca3af')));
+    (g.parking || []).forEach((p) => parts.push(shape(fromLatLng(p.outline), '#d1d5db', '#9ca3af', 'stroke-width="0.5"')));
+    (g.lots || []).forEach((r) => parts.push(shape(fromLatLng(r), '#bbf7d0', '#16a34a', 'stroke-width="0.5"')));
+    (g.yards || []).forEach((r) => parts.push(shape(fromLatLng(r), '#6b7280')));
+    (g.truckCourts || []).forEach((r) => parts.push(shape(fromLatLng(r), '#e5e7eb', '#9ca3af', 'stroke-dasharray="3 3"')));
+    if (g.garage) g.garage.outline.forEach((r) => parts.push(shape(fromLatLng(r), '#ddd6fe', '#7c3aed')));
+    (g.buildings || []).forEach((r) => parts.push(shape(fromLatLng(r), '#818cf8', '#3730a3', 'stroke-width="0.8"')));
+  };
+  if (result.geometry.setback) result.geometry.setback.forEach((r) => parts.push(shape(fromLatLng(r), 'none', '#9ca3af', 'stroke-dasharray="4 3"')));
+  draw(result.geometry);
+  (result.spaces || []).forEach((sp) => draw(sp.result?.geometry));
+  // A round-number scale bar about a quarter of the drawing wide.
+  const target = (x1 - x0) / 4;
+  const bar = [10, 20, 25, 50, 100, 200, 250, 500, 1000].reduce((best, v) => (Math.abs(v - target) < Math.abs(best - target) ? v : best), 100);
+  const by = height - 10;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" class="plan">
+<rect width="100%" height="100%" fill="#fafaf7"/>
+${shape(site, '#f0fdf4', '#f59e0b', 'stroke-width="2"')}
+${parts.join('\n')}
+<line x1="${pad}" y1="${by}" x2="${(pad + bar * k).toFixed(1)}" y2="${by}" stroke="#111" stroke-width="2"/>
+<text x="${(pad + bar * k + 6).toFixed(1)}" y="${by + 4}" font-size="10" fill="#111">${bar} ft</text>
+<text x="${width - pad}" y="${by + 4}" font-size="10" fill="#111" text-anchor="end">N ↑</text>
+</svg>`;
+}
+
 const escapeHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // A self-contained printable page: the site, then the comparison table
 // and each scheme's zoning checks.
-export function reportHtml({ siteName, projectTitle, schemes, results, generatedAt }) {
+export function reportHtml({ siteName, projectTitle, schemes, results, generatedAt, boundary = null }) {
   const table = reportTable(schemes, results);
   const checkBlocks = schemes.map((s) => {
     const checks = results[s.id]?.checks || [];
-    if (!checks.length) return '';
+    const drawing = planSvg(boundary, results[s.id]);
+    if (!checks.length && !drawing) return '';
     const rows = checks.map((c) => `<tr><td>${{ pass: '✅', fail: '❌', none: '—' }[c.status]}</td><td>${escapeHtml(c.label)}</td><td>${escapeHtml(c.limit ?? 'No limit')}</td><td>${escapeHtml(c.actual)}</td></tr>`).join('');
-    return `<h3>${escapeHtml(s.name)} - zoning check</h3><table class="checks">${rows}</table>`;
+    return `<section class="scheme"><h3>${escapeHtml(s.name)}</h3>${drawing}${rows ? `<table class="checks">${rows}</table>` : ''}</section>`;
   }).join('');
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(siteName)} - site report</title>
 <style>
@@ -51,6 +95,8 @@ th, td { border-bottom: 1px solid #ddd; padding: 4px 8px; text-align: right; fon
 th:first-child, td:first-child { text-align: left; color: #555; }
 th { background: #f3f4f6; }
 table.checks td { text-align: left; }
+section.scheme { break-inside: avoid; margin-top: 18px; }
+svg.plan { display: block; margin: 6px 0 8px; border: 1px solid #e5e7eb; max-width: 100%; height: auto; }
 .note { color: #777; font-size: 11px; margin-top: 16px; }
 @media print { body { margin: 12mm; } }
 </style></head><body>

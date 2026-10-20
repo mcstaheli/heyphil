@@ -872,6 +872,7 @@ function solveManual(checkRings, s, type, proj, placed) {
     angle: placed.length ? placed[0].angle * DEG : 0,
     shapes: { parking: [] },
     buildingLatLngs: rects.map((r) => r.corners.map((p) => proj.toLatLng(p))),
+    buildingHeights: rects.map((r) => (isIndustrial ? s.clearHeight + INDUSTRIAL_ROOF_ALLOWANCE : podiumHeight + r.floors * s.floorToFloor)),
     metrics: {
       footprintSf: footprint,
       buildingCount: rects.length,
@@ -1559,6 +1560,7 @@ function solvePart(boundary, scheme, cutouts = []) {
   const geometry = {
     setback: setbackGeom,
     buildings: best.buildingLatLngs || autoBuildings.map((r) => rectToLatLngs(r, angle, proj)),
+    buildingHeights: best.buildingHeights || autoBuildings.map(() => m.heightFt || 0),
     parking: allRows.map((r) => rowGeometry(r, proj)),
     lots: (shapes.lots || []).map((r) => rectToLatLngs(r, angle, proj)),
     streets: (shapes.streets || []).map((r) => rectToLatLngs(r, angle, proj)),
