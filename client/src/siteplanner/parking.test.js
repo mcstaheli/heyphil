@@ -397,3 +397,10 @@ test('review fixes: data center falls back to parking; old ramp values; CSV form
   const legacy = solveScheme(rectSite(300, 160), scheme('garage', { setback: 0, rampType: true, rampSlope: 12 }));
   expect(legacy.garage.rampType).toBe('express');
 });
+
+test('every check says which step owns it', () => {
+  const site = rectSite(900, 700);
+  for (const r of [solveScheme(site, scheme('industrial')), solveScheme(site, scheme('mf-garden', { maxFar: 1, stallAngle: 60 })), solveScheme(rectSite(300, 160), scheme('garage'))]) {
+    for (const c of r.checks) expect(['zoning', 'parking']).toContain(c.category);
+  }
+});

@@ -3,11 +3,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import SitePlanMap from './SitePlanMap';
 import GeneratorModal from './GeneratorModal';
 import { loadProjects, searchAddress, sitePlansApi } from './api';
-import { ASSET_TYPES, COMMON_FIELDS, effectiveSettings, getAssetType } from './assetTypes';
+import { ASSET_TYPES, COMMON_FIELDS, effectiveSettings, fieldsFor, getAssetType } from './assetTypes';
 import { makeProjection } from './geometry';
 import { aisleWidthOf, hasSurfaceParking, solveScheme, supportsManualLayout } from './solver';
-import { NumberInput, OrientationField, SchemeSettings, fmtDec, fmtInt, withOverride } from './settingsFields';
-import { CompareView, ResultsCard, planMetrics, yieldOf } from './results';
+import { NumberInput, OrientationField, SchemeSettings, fmtDec, fmtInt, fmtMoney, fmtPct, withOverride } from './settingsFields';
+import { ChecksPanel, CompareView, ProformaPanel, QuantitiesPanel, Scoreboard, planMetrics, yieldOf } from './results';
+import { Step } from './Steps';
 import { reportHtml, reportTable, toCsv } from './report';
 import { parcelAt } from './parcels';
 import { analyzeTerrain, fetchElevations, samplePoints, STEEP_PAD_PCT } from './terrain';
@@ -25,6 +26,7 @@ import './SitePlanner.css';
 
 const SAVE_DELAY_MS = 800;
 const NONE = []; // a stable empty list, so the map doesn't redraw for nothing
+
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 
@@ -491,6 +493,42 @@ function GarageSection({ result }) {
   );
 }
 
+// Terrain: sample the ground on demand, then slope, relief and earthwork.
+function TerrainSection({ hasBoundary, terrain, terrainStats, boundaryKey, onCheck }) {
+  return (
+    <div className="siteplan-section">
+      <div className="siteplan-section-head">
+        <span className="siteplan-group-title">Terrain</span>
+        <button type="button" className="siteplan-small-btn" onClick={onCheck} disabled={!hasBoundary || terrain?.loading}>
+          {terrain?.loading ? 'Sampling…' : terrainStats ? '↻ Resample' : '⛰ Check terrain'}
+        </button>
+      </div>
+      {!terrainStats && !terrain?.error && (
+        <p className="siteplan-muted siteplan-small">Samples ground elevation across the site (USGS) for slope and a rough earthwork estimate.</p>
+      )}
+      {terrain?.error && terrain.key === boundaryKey && <p className="siteplan-neg siteplan-small">{terrain.error}</p>}
+      {terrainStats && (
+        <>
+          <dl className="siteplan-metrics">
+            <dt>Elevation</dt><dd>{fmtInt(terrainStats.lowFt)}-{fmtInt(terrainStats.highFt)} ft</dd>
+            <dt>Relief</dt><dd>{fmtDec(terrainStats.reliefFt, 1)} ft</dd>
+            <dt>Overall slope</dt><dd>{fmtDec(terrainStats.gradePct, 1)}%</dd>
+            <dt>Earth moved (pads)</dt><dd>{fmtInt(terrainStats.cutCy + terrainStats.fillCy)} cy</dd>
+          </dl>
+          {terrainStats.steepPads > 0 && (
+            <p className="siteplan-neg siteplan-small">
+              {terrainStats.steepPads} building{terrainStats.steepPads === 1 ? ' sits' : 's sit'} on ground steeper than {STEEP_PAD_PCT}% - expect retaining walls or stepped floors.
+            </p>
+          )}
+          <p className="siteplan-muted siteplan-small">
+            From {terrainStats.samples} USGS 3DEP elevation points. Each building sits on one flat pad at its average ground level, so its cut and fill balance ({fmtInt(terrainStats.cutCy)} cy each way). A rough check, not a grading plan.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Presets (#4): save a scheme's asset type and settings, apply them on
 // any site.
 function PresetsSection({ presets, scheme, onApply, onSave, onDelete }) {
@@ -535,6 +573,9 @@ function SitePlanEditor() {
   const [parcelPicking, setParcelPicking] = useState(false);
   const [parcel, setParcel] = useState(null); // { loading } | { parcel } | { reason } | { error }
   const [show3d, setShow3d] = useState(false);
+  // The open step; null until the plan loads, then the first useful one.
+  const [openStep, setOpenStep] = useState(null);
+  const toggleStep = (id) => setOpenStep((cur) => (cur === id ? null : id));
   const [showHelp, setShowHelp] = useState(false);
   const [terrain, setTerrain] = useState(null); // { key, samples } | { key, loading } | { key, error }
   const [saveState, setSaveState] = useState('saved'); // saved | pending | saving | error | conflict
@@ -546,8 +587,14 @@ function SitePlanEditor() {
   const savingRef = useRef(false);
   const timerRef = useRef(null);
   const conflictRef = useRef(false); // after a 409, nothing more is sent
+  const hadBoundaryRef = useRef(null); // whether the plan had a boundary last time we looked
 
   useEffect(() => {
+    // Another site: start its steps afresh.
+    setDraft(null);
+    draftRef.current = null;
+    hadBoundaryRef.current = null;
+    setOpenStep(null);
     sitePlansApi('GET', `/${planId}`)
       .then(({ plan, canDelete: del }) => {
         const d = {
@@ -1072,6 +1119,21 @@ function SitePlanEditor() {
     [activeResult]
   );
 
+  // Selecting something on the map opens the step with its editor.
+  useEffect(() => { if (selectedBuildingId || selectedSpaceId) setOpenStep('layout'); }, [selectedBuildingId, selectedSpaceId]);
+  useEffect(() => { if (selectedAreaId || selectedAisleId) setOpenStep('parking'); }, [selectedAreaId, selectedAisleId]);
+
+  // Open the first useful step once the plan loads (Site until there's a
+  // boundary, then Use), and move on to Use when a boundary first appears.
+  const loaded = !!draft;
+  useEffect(() => {
+    if (!loaded) return;
+    const has = !!boundary;
+    if (hadBoundaryRef.current === null) setOpenStep(has ? 'use' : 'site');
+    else if (has && hadBoundaryRef.current === false) setOpenStep('use');
+    hadBoundaryRef.current = has;
+  }, [loaded, boundary]);
+
   if (loadError) {
     return (
       <div className="siteplan-page">
@@ -1084,6 +1146,28 @@ function SitePlanEditor() {
     );
   }
   if (!draft) return <div className="siteplan-page"><p className="siteplan-muted siteplan-pad">Loading...</p></div>;
+
+  // What each step's one-line summary needs.
+  const programKeys = new Set(fieldsFor(activeType).filter((f) => f.group === 'Program').map((f) => f.key));
+  const programChanged = Object.keys(active.overrides || {}).filter((k) => programKeys.has(k) || k === 'mix').length;
+  const failing = (activeResult?.checks || []).filter((c) => c.status === 'fail');
+  // Each check says whether the Zoning or the Parking step owns it.
+  const zoningChecks = (activeResult?.checks || []).filter((c) => c.category === 'zoning');
+  const zoningFails = failing.filter((c) => c.category === 'zoning');
+  const parkingFails = failing.filter((c) => c.category !== 'zoning');
+  const siteSetback = activeResult?.settings?.setback ?? effectiveSettings(active).setback;
+  // One place for a step's share of the settings.
+  const settingsFor = (group, extra = {}) => (
+    <SchemeSettings
+      key={`${active.id}-${active.assetType}-${group}`}
+      type={activeType}
+      overrides={active.overrides}
+      onChange={(overrides) => updateScheme(active.id, { overrides })}
+      idPrefix={`${active.id}-${group}`}
+      only={[group]}
+      {...extra}
+    />
+  );
 
   const saveLabel = {
     saved: 'All changes saved',
@@ -1289,121 +1373,223 @@ function SitePlanEditor() {
               )}
             </div>
 
-            <label className="siteplan-type">
-              Asset type
-              <select value={active.assetType} onChange={(e) => changeType(e.target.value)}>
-                {ASSET_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-              </select>
-            </label>
-
-            <ResultsCard type={activeType} result={activeResult} />
-
-            <LayoutSection
-              scheme={active}
+            <Scoreboard
               type={activeType}
               result={activeResult}
-              selectedId={selectedBuildingId}
-              onSelect={setSelectedBuildingId}
-              onStart={startManual}
-              onReset={resetAuto}
-              onAdd={addBuilding}
-              onUpdate={updateBuilding}
-              onRemove={removeBuilding}
-              onDuplicate={duplicateBuilding}
+              onOpenChecks={() => setOpenStep(failing.length && failing[0].category !== 'zoning' ? 'parking' : 'zoning')}
             />
 
-            <SpacesSection
-              scheme={active}
-              results={activeResult}
-              selectedId={selectedSpaceId}
-              onSelect={setSelectedSpaceId}
-              onDraw={(shape) => setDrawRequest({ target: 'space', shape, at: Date.now() })}
-              onUpdate={updateSpace}
-              onRemove={removeSpace}
-            />
-
-            <ParkingSection
-              scheme={active}
-              type={activeType}
-              result={activeResult}
-              selectedAreaId={selectedAreaId}
-              onSelectArea={setSelectedAreaId}
-              onDraw={(shape) => setDrawRequest({ target: 'parking', shape, at: Date.now() })}
-              onUpdateArea={updateArea}
-              onRemoveArea={removeArea}
-              onSetOverride={setOverrideKey}
-              onAddEntry={addEntry}
-              onRemoveEntry={removeEntry}
-              selectedAisleId={selectedAisleId}
-              onSelectAisle={setSelectedAisleId}
-              onDrawAisle={() => setDrawRequest({ target: 'aisle', shape: 'Line', at: Date.now() })}
-              onUpdateAisle={updateAisle}
-              onRemoveAisle={removeAisle}
-              onKeepRouted={keepRouted}
-            />
-
-            <GarageSection result={activeResult} />
-
-            <div className="siteplan-section">
-              <div className="siteplan-section-head">
-                <span className="siteplan-group-title">Terrain</span>
-                <button type="button" className="siteplan-small-btn" onClick={checkTerrain} disabled={!draft.boundary || terrain?.loading}>
-                  {terrain?.loading ? 'Sampling…' : terrainStats ? '↻ Resample' : '⛰ Check terrain'}
-                </button>
-              </div>
-              {!terrainStats && !terrain?.error && (
-                <p className="siteplan-muted siteplan-small">Samples ground elevation across the site (USGS) for slope and a rough cut/fill estimate.</p>
+            {/* 1. Site */}
+            <Step
+              index={1}
+              id="site"
+              title="Site"
+              status={!draft.boundary ? 'todo' : (activeResult?.error || terrainStats?.steepPads) ? 'warn' : 'done'}
+              summary={!draft.boundary ? 'Find the site and draw or pick its boundary'
+                : activeResult?.error && !activeResult?.metrics ? activeResult.error
+                  : `${fmtDec(activeResult?.metrics?.siteAcres || 0)} ac · ${fmtInt(siteSetback)} ft setback${terrainStats ? ` · ${fmtDec(terrainStats.gradePct, 1)}% slope` : ''}`}
+              open={openStep === 'site'}
+              onToggle={toggleStep}
+              onNext={draft.boundary ? () => setOpenStep('use') : null}
+            >
+              {!draft.boundary && (
+                <div className="siteplan-step-hint">
+                  Three ways to set the site:
+                  <ol>
+                    <li>Search an address in the box over the map.</li>
+                    <li>Turn on <b>Parcels</b> in the layer menu (top right), then <b>▦ Pick a parcel</b>.</li>
+                    <li>Trace it with the polygon or rectangle tool on the map&apos;s left edge.</li>
+                  </ol>
+                </div>
               )}
-              {terrain?.error && terrain.key === boundaryKey && <p className="siteplan-neg siteplan-small">{terrain.error}</p>}
-              {terrainStats && (
-                <>
-                  <dl className="siteplan-metrics">
-                    <dt>Elevation</dt><dd>{fmtInt(terrainStats.lowFt)}-{fmtInt(terrainStats.highFt)} ft</dd>
-                    <dt>Relief</dt><dd>{fmtDec(terrainStats.reliefFt, 1)} ft</dd>
-                    <dt>Overall slope</dt><dd>{fmtDec(terrainStats.gradePct, 1)}%</dd>
-                    <dt>Earth moved (pads)</dt><dd>{fmtInt(terrainStats.cutCy + terrainStats.fillCy)} cy</dd>
-                  </dl>
-                  {terrainStats.steepPads > 0 && (
-                    <p className="siteplan-neg siteplan-small">
-                      {terrainStats.steepPads} building{terrainStats.steepPads === 1 ? ' sits' : 's sit'} on ground steeper than {STEEP_PAD_PCT}% - expect retaining walls or stepped floors.
-                    </p>
-                  )}
-                  <p className="siteplan-muted siteplan-small">
-                    From {terrainStats.samples} USGS 3DEP elevation points. Each building sits on one flat pad at its average ground level, so its cut and fill balance ({fmtInt(terrainStats.cutCy)} cy each way). A rough check, not a grading plan.
-                  </p>
-                </>
-              )}
-            </div>
-
-            <PresetsSection presets={presets} scheme={active} onApply={applyPreset} onSave={savePreset} onDelete={deletePreset} />
-
-            <div className="siteplan-section">
-              <div className="siteplan-group-title">Settings · {activeType.label}</div>
-              <p className="siteplan-muted siteplan-small">Starting from standard defaults. Change any number; ↺ puts it back.</p>
-              <SchemeSettings
-                key={`${active.id}-${active.assetType}`}
-                type={activeType}
-                overrides={active.overrides}
-                onChange={(overrides) => updateScheme(active.id, { overrides })}
-                idPrefix={active.id}
-                currentOrientationDeg={activeResult?.metrics?.orientationDeg}
-                currentParkingDeg={activeResult?.metrics?.parkingOrientationDeg}
+              {settingsFor('Site', { noOrientation: true })}
+              <TerrainSection
+                hasBoundary={!!draft.boundary}
+                terrain={terrain}
+                terrainStats={terrainStats}
+                boundaryKey={boundaryKey}
+                onCheck={checkTerrain}
               />
-            </div>
+              <p className="siteplan-muted siteplan-small">Flood zones, wetlands, contours, relief, soils and lot lines are in the map&apos;s layer menu (top right).</p>
+              {draft.boundary && (
+                <button
+                  className="siteplan-link-btn siteplan-danger-link"
+                  onClick={() => { if (window.confirm('Clear the site boundary so you can draw it again?')) change('boundary', null); }}
+                >
+                  Clear site boundary
+                </button>
+              )}
+            </Step>
 
-            {draft.boundary && (
-              <button
-                className="siteplan-link-btn siteplan-danger-link"
-                onClick={() => { if (window.confirm('Clear the site boundary so you can draw it again?')) change('boundary', null); }}
-              >
-                Clear site boundary
-              </button>
-            )}
-            <p className="siteplan-muted siteplan-small">
-              A rules-based test fit: buildings and double-loaded parking bays lined up with the site&apos;s main edges.
-              Drive connections and grading aren&apos;t modelled. Flood and wetland layers are in the map&apos;s layer menu (top right).
-              {' '}Orientation {fmtDec(activeResult?.metrics?.orientationDeg || 0, 1)}°.
-            </p>
+            {/* 2. Use */}
+            <Step
+              index={2}
+              id="use"
+              title="Use"
+              status={draft.boundary ? 'done' : 'todo'}
+              summary={`${activeType.label}${programChanged ? ` · ${programChanged} setting${programChanged === 1 ? '' : 's'} changed` : ' · standard defaults'}`}
+              open={openStep === 'use'}
+              onToggle={toggleStep}
+              onNext={() => setOpenStep('zoning')}
+            >
+              <label className="siteplan-type">
+                Asset type
+                <select value={active.assetType} onChange={(e) => changeType(e.target.value)}>
+                  {ASSET_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+              </label>
+              <PresetsSection presets={presets} scheme={active} onApply={applyPreset} onSave={savePreset} onDelete={deletePreset} />
+              <p className="siteplan-muted siteplan-small">Starting from standard defaults. Change any number; ↺ puts it back.</p>
+              {settingsFor('Program')}
+            </Step>
+
+            {/* 3. Zoning */}
+            <Step
+              index={3}
+              id="zoning"
+              title="Zoning"
+              status={!zoningChecks.length ? 'todo' : zoningFails.length ? 'bad' : 'done'}
+              summary={!zoningChecks.length ? 'Height, FAR and coverage limits'
+                : zoningFails.length ? `Failing: ${zoningFails.map((c) => c.label).join(', ')}`
+                  : `Zoning checks pass${zoningChecks.some((c) => c.status === 'none') ? ' (some limits not set)' : ''}`}
+              open={openStep === 'zoning'}
+              onToggle={toggleStep}
+              onNext={() => setOpenStep('layout')}
+            >
+              <p className="siteplan-muted siteplan-small">Set the limits that apply (0 = no limit). The check below covers the whole plan, including parking and circulation.</p>
+              {settingsFor('Zoning')}
+              <ChecksPanel checks={zoningChecks} />
+            </Step>
+
+            {/* 4. Layout */}
+            <Step
+              index={4}
+              id="layout"
+              title="Layout"
+              status={!activeResult?.metrics ? 'todo' : (activeResult.warnings?.outside?.length || activeResult.warnings?.overlaps?.length) ? 'bad' : 'done'}
+              summary={!activeResult?.metrics ? 'Buildings, orientation and spaces'
+                : `${active.edits?.buildings?.length ? 'Placed by hand' : 'Automatic'} · ${fmtInt(activeResult.metrics.buildingCount)} building${activeResult.metrics.buildingCount === 1 ? '' : 's'}${(active.spaces || []).length ? ` · ${active.spaces.length} space${active.spaces.length === 1 ? '' : 's'}` : ''}`}
+              open={openStep === 'layout'}
+              onToggle={toggleStep}
+              onNext={() => setOpenStep('parking')}
+            >
+              {activeType.mode !== 'garage' && activeType.mode !== 'parking' && (
+                <OrientationField
+                  label="Building orientation"
+                  value={effectiveSettings(active).rotation}
+                  currentDeg={activeResult?.metrics?.orientationDeg}
+                  onChange={(v) => setOverrideKey('rotation', v)}
+                />
+              )}
+              <LayoutSection
+                scheme={active}
+                type={activeType}
+                result={activeResult}
+                selectedId={selectedBuildingId}
+                onSelect={setSelectedBuildingId}
+                onStart={startManual}
+                onReset={resetAuto}
+                onAdd={addBuilding}
+                onUpdate={updateBuilding}
+                onRemove={removeBuilding}
+                onDuplicate={duplicateBuilding}
+              />
+              <SpacesSection
+                scheme={active}
+                results={activeResult}
+                selectedId={selectedSpaceId}
+                onSelect={setSelectedSpaceId}
+                onDraw={(shape) => setDrawRequest({ target: 'space', shape, at: Date.now() })}
+                onUpdate={updateSpace}
+                onRemove={removeSpace}
+              />
+            </Step>
+
+            {/* 5. Parking */}
+            <Step
+              index={5}
+              id="parking"
+              title="Parking"
+              status={!activeResult?.totals ? 'todo' : parkingFails.length ? 'bad' : 'done'}
+              summary={!activeResult?.totals ? 'Stalls, aisles, entries and garages'
+                : `${fmtInt(activeResult.totals.parkingProvided)} of ${fmtInt(activeResult.totals.parkingRequired)} stalls${parkingFails.length ? ` · ${parkingFails.map((c) => c.label).join(', ')}` : ''}`}
+              open={openStep === 'parking'}
+              onToggle={toggleStep}
+              onNext={() => setOpenStep('proforma')}
+            >
+              <ParkingSection
+                scheme={active}
+                type={activeType}
+                result={activeResult}
+                selectedAreaId={selectedAreaId}
+                onSelectArea={setSelectedAreaId}
+                onDraw={(shape) => setDrawRequest({ target: 'parking', shape, at: Date.now() })}
+                onUpdateArea={updateArea}
+                onRemoveArea={removeArea}
+                onSetOverride={setOverrideKey}
+                onAddEntry={addEntry}
+                onRemoveEntry={removeEntry}
+                selectedAisleId={selectedAisleId}
+                onSelectAisle={setSelectedAisleId}
+                onDrawAisle={() => setDrawRequest({ target: 'aisle', shape: 'Line', at: Date.now() })}
+                onUpdateAisle={updateAisle}
+                onRemoveAisle={removeAisle}
+                onKeepRouted={keepRouted}
+              />
+              <GarageSection result={activeResult} />
+              {activeType.mode === 'lots' && activeResult?.metrics && (
+                <p className="siteplan-muted siteplan-small">
+                  Homes park in their own garages: {fmtInt(activeResult.metrics.parkingGarage)} garage stalls for {fmtInt(activeResult.metrics.parkingRequired)} required.
+                  Set garage stalls per home and the requirement under Use.
+                </p>
+              )}
+              {activeType.mode !== 'lots' && <ChecksPanel checks={(activeResult?.checks || []).filter((c) => c.category === 'parking')} />}
+              <details className="siteplan-details">
+                <summary>All parking settings</summary>
+                {settingsFor('Parking', { noOrientation: true })}
+              </details>
+            </Step>
+
+            {/* 6. Pro forma */}
+            <Step
+              index={6}
+              id="proforma"
+              title="Pro forma"
+              status={activeResult?.proforma ? (activeResult.proforma.profit < 0 ? 'warn' : 'done') : 'todo'}
+              summary={activeResult?.proforma
+                ? `${fmtMoney(activeResult.proforma.totalCost)} cost · ${activeResult.proforma.kind === 'sale' ? `${fmtPct(activeResult.proforma.margin)} margin` : `${fmtPct(activeResult.proforma.yieldOnCost, 2)} yield on cost`}`
+                : 'Costs, rents and returns'}
+              open={openStep === 'proforma'}
+              onToggle={toggleStep}
+              onNext={() => setOpenStep('results')}
+            >
+              <ProformaPanel result={activeResult} />
+              <p className="siteplan-muted siteplan-small">Rough starting points to override - not market data.</p>
+              {settingsFor('Pro forma')}
+            </Step>
+
+            {/* 7. Results */}
+            <Step
+              index={7}
+              id="results"
+              title="Results"
+              status={activeResult?.metrics ? 'done' : 'todo'}
+              summary={activeResult?.metrics ? 'Quantities, compare, generate and report' : 'Every measure for this scheme'}
+              open={openStep === 'results'}
+              onToggle={toggleStep}
+            >
+              <QuantitiesPanel type={activeType} result={activeResult} />
+              <div className="siteplan-results-actions">
+                <button type="button" className="siteplan-small-btn" onClick={() => setCompare(true)}>Compare schemes</button>
+                <button type="button" className="siteplan-small-btn" onClick={() => setGenerating(true)} disabled={!draft.boundary}>✨ Generate options</button>
+                <button type="button" className="siteplan-small-btn" onClick={() => setShow3d(true)} disabled={!activeResult?.geometry}>◆ 3D</button>
+                <button type="button" className="siteplan-small-btn" onClick={downloadCsv} disabled={!draft.boundary}>⬇ CSV</button>
+                <button type="button" className="siteplan-small-btn" onClick={printReport} disabled={!draft.boundary}>🖨 Report</button>
+              </div>
+              <p className="siteplan-muted siteplan-small">
+                A rules-based test fit: buildings and parking bays lined up with the site&apos;s main edges, checked against your limits.
+              </p>
+            </Step>
           </aside>
         </div>
       )}

@@ -100,16 +100,18 @@ export function ChecksPanel({ checks }) {
   );
 }
 
-export function ResultsCard({ type, result }) {
+// The pinned scoreboard: the headline yield, the return, and whether the
+// zoning check passes - so every step's change shows straight away.
+export function Scoreboard({ type, result, onOpenChecks }) {
   if (!result) return null;
-  if (result.error && !result.metrics) return <div className="siteplan-results siteplan-muted">{result.error}</div>;
+  if (result.error && !result.metrics) return <div className="siteplan-scoreboard siteplan-muted siteplan-small">{result.error}</div>;
   const m = planMetrics(result);
   const y = yieldOf(type, m);
   const pf = result.proforma;
+  const fails = (result.checks || []).filter((c) => c.status === 'fail');
   const hasSpaces = (result.spaces || []).some((sp) => sp.result?.metrics);
   return (
-    <div className="siteplan-results">
-      {result.error && <p className="siteplan-warn">{result.error}</p>}
+    <div className="siteplan-scoreboard">
       <div className="siteplan-yield">
         <span className="siteplan-yield-value">{y.value}</span>
         <span className="siteplan-yield-label">{y.label}{hasSpaces ? ' (with spaces)' : ''}</span>
@@ -120,24 +122,37 @@ export function ResultsCard({ type, result }) {
           <span className="siteplan-yoc" title="Profit / total cost">{fmtPct(pf.margin)} margin</span>
         )}
       </div>
-      <div className="siteplan-limits">
-        {result.limits.includes('manual') ? 'Layout placed by hand' : 'Limited by'}
-        {!result.limits.includes('manual') && result.limits.map((l) => <span key={l} className={`siteplan-limit siteplan-limit-${l}`}>{LIMIT_LABELS[l]}</span>)}
+      <div className="siteplan-scoreboard-row">
+        <button type="button" className={`siteplan-zoning-pill ${fails.length ? 'bad' : 'ok'}`} onClick={onOpenChecks} title={fails.map((c) => c.label).join(', ')}>
+          {fails.length ? `❌ ${fails.length} check${fails.length === 1 ? '' : 's'} failing` : '✅ All checks pass'}
+        </button>
+        <span className="siteplan-limits">
+          {result.limits.includes('manual') ? 'Placed by hand' : 'Limited by'}
+          {!result.limits.includes('manual') && result.limits.map((l) => <span key={l} className={`siteplan-limit siteplan-limit-${l}`}>{LIMIT_LABELS[l]}</span>)}
+        </span>
       </div>
+      {result.error && <p className="siteplan-warn siteplan-small">{result.error}</p>}
+    </div>
+  );
+}
+
+// Quantities: unit mix, every measure, and the split by part.
+export function QuantitiesPanel({ type, result }) {
+  if (!result?.metrics) return <p className="siteplan-muted siteplan-small">Nothing laid out yet.</p>;
+  const m = planMetrics(result);
+  const hasSpaces = (result.spaces || []).some((sp) => sp.result?.metrics);
+  return (
+    <div className="siteplan-results">
       {m.unitsByType && m.unitsByType.length > 0 && (
         <div className="siteplan-mix-result">
           {m.unitsByType.map((u) => <span key={u.name}><b>{fmtInt(u.count)}</b> {u.name}</span>)}
         </div>
       )}
-      <ChecksPanel checks={result.checks} />
-      <details className="siteplan-details" open>
-        <summary>Quantities</summary>
-        <dl className="siteplan-metrics">
-          {metricRows(type, m).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>)}
-        </dl>
-      </details>
+      <dl className="siteplan-metrics">
+        {metricRows(type, m).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>)}
+      </dl>
       {hasSpaces && (
-        <details className="siteplan-details">
+        <details className="siteplan-details" open>
           <summary>By part</summary>
           <dl className="siteplan-metrics">
             <dt>Main ({type.label})</dt><dd>{yieldOf(type, result.metrics).value} {yieldOf(type, result.metrics).label}</dd>
@@ -149,15 +164,18 @@ export function ResultsCard({ type, result }) {
           </dl>
         </details>
       )}
-      {pf && (
-        <details className="siteplan-details" open>
-          <summary>Pro forma</summary>
-          <dl className="siteplan-metrics">
-            {proformaRows(pf).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd className={k === 'Profit' && pf.profit < 0 ? 'siteplan-neg' : ''}>{v}</dd></React.Fragment>)}
-          </dl>
-          <p className="siteplan-muted siteplan-small">Rough inputs to override under Pro forma below - not market data.</p>
-        </details>
-      )}
+    </div>
+  );
+}
+
+export function ProformaPanel({ result }) {
+  const pf = result?.proforma;
+  if (!pf) return null;
+  return (
+    <div className="siteplan-results">
+      <dl className="siteplan-metrics">
+        {proformaRows(pf).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd className={k === 'Profit' && pf.profit < 0 ? 'siteplan-neg' : ''}>{v}</dd></React.Fragment>)}
+      </dl>
     </div>
   );
 }

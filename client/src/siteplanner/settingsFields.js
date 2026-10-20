@@ -151,10 +151,14 @@ export function OrientationField({ label, value, currentDeg, onChange }) {
 
 // idPrefix keeps inputs distinct between schemes and spaces.
 // currentOrientationDeg / currentParkingDeg are what "Fixed angle" starts from.
-export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOrientationDeg, currentParkingDeg, groupsOpen }) {
+// only: show just these groups, laid out flat (no open/close headings) -
+// how a step shows its share of the settings. noOrientation leaves the
+// orientation choices to the step that shows them on their own.
+export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOrientationDeg, currentParkingDeg, groupsOpen, only = null, noOrientation = false }) {
   const settings = { ...defaultsFor(type), ...overrides };
   const fields = fieldsFor(type);
-  const groups = [...new Set(fields.map((f) => f.group))];
+  const groups = [...new Set(fields.map((f) => f.group))].filter((g) => !only || only.includes(g));
+  const flat = !!only;
   const set = (key, value) => onChange(withOverride(type, overrides, key, value));
   const [open, setOpen] = useState(() => new Set(groupsOpen || groups.filter((g) => g !== 'Pro forma')));
   const toggle = (g) => setOpen((prev) => {
@@ -166,7 +170,7 @@ export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOri
 
   return (
     <div className="siteplan-settings">
-      {type.hasMix && (
+      {type.hasMix && (!only || only.includes('Program')) && (
         <MixEditor
           mix={settings.mix || DEFAULT_MIX}
           overridden={'mix' in overrides}
@@ -178,11 +182,15 @@ export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOri
         const changed = fields.filter((f) => f.group === g && f.key in overrides).length;
         return (
           <div key={g} className="siteplan-group">
-            <button type="button" className="siteplan-group-title siteplan-group-toggle" onClick={() => toggle(g)}>
-              {open.has(g) ? '▾' : '▸'} {g}
-              {changed > 0 && <span className="siteplan-changed-count">{changed} changed</span>}
-            </button>
-            {open.has(g) && fields.filter((f) => f.group === g).map((f) => (
+            {flat ? (
+              changed > 0 && <span className="siteplan-changed-count siteplan-changed-flat">{changed} changed from the defaults</span>
+            ) : (
+              <button type="button" className="siteplan-group-title siteplan-group-toggle" onClick={() => toggle(g)}>
+                {open.has(g) ? '▾' : '▸'} {g}
+                {changed > 0 && <span className="siteplan-changed-count">{changed} changed</span>}
+              </button>
+            )}
+            {(flat || open.has(g)) && fields.filter((f) => f.group === g).map((f) => (
               <SettingField
                 key={`${idPrefix}-${f.key}`}
                 field={f}
@@ -192,10 +200,10 @@ export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOri
                 onReset={() => set(f.key, undefined)}
               />
             ))}
-            {open.has(g) && g === 'Site' && (
+            {!noOrientation && (flat || open.has(g)) && g === 'Site' && (
               <OrientationField label="Building orientation" value={settings.rotation} currentDeg={currentOrientationDeg} onChange={(v) => set('rotation', v)} />
             )}
-            {open.has(g) && g === 'Parking' && (
+            {!noOrientation && (flat || open.has(g)) && g === 'Parking' && (
               <OrientationField label="Parking orientation" value={settings.parkingRotation} currentDeg={currentParkingDeg} onChange={(v) => set('parkingRotation', v)} />
             )}
           </div>

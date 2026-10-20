@@ -1657,13 +1657,14 @@ const SUM_KEYS = ['footprintSf', 'buildingCount', 'gsf', 'nsf', 'units', 'keys',
 // status is pass, fail, or none (no limit set).
 function zoningChecks(s, totals, warnings, parkingParts) {
   const fmt = (n, d = 2) => (n || 0).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
-  const row = (label, limit, actual, ok) => ({ label, limit, actual, status: limit === null ? 'none' : (ok ? 'pass' : 'fail') });
+  const row = (label, limit, actual, ok) => ({ label, limit, actual, status: limit === null ? 'none' : (ok ? 'pass' : 'fail'), category: 'zoning' });
   const rows = [
     row('Height', s.maxHeight > 0 ? `${fmt(s.maxHeight, 0)} ft` : null, `${fmt(totals.heightFt, 0)} ft`, totals.heightFt <= s.maxHeight + 1e-6),
     row('FAR', s.maxFar > 0 ? fmt(s.maxFar) : null, fmt(totals.far), totals.far <= s.maxFar + 1e-6),
     row('Lot coverage', s.maxCoverage > 0 ? `${fmt(s.maxCoverage, 0)}%` : null, `${fmt(totals.coverage * 100, 1)}%`, totals.coverage * 100 <= s.maxCoverage + 1e-6),
     {
       label: 'Parking',
+      category: 'parking',
       limit: totals.sharedParking
         ? `${fmt(totals.parkingRequired, 0)} required (shared; ${fmt(totals.parkingRequiredRaw, 0)} separately)`
         : `${fmt(totals.parkingRequired, 0)} required`,
@@ -1672,13 +1673,14 @@ function zoningChecks(s, totals, warnings, parkingParts) {
     },
     {
       label: 'Setback',
+      category: 'zoning',
       limit: `${fmt(s.setback, 0)} ft`,
       actual: warnings.outside.length ? `${warnings.outside.length} building${warnings.outside.length === 1 ? '' : 's'} over the line` : 'Clear',
       status: warnings.outside.length ? 'fail' : (s.setback > 0 ? 'pass' : 'none'),
     },
   ];
   if (warnings.overlaps.length) {
-    rows.push({ label: 'Buildings overlap', limit: 'None', actual: `${warnings.overlaps.length} pair${warnings.overlaps.length === 1 ? '' : 's'}`, status: 'fail' });
+    rows.push({ label: 'Buildings overlap', category: 'zoning', limit: 'None', actual: `${warnings.overlaps.length} pair${warnings.overlaps.length === 1 ? '' : 's'}`, status: 'fail' });
   }
   const withSurface = parkingParts.filter((p) => p && p.rawStalls > 0);
   if (withSurface.length) {
@@ -1688,6 +1690,7 @@ function zoningChecks(s, totals, warnings, parkingParts) {
     const aisleProblems = withSurface.flatMap((p) => p.aisleIssues || []);
     rows.push({
       label: 'Circulation',
+      category: 'parking',
       limit: drive ? 'Every bay reaches a drive' : 'No drive (perimeter off, none drawn)',
       actual: !drive ? 'Not checked'
         : disconnected ? `${disconnected} bay${disconnected === 1 ? '' : 's'} can't reach one`
@@ -1702,15 +1705,16 @@ function zoningChecks(s, totals, warnings, parkingParts) {
         count('width') && `${count('width')} too narrow`,
         count('dead') && `${count('dead')} dead end${count('dead') === 1 ? '' : 's'}`,
       ].filter(Boolean);
-      rows.push({ label: 'Drawn aisles', limit: `Turns ≥ ${fmt(s.turnRadius, 0)} ft radius, no dead ends`, actual: parts.join(', '), status: 'fail' });
+      rows.push({ label: 'Drawn aisles', category: 'parking', limit: `Turns ≥ ${fmt(s.turnRadius, 0)} ft radius, no dead ends`, actual: parts.join(', '), status: 'fail' });
     } else if (withSurface.some((p) => p.aisleCount > 0)) {
-      rows.push({ label: 'Drawn aisles', limit: `Turns ≥ ${fmt(s.turnRadius, 0)} ft radius, no dead ends`, actual: 'Clear', status: 'pass' });
+      rows.push({ label: 'Drawn aisles', category: 'parking', limit: `Turns ≥ ${fmt(s.turnRadius, 0)} ft radius, no dead ends`, actual: 'Clear', status: 'pass' });
     }
     const ada = withSurface.reduce((sum, p) => sum + p.types.ada, 0);
     const van = withSurface.reduce((sum, p) => sum + p.types.van, 0);
     const placedAda = withSurface.reduce((sum, p) => sum + p.adaPlaced, 0);
     rows.push({
       label: 'Accessible stalls',
+      category: 'parking',
       limit: `${fmt(ada, 0)} required (${fmt(van, 0)} van)`,
       actual: `${fmt(placedAda, 0)} placed`,
       status: placedAda >= ada ? 'pass' : 'fail',
@@ -1721,6 +1725,7 @@ function zoningChecks(s, totals, warnings, parkingParts) {
     const routeOk = t.routeWidth >= t.widthNeeded;
     rows.push({
       label: 'Truck access',
+      category: 'parking',
       limit: `${fmt(t.courtNeeded, 0)} ft court, ${fmt(t.widthNeeded, 0)} ft drive`,
       actual: [
         !t.courtDepth ? 'no truck court in the plan' : courtOk ? `${fmt(t.courtDepth, 0)} ft court` : `court only ${fmt(t.courtDepth, 0)} ft`,
@@ -1740,6 +1745,7 @@ function zoningChecks(s, totals, warnings, parkingParts) {
     ].filter(Boolean);
     rows.push({
       label: 'One-way flow',
+      category: 'parking',
       limit: 'Every one-way route has a way in and out',
       actual: parts.length ? parts.join(', ') : 'Flows through',
       status: parts.length ? 'fail' : 'pass',
@@ -1748,6 +1754,7 @@ function zoningChecks(s, totals, warnings, parkingParts) {
   if (totals.trailerRequired > 0 || totals.trailerStalls > 0) {
     rows.push({
       label: 'Trailer parking',
+      category: 'parking',
       limit: `${fmt(totals.trailerRequired, 0)} required`,
       actual: `${fmt(totals.trailerStalls, 0)} provided`,
       status: totals.trailerStalls >= totals.trailerRequired ? 'pass' : 'fail',
@@ -1856,6 +1863,7 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
       ...zoningChecks(main.settings, totals, main.warnings || { outside: [], overlaps: [] }, parkingParts),
       ...parts.filter((p) => p.garage).map((p) => ({
         label: 'Garage ramp',
+        category: 'parking',
         limit: p.garage.rampType === 'none' ? 'Single deck - no ramp'
           : `${{ express: 'Express ramp', helix: 'Helix ramp', sloped: 'Sloped floors' }[p.garage.rampType]} at ${p.garage.slopePct}%`,
         actual: p.garage.fits ? `Fits (${Math.round(p.garage.longSide)} ft long)` : `Doesn't fit: ${p.garage.note}`,
