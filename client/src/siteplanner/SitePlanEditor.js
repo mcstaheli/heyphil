@@ -12,8 +12,10 @@ import { ChecksPanel, CompareView, ProformaPanel, QuantitiesPanel, Scoreboard, p
 import { Step } from './Steps';
 import { modelSteps } from './stepPlan';
 import {
-  AisleEditor, AreaEditor, BayDetails, BuildingEditor, GeneratedBuilding, STALL_ANGLES, SelectionBar, SpaceEditor, parseSelection, selectionKey,
+  AisleEditor, AreaEditor, BayDetails, BuildingEditor, GeneratedBuilding, STALL_ANGLES, SelectionBar, SpaceEditor, StallEditor,
+  findStall, parseSelection, selectionKey, stallPoint,
 } from './SelectionBar';
+import { pointInShape } from './geometry';
 import { reportHtml, reportTable, toCsv } from './report';
 import { parcelAt } from './parcels';
 import { analyzeTerrain, fetchElevations, samplePoints, STEEP_PAD_PCT } from './terrain';
@@ -1378,6 +1380,29 @@ function SitePlanEditor() {
   // Dragging a generated building takes the layout over by hand, with
   // that building where it was dropped.
   const onGeneratedDrag = (i, center) => startManual(i, center);
+  // A selected stall: found again in the current layout by its middle.
+  const stallHit = sel?.kind === 'stall' ? findStall(bays, stallPoint(sel.id)) : null;
+  if (stallHit) selectionItems.push({ key: selection, label: `Stall in bay ${stallHit.bayIndex + 1}`, group: 'Parking bays' });
+  // Sets one stall's type (or puts it back to automatic): edits under that
+  // stall are replaced by one at its middle.
+  const setStallKind = (slot, kind) => {
+    const keep = (currentScheme().stallEdits || []).filter((e) => !pointInShape([slot.ring], [e.point[1], e.point[0]]));
+    const next = kind ? [...keep, { point: [slot.center[1], slot.center[0]], kind }] : keep;
+    updateScheme(active.id, { stallEdits: next.length ? next.slice(-500) : undefined });
+  };
+  // A bay taken over by hand: a parking area on its outline, at its angle.
+  const editBay = (bay) => {
+    const ring = bay.outline.map(([lat, lng]) => [lng, lat]);
+    const existing = currentScheme().parkingAreas || [];
+    if (existing.length >= 30) {
+      window.alert('A scheme can hold 30 parking areas - remove one first.');
+      return;
+    }
+    const area = { id: newId(), polygon: { type: 'Polygon', coordinates: [[...ring, ring[0]]] }, angle: bay.angleDeg };
+    if (bay.stallAngle !== effectiveSettings(active).stallAngle) area.stallAngle = bay.stallAngle;
+    updateScheme(active.id, { parkingAreas: [...existing, area] });
+    setSelectedAreaId(area.id);
+  };
   // A selection that's gone (a bay re-laid out, a building removed) shows as none.
   const selectedKey = selectionItems.some((x) => x.key === selection) ? selection : null;
 
@@ -1409,7 +1434,20 @@ function SitePlanEditor() {
     }
     if (s.kind === 'bay') {
       const i = Number(s.id);
-      return <BayDetails bay={bays[i]} index={i} settings={settings} currentDeg={m?.parkingOrientationDeg} onSetOverride={setOverrideKey} />;
+      return <BayDetails bay={bays[i]} index={i} settings={settings} currentDeg={m?.parkingOrientationDeg} onSetOverride={setOverrideKey} onEditBay={() => editBay(bays[i])} />;
+    }
+    if (s.kind === 'stall' && stallHit) {
+      const { slot, bayIndex } = stallHit;
+      return (
+        <StallEditor
+          slot={slot}
+          bay={bays[bayIndex]}
+          bayIndex={bayIndex}
+          onSetKind={(kind) => setStallKind(slot, kind)}
+          onReset={() => setStallKind(slot, null)}
+          onEditBay={() => editBay(bays[bayIndex])}
+        />
+      );
     }
     if (s.kind === 'space') {
       const sp = active.spaces.find((x) => x.id === s.id);
@@ -1593,7 +1631,7 @@ function SitePlanEditor() {
               onParcelPick={onParcelPick}
               parcelHighlight={parcel?.parcel?.boundary || null}
               terrainPoints={terrain?.key === boundaryKey ? terrain?.samples : null}
-              selectedGenerated={sel && (sel.kind === 'auto' || sel.kind === 'bay') ? selection : null}
+              selectedGenerated={sel && ['auto', 'bay', 'stall'].includes(sel.kind) ? selection : null}
               onSelectGenerated={onSelectGenerated}
               onGeneratedDrag={canTakeOver ? onGeneratedDrag : null}
               edges={byEdge ? (activeResult?.edges || NONE) : NONE}
@@ -1619,6 +1657,8 @@ function SitePlanEditor() {
                 {activeResult.geometry.unitTypes.map((name, i) => <span key={name}><i style={{ background: UNIT_COLORS[i % UNIT_COLORS.length] }} />{name}</span>)}
                 <span><i className="lg-core" />Stair / elevator</span>
               </>}
+              {(activeResult?.geometry?.parking || NONE).some((b) => b.van?.length) && <span><i className="lg-van" />Van accessible</span>}
+              {(activeResult?.geometry?.parking || NONE).some((b) => b.ev?.length) && <span><i className="lg-ev" />EV</span>}
               {(activeResult?.geometry?.courtyards || NONE).length > 0 && <span><i className="lg-courtyard" />Courtyard</span>}
               {(activeResult?.geometry?.wrapGarages || NONE).length > 0 && <span><i className="lg-wrapgarage" />Garage</span>}
             </div>

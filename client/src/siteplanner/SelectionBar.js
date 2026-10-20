@@ -1,5 +1,6 @@
 import React from 'react';
 import { ASSET_TYPES, COMMON_FIELDS, getAssetType } from './assetTypes';
+import { pointInShape } from './geometry';
 import { aisleWidthOf } from './solver';
 import { NumberInput, OrientationField, SchemeSettings, fmtDec, fmtInt } from './settingsFields';
 import { yieldOf } from './results';
@@ -13,6 +14,19 @@ import { yieldOf } from './results';
 export const STALL_ANGLES = COMMON_FIELDS.find((f) => f.key === 'stallAngle').options;
 
 export const selectionKey = (kind, id) => `${kind}:${id}`;
+
+// The stall of the main layout's bays under a point ([lat, lng]): its
+// bay's index and the slot ({ ring, center, kind, byHand }), or null.
+export function findStall(bays, latlng) {
+  for (let b = 0; b < (bays || []).length; b++) {
+    const slot = (bays[b].slots || []).find((x) => pointInShape([x.ring], latlng));
+    if (slot) return { bayIndex: b, slot };
+  }
+  return null;
+}
+// A stall selection is keyed by its middle ("lat,lng").
+export const stallKey = (slot) => selectionKey('stall', `${slot.center[0]},${slot.center[1]}`);
+export const stallPoint = (id) => id.split(',').map(Number);
 export function parseSelection(key) {
   if (!key) return null;
   const at = key.indexOf(':');
@@ -107,7 +121,7 @@ export function GeneratedBuilding({ label, rect, onEdit, canEdit }) {
 }
 
 // A generated parking bay: its stalls, and the scheme-wide parking controls.
-export function BayDetails({ bay, index, settings, currentDeg, onSetOverride }) {
+export function BayDetails({ bay, index, settings, currentDeg, onSetOverride, onEditBay }) {
   return (
     <>
       <div className="siteplan-selection-title">Parking bay {index + 1}</div>
@@ -121,7 +135,45 @@ export function BayDetails({ bay, index, settings, currentDeg, onSetOverride }) 
         </select>
       </Field>
       <OrientationField label="Parking orientation" value={settings.parkingRotation} currentDeg={currentDeg} onChange={(v) => onSetOverride('parkingRotation', v)} />
-      <p className="siteplan-muted siteplan-small">To lay out this ground differently, draw a parking area over it (Parking step) and set its own orientation.</p>
+      {onEditBay && <button type="button" className="siteplan-small-btn" onClick={onEditBay}>✋ Edit this bay by hand</button>}
+      <p className="siteplan-muted siteplan-small">Click a stall to change just that stall. ✋ turns the bay into a parking area you can drag, reshape and turn.</p>
+    </>
+  );
+}
+
+const STALL_KINDS = [
+  ['standard', 'Standard'], ['compact', 'Compact'], ['ev', 'EV charging'], ['ada', 'Accessible'], ['van', 'Van accessible'], ['removed', 'Removed (landscape)'],
+];
+
+// One stall: what it is, changed right here; and its bay, which can be
+// taken over as a parking area to move, reshape or turn.
+export function StallEditor({ slot, bay, bayIndex, onSetKind, onReset, onEditBay }) {
+  return (
+    <>
+      <div className="siteplan-selection-title">Stall in bay {bayIndex + 1}{slot.byHand ? ' · changed by hand' : ''}</div>
+      <div className="siteplan-stall-kinds" role="radiogroup" aria-label="Stall type">
+        {STALL_KINDS.map(([k, label]) => (
+          <button
+            type="button"
+            key={k}
+            role="radio"
+            aria-checked={slot.kind === k}
+            className={`siteplan-stall-kind siteplan-stall-${k} ${slot.kind === k ? 'on' : ''}`}
+            onClick={() => onSetKind(k)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {slot.byHand && <button type="button" className="siteplan-link-btn" onClick={onReset}>↺ Back to automatic</button>}
+      <p className="siteplan-muted siteplan-small">
+        Accessible stalls you mark count toward the required number; the rest are placed for you near the entry. A change stays with this spot if the layout shifts.
+      </p>
+      <div className="siteplan-selection-sub">
+        Bay {bayIndex + 1}: {fmtInt(bay.stallCount)} stalls · {bay.stallAngle}° · runs {fmtDec(bay.angleDeg, 1)}°
+      </div>
+      <button type="button" className="siteplan-small-btn" onClick={onEditBay}>✋ Edit this bay by hand</button>
+      <p className="siteplan-muted siteplan-small">Turns the bay into a parking area you can drag, reshape and turn on the map, with its own stall angle.</p>
     </>
   );
 }

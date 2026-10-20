@@ -252,6 +252,23 @@ function validateEntries(value) {
   });
 }
 
+// Stalls changed by hand: a point (the stall's middle) and what it is now.
+const STALL_KINDS = ['standard', 'compact', 'ev', 'ada', 'van', 'removed'];
+const MAX_STALL_EDITS = 500;
+function validateStallEdits(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new SitePlanValidationError('Stall edits must be a list.');
+  if (value.length > MAX_STALL_EDITS) throw new SitePlanValidationError(`Keep it to ${MAX_STALL_EDITS} stall edits.`);
+  return value.map((e) => {
+    const p = e && e.point;
+    if (!Array.isArray(p) || !isFiniteNumber(p[0]) || !isFiniteNumber(p[1]) || Math.abs(p[0]) > 180 || Math.abs(p[1]) > 90) {
+      throw new SitePlanValidationError('A stall edit is somewhere that isn\'t a valid location.');
+    }
+    if (!STALL_KINDS.includes(e.kind)) throw new SitePlanValidationError(`A stall must be one of ${STALL_KINDS.join(', ')}.`);
+    return { point: [p[0], p[1]], kind: e.kind };
+  });
+}
+
 // Drive aisles drawn by hand: a line each, with an optional width (ft)
 // and whether it's two-way.
 function validateDriveAisles(value) {
@@ -314,6 +331,8 @@ export function validateSchemes(value) {
     if (entries.length) out.entries = entries;
     const driveAisles = validateDriveAisles(s.driveAisles);
     if (driveAisles.length) out.driveAisles = driveAisles;
+    const stallEdits = validateStallEdits(s.stallEdits);
+    if (stallEdits.length) out.stallEdits = stallEdits;
     return out;
   });
 }

@@ -154,3 +154,11 @@ test('truck aisles and the data center type are accepted', () => {
   assert.equal(one({ driveAisles: [{ id: 'a', line, truck: true }] }).driveAisles[0].truck, true);
   assert.equal(one({ assetType: 'datacenter' }).assetType, 'datacenter');
 });
+
+test('stall edits keep a point and a known kind', () => {
+  const out = one({ stallEdits: [{ point: [-111.9, 40.7], kind: 'ev', extra: 1 }, { point: [-111.9, 40.71], kind: 'removed' }] });
+  assert.deepEqual(out.stallEdits, [{ point: [-111.9, 40.7], kind: 'ev' }, { point: [-111.9, 40.71], kind: 'removed' }]);
+  assert.equal(one({}).stallEdits, undefined);
+  assert.throws(() => one({ stallEdits: [{ point: [-111.9, 40.7], kind: 'golf' }] }), SitePlanValidationError);
+  assert.throws(() => one({ stallEdits: [{ point: [500, 40.7], kind: 'ev' }] }), SitePlanValidationError);
+});

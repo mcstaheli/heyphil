@@ -744,6 +744,8 @@
 .lg-drive { background: #4b5563; }
 .lg-ada { background: #3b82f6; }
 .lg-core { background: #475569; }
+.lg-van { background: #1e3a8a; }
+.lg-ev { background: #4ade80; border: 1px solid #15803d; }
 .lg-courtyard { background: #4ade80; opacity: 0.7; }
 .lg-wrapgarage { background: #6b7280; border: 1px solid #7c3aed; }
 .lg-parkarea { border: 1.5px dashed #0284c7; background: rgba(14, 165, 233, 0.15); }
@@ -966,3 +968,15 @@
 .siteplan-gen-tip .siteplan-muted { color: #d1d5db; }
 .siteplan-gen-picked td { background: #fef9c3; }
 .siteplan-gen-actions { white-space: nowrap; }
+
+/* Stall types in the selection bar. */
+.siteplan-stall-kinds { display: flex; flex-wrap: wrap; gap: 4px; }
+.siteplan-stall-kind { font-size: 12px; padding: 3px 8px; border: 1px solid #d1d5db; border-radius: 999px; background: white; cursor: pointer; }
+.siteplan-stall-kind.on { border-color: #4f46e5; background: #eef2ff; font-weight: 600; }
+.siteplan-stall-kind::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; background: #6b7280; vertical-align: 0; }
+.siteplan-stall-compact::before { background: #d1d5db; }
+.siteplan-stall-ev::before { background: #4ade80; }
+.siteplan-stall-ada::before { background: #3b82f6; }
+.siteplan-stall-van::before { background: #1e3a8a; }
+.siteplan-stall-removed::before { background: #22c55e; }
+.siteplan-selection-sub { font-size: 12px; color: #374151; border-top: 1px solid #fde68a; padding-top: 6px; }

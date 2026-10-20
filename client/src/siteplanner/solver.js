@@ -19,6 +19,7 @@ import {
   openRing,
   rectCorners,
   ringInsideShape,
+  rotate,
   rotateRings,
   shapeArea,
   unrotate,
@@ -886,6 +887,54 @@ function rectToGeo(r, angle, proj) {
   return { type: 'Polygon', coordinates: [[...pts, pts[0]]] };
 }
 
+// The stall slot of a row under a point (feet): { i, side }, or null for
+// the aisle, an island or outside the row. Angled stalls lean, so the
+// slot is found along the stall's own slant.
+function slotAt(row, pt) {
+  const [u, v] = rotate([pt], row.angle)[0];
+  const { mod } = row;
+  if (u < row.u0 || u > row.u1 || v < row.v0 || v > row.v1) return null;
+  const dir = row.dir || 1;
+  const lean = mod.angle === 90 ? 0 : (mod.proj / Math.tan(mod.angle * DEG)) * dir;
+  const start = dir > 0 ? row.u0 + mod.endLoss : row.u0;
+  let side;
+  let uAdj;
+  if (v <= row.v0 + mod.proj) {
+    side = 'lower';
+    uAdj = u + (lean * (row.v0 + mod.proj - v)) / mod.proj;
+  } else if (v >= row.v1 - mod.proj) {
+    side = 'upper';
+    uAdj = u + (lean * (v - (row.v1 - mod.proj))) / mod.proj;
+  } else {
+    return null;
+  }
+  const i = Math.floor((uAdj - start) / mod.pitch);
+  if (i < 0 || i >= row.n || row.islands.includes(i)) return null;
+  return { i, side };
+}
+
+// Stalls changed by hand: each edit lands on the stall under its point,
+// wherever the layout now puts one (an edit with no stall under it waits).
+// Sets row.marks (slot -> kind) and row.removed.
+function applyStallEdits(rows, edits, proj) {
+  for (const r of rows) {
+    r.marks = new Map();
+    r.removed = new Set();
+  }
+  for (const e of edits) {
+    const pt = proj.toFeet(e.point);
+    for (const r of rows) {
+      const slot = slotAt(r, pt);
+      if (!slot) continue;
+      const key = `${slot.i}:${slot.side}`;
+      r.marks.set(key, e.kind);
+      if (e.kind === 'removed') r.removed.add(key);
+      else r.removed.delete(key);
+      break;
+    }
+  }
+}
+
 // A parking row on the map: its outline, stall stripes (leaning for
 // angled stalls), landscape islands and accessible stalls.
 function rowGeometry(row, proj) {
@@ -918,16 +967,38 @@ function rowGeometry(row, proj) {
       head: [[back, vmid - 4], [to, vmid], [back, vmid + 4]].map(toLL),
     };
   }
+  // Every stall, for clicking one on the map: its outline, middle and
+  // what it is (standard, compact, ev, ada, van, removed) and whether
+  // that was set by hand.
+  const adaKind = new Map((row.adaSlots || []).map(({ i, side, van }) => [`${i}:${side}`, van ? 'van' : 'ada']));
+  const slots = [];
+  for (const side of ['lower', 'upper']) {
+    for (let i = 0; i < row.n; i++) {
+      if (row.islands.includes(i)) continue;
+      const key = `${i}:${side}`;
+      const ring = slot(i, side);
+      const center = [ring.reduce((t, p) => t + p[0], 0) / 4, ring.reduce((t, p) => t + p[1], 0) / 4];
+      const mark = row.marks ? row.marks.get(key) : undefined;
+      slots.push({ ring, center, kind: mark || adaKind.get(key) || 'standard', byHand: !!mark });
+    }
+  }
   return {
     outline: [[row.u0, row.v0], [row.u1, row.v0], [row.u1, row.v1], [row.u0, row.v1]].map(toLL),
     stalls,
-    islands: row.islands.flatMap((i) => [slot(i, 'lower'), slot(i, 'upper')]),
+    islands: [
+      ...row.islands.flatMap((i) => [slot(i, 'lower'), slot(i, 'upper')]),
+      ...[...(row.removed || [])].map((k) => { const [i, side] = k.split(':'); return slot(Number(i), side); }),
+    ],
     ada: (row.adaSlots || []).map(({ i, side }) => slot(i, side)),
+    van: (row.adaSlots || []).filter((x) => x.van).map(({ i, side }) => slot(i, side)),
+    ev: slots.filter((x) => x.kind === 'ev').map((x) => x.ring),
+    compact: slots.filter((x) => x.kind === 'compact' && x.byHand).map((x) => x.ring),
+    slots,
     connected: row.connected !== false,
     flow,
     // For the selection bar: stalls (both sides, less islands), the stall
     // angle and which way the bay runs.
-    stallCount: 2 * row.n - 2 * row.islands.length,
+    stallCount: 2 * row.n - 2 * row.islands.length - (row.removed ? row.removed.size : 0),
     stallAngle: mod.angle,
     angleDeg: Math.round(((row.angle * 180) / Math.PI) * 10) / 10,
     oneWay: !!row.dir,
@@ -1522,7 +1593,8 @@ function solvePart(boundary, scheme, cutouts = []) {
   }
 
   const allRows = [...bandRows, ...leftoverRows, ...otherRows, ...areaRows];
-  const rawStalls = allRows.reduce((sum, r) => sum + 2 * r.perSide, 0);
+  applyStallEdits(allRows, scheme.stallEdits || [], proj);
+  const rawStalls = allRows.reduce((sum, r) => sum + 2 * r.perSide - r.removed.size, 0);
 
   // ---- Entries and accessible stalls ----
   const entries = surfaceParking
@@ -1674,21 +1746,41 @@ function solvePart(boundary, scheme, cutouts = []) {
   const oneWayCount = allRows.filter((r) => r.dir).length + oneWays.length;
 
   const types = stallTypes(rawStalls, s);
+  // Stalls marked by hand: accessible ones count toward what's required
+  // (the rest are placed automatically); EV and compact stalls marked
+  // beyond the settings' shares add to them.
   let adaPlaced = 0;
-  // Accessible stalls go in the rows nearest an entry, from the aisle end.
-  if (types.ada > 0 && allRows.length) {
+  const marked = { ev: 0, compact: 0 };
+  for (const r of allRows) {
+    r.adaSlots = [];
+    for (const [key, kind] of r.marks) {
+      const [i, side] = key.split(':');
+      if (kind === 'ada' || kind === 'van') {
+        r.adaSlots.push({ i: Number(i), side, van: kind === 'van', byHand: true });
+        adaPlaced++;
+      } else if (kind === 'ev' || kind === 'compact') {
+        marked[kind]++;
+      }
+    }
+  }
+  types.ev = Math.max(types.ev, marked.ev);
+  types.compact = Math.max(types.compact, marked.compact);
+  types.van = Math.max(types.van, allRows.reduce((t, r) => t + r.adaSlots.filter((x) => x.van).length, 0));
+  types.standard = Math.max(0, types.total - types.ada - types.compact);
+  // Accessible stalls go in the rows nearest an entry, from the aisle end,
+  // on stalls not marked by hand.
+  if (types.ada > adaPlaced && allRows.length) {
     const centre = (r) => {
       const mid = unrotate([(r.u0 + r.u1) / 2, (r.v0 + r.v1) / 2], r.angle);
       return Math.min(...entryInfo.map((e) => Math.hypot(e.feet[0] - mid[0], e.feet[1] - mid[1])), Infinity);
     };
-    let left = types.ada;
+    let left = types.ada - adaPlaced;
     for (const r of [...allRows].sort((a, b) => centre(a) - centre(b))) {
       if (left <= 0) break;
       const islands = new Set(r.islands);
-      r.adaSlots = [];
       for (const side of ['lower', 'upper']) {
         for (let i = 0; i < r.n && left > 0; i++) {
-          if (islands.has(i)) continue;
+          if (islands.has(i) || r.marks.has(`${i}:${side}`)) continue;
           r.adaSlots.push({ i, side });
           left--;
           adaPlaced++;

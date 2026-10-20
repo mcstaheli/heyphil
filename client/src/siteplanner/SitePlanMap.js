@@ -3,7 +3,7 @@ import L from 'leaflet';
 import '@geoman-io/leaflet-geoman-free';
 import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
-import { makeProjection, rectCorners } from './geometry';
+import { makeProjection, pointInShape, rectCorners } from './geometry';
 
 // The Site Planner's map: satellite imagery, the site boundary and any
 // spaces you draw (Geoman: draw, reshape, drag, rotate), hand-placed
@@ -96,6 +96,10 @@ const STYLES = {
   placedSelected: { color: '#facc15', weight: 3, fillColor: '#8b5cf6', fillOpacity: 0.85, pmIgnore: true },
   generatedSelected: { color: '#facc15', weight: 3, fillColor: '#8b5cf6', fillOpacity: 0.8, pmIgnore: true },
   baySelected: { color: '#facc15', weight: 3, fillColor: '#374151', fillOpacity: 0.55, pmIgnore: true },
+  stallSelected: { color: '#facc15', weight: 3, fill: false, pmIgnore: true, interactive: false },
+  van: { color: '#1e3a8a', weight: 0.5, fillColor: '#1e3a8a', fillOpacity: 0.9, pmIgnore: true, interactive: false },
+  ev: { color: '#15803d', weight: 1.5, fillColor: '#4ade80', fillOpacity: 0.55, pmIgnore: true, interactive: false },
+  compact: { color: '#e5e7eb', weight: 0.5, fillColor: '#d1d5db', fillOpacity: 0.6, pmIgnore: true, interactive: false },
   placedBad: { color: '#ef4444', weight: 3, fillColor: '#f87171', fillOpacity: 0.75, pmIgnore: true },
   parking: { color: '#e5e7eb', weight: 1, fillColor: '#374151', fillOpacity: 0.55, pmIgnore: true, interactive: false },
   stall: { color: '#f9fafb', weight: 0.75, opacity: 0.9, pmIgnore: true, interactive: false },
@@ -635,7 +639,12 @@ function SitePlanMap({
           L.polygon(p.outline, style)
             .on('click', (e) => {
               L.DomEvent.stopPropagation(e);
-              if (!pickingRef.current) cb.current.onSelectGenerated?.('bay', i);
+              if (pickingRef.current) return;
+              // On a stall: that stall; on the aisle: the bay.
+              const ll = [e.latlng.lat, e.latlng.lng];
+              const hit = (p.slots || []).find((x) => pointInShape([x.ring], ll));
+              if (hit) cb.current.onSelectGenerated?.('stall', `${hit.center[0]},${hit.center[1]}`);
+              else cb.current.onSelectGenerated?.('bay', i);
             })
             .addTo(group);
         } else {
@@ -644,6 +653,14 @@ function SitePlanMap({
         p.stalls.forEach((line) => L.polyline(line, STYLES.stall).addTo(group));
         (p.islands || []).forEach((r) => L.polygon(r, STYLES.island).addTo(group));
         (p.ada || []).forEach((r) => L.polygon(r, STYLES.ada).addTo(group));
+        (p.van || []).forEach((r) => L.polygon(r, STYLES.van).addTo(group));
+        (p.ev || []).forEach((r) => L.polygon(r, STYLES.ev).addTo(group));
+        (p.compact || []).forEach((r) => L.polygon(r, STYLES.compact).addTo(group));
+        if (g === layout && selected.kind === 'stall') {
+          const at = selected.point;
+          const hit = (p.slots || []).find((x) => pointInShape([x.ring], at));
+          if (hit) L.polygon(hit.ring, STYLES.stallSelected).addTo(group);
+        }
         if (p.flow) {
           L.polyline(p.flow.line, STYLES.flow).addTo(group);
           L.polyline(p.flow.head, STYLES.flow).addTo(group);
@@ -719,8 +736,8 @@ function SitePlanMap({
         plan.cores.forEach((c) => L.polygon(c.ring, { ...STYLES.core, fillColor: c.kind === 'elevator' ? '#0f172a' : '#475569' }).addTo(group));
       });
     };
-    const [selKind, selIndex] = (selectedGenerated || ':').split(':');
-    const selected = { kind: selKind, index: Number(selIndex) };
+    const [selKind, selId] = (selectedGenerated || ':').split(':');
+    const selected = { kind: selKind, index: Number(selId), point: selKind === 'stall' ? selId.split(',').map(Number) : null };
     if (layout?.setback) layout.setback.forEach((ring) => L.polygon(ring, STYLES.setback).addTo(group));
     draw(layout, !placed);
     (spaceLayouts || []).forEach((g) => draw(g, true));
