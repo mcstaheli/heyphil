@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import SitePlanMap, { UNIT_COLORS } from './SitePlanMap';
 import GeneratorModal from './GeneratorModal';
+import { asType } from './generator';
 import { loadProjects, searchAddress, sitePlansApi } from './api';
 import { ASSET_TYPES, effectiveSettings, getAssetType } from './assetTypes';
 import { makeProjection } from './geometry';
@@ -899,12 +900,14 @@ function SitePlanEditor() {
   }
 
   // ---- Generator (#5) ----
-  function applyOption(combo) {
+  // An option from the generator, possibly of another asset type (which
+  // keeps the settings it shares with this scheme's).
+  function applyOption(combo, assetType = active.assetType) {
     if (draftRef.current.schemes.length >= 12) {
       window.alert('A site can hold 12 schemes - delete one first.');
       return;
     }
-    const base = JSON.parse(JSON.stringify(active));
+    const base = asType(JSON.parse(JSON.stringify(active)), assetType);
     delete base.edits;
     const option = {
       ...base,

@@ -1,4 +1,4 @@
-import { buildCombos, countCombos, evaluateOption, filterAndSort } from './generator';
+import { asType, buildCombos, buildRuns, countCombos, countRuns, evaluateOption, filterAndSort, regenerateSweeps } from './generator';
 
 function rectSite(width, depth, lat = 40.76, lng = -111.89) {
   const dx = width / (364000 * Math.cos((lat * Math.PI) / 180));
@@ -51,4 +51,52 @@ test('a choice sweeps every option', () => {
   expect(combos).toHaveLength(6);
   expect(countCombos([{ key: 'stallAngle', values: [90, 60, 45] }, { from: 2, to: 3, step: 1 }])).toBe(6);
   expect(new Set(combos.map((c) => c.stallAngle))).toEqual(new Set([90, 60, 45]));
+});
+
+test('a run across asset types sweeps each type only on settings it has', () => {
+  const sweeps = [{ key: 'floors', from: 2, to: 3, step: 1 }, { key: 'lotWidth', from: 20, to: 30, step: 10 }];
+  const runs = buildRuns(sweeps, ['mf-garden', 'townhome', 'parking']);
+  // garden: floors x2; townhome: floors x2 and lot width x2; parking: neither, one run
+  expect(runs.filter((r) => r.assetType === 'mf-garden')).toHaveLength(2);
+  expect(runs.filter((r) => r.assetType === 'townhome')).toHaveLength(4);
+  expect(runs.filter((r) => r.assetType === 'parking')).toHaveLength(1);
+  expect(runs.find((r) => r.assetType === 'mf-garden').combo.lotWidth).toBeUndefined();
+  expect(countRuns(sweeps, ['mf-garden', 'townhome', 'parking'])).toBe(runs.length);
+});
+
+test('another type uses the settings it shares and skips sweeps it has no use for', () => {
+  const s = asType({ id: 'a', assetType: 'mf-garden', overrides: { maxFar: 2, buildingShape: 4, setback: 15 } }, 'industrial');
+  expect(s.assetType).toBe('industrial');
+  expect(s.overrides.maxFar).toBe(2);
+  // Townhomes have no surface parking to turn: one run, not twelve.
+  const runs = buildRuns([{ key: 'parkingRotation', from: 0, to: 165, step: 15 }], ['mf-garden', 'townhome']);
+  expect(runs.filter((r) => r.assetType === 'townhome')).toHaveLength(1);
+  expect(runs.filter((r) => r.assetType === 'mf-garden')).toHaveLength(12);
+});
+
+test('goals on any measure, sorting either way', () => {
+  const site = rectSite(600, 400);
+  const scheme = { id: 'a', name: 'A', assetType: 'mf-garden', overrides: {} };
+  const options = buildCombos([{ key: 'floors', from: 1, to: 4, step: 1 }]).map((c) => evaluateOption(site, scheme, c));
+  expect(options[0].measures.totalCost).toBeGreaterThan(0);
+  const short = filterAndSort(options, { rules: [{ measure: 'heightFt', op: 'max', value: 25 }] }, 'yield');
+  expect(short.every((o) => o.measures.heightFt <= 25)).toBe(true);
+  const cheapest = filterAndSort(options, {}, 'totalCost');
+  for (let i = 1; i < cheapest.length; i++) expect(cheapest[i - 1].measures.totalCost).toBeLessThanOrEqual(cheapest[i].measures.totalCost);
+  const mixed = buildRuns([{ key: 'floors', from: 2, to: 2, step: 1 }], ['mf-garden', 'retail'])
+    .map((r) => evaluateOption(site, scheme, r.combo, r.assetType));
+  expect(new Set(mixed.map((o) => o.assetType))).toEqual(new Set(['mf-garden', 'retail']));
+});
+
+test('regenerate narrows around an option at finer steps', () => {
+  const next = regenerateSweeps(
+    [{ key: 'parkingRatio', from: 1, to: 2, step: 0.5 }, { key: 'floors', from: 1, to: 5, step: 1 }, { key: 'stallAngle', values: [90, 60, 45] }],
+    { combo: { parkingRatio: 1.5, floors: 3, stallAngle: 60 } },
+  );
+  expect(next[0]).toEqual({ key: 'parkingRatio', from: 1, to: 2, step: 0.25 });
+  expect(next[1]).toEqual({ key: 'floors', from: 2, to: 4, step: 1 });
+  expect(next[2]).toEqual({ key: 'stallAngle', values: [60] });
+  // Never below the old range (or one floor).
+  const low = regenerateSweeps([{ key: 'floors', from: 1, to: 4, step: 1 }], { combo: { floors: 1 } });
+  expect(low[0]).toEqual({ key: 'floors', from: 1, to: 2, step: 1 });
 });

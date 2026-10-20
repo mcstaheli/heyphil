@@ -944,3 +944,25 @@
 }
 .siteplan-edge-front { border-color: #f97316; color: #fed7aa; }
 .siteplan-edge-rear { border-color: #38bdf8; color: #bae6fd; }
+
+/* Generator: asset types, goals, the options chart. */
+.siteplan-gen-types { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 8px 0; }
+.siteplan-gen-type { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border: 1px solid #e5e7eb; border-radius: 999px; cursor: pointer; }
+.siteplan-gen-type.on { border-color: #6366f1; background: #eef2ff; }
+.siteplan-gen-rule { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid #e5e7eb; border-radius: 8px; }
+.siteplan-gen-rule input { width: 90px; }
+.siteplan-gen-chart-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; margin-bottom: 4px; }
+.siteplan-gen-legend { display: inline-flex; flex-wrap: wrap; gap: 10px; color: #4b5563; }
+.siteplan-gen-legend i, .siteplan-gen-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+.siteplan-gen-miss { border: 1.25px solid #9ca3af; background: none; }
+.siteplan-gen-chart { position: relative; border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 6px 0 18px; background: #fff; }
+.siteplan-gen-chart svg { width: 100%; height: auto; display: block; }
+.siteplan-gen-grid { stroke: #eef0f3; stroke-width: 1; }
+.siteplan-gen-tick { font-size: 10px; fill: #6b7280; }
+.siteplan-gen-axis { font-size: 11px; fill: #374151; }
+.siteplan-gen-ylabel { position: absolute; left: 2px; top: 50%; transform: rotate(-90deg) translateX(50%); transform-origin: left top; font-size: 11px; color: #374151; white-space: nowrap; }
+.siteplan-gen-dot { cursor: pointer; }
+.siteplan-gen-tip { position: absolute; top: 8px; right: 10px; max-width: 60%; background: #111827; color: #f9fafb; font-size: 11px; padding: 6px 8px; border-radius: 6px; pointer-events: none; }
+.siteplan-gen-tip .siteplan-muted { color: #d1d5db; }
+.siteplan-gen-picked td { background: #fef9c3; }
+.siteplan-gen-actions { white-space: nowrap; }
