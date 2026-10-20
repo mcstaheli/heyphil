@@ -17,7 +17,6 @@ import {
   convexOverlap,
   makeProjection,
   openRing,
-  rectCorners,
   ringInsideShape,
   rotate,
   rotateRings,
@@ -27,7 +26,7 @@ import {
 import { combineProformas, proformaFor } from './proforma';
 import { routeAisles } from './routing';
 import { insetByEdges, setbackNear, siteEdges } from './envelope';
-import { FALLBACK, buildingProgram, largestRect, shapeKey, shapeMinimum, shapeWings } from './buildings';
+import { FALLBACK, buildingProgram, largestRect, placedPieces, placedWings, shapeKey, shapeMinimum, shapeWings } from './buildings';
 import {
   analyzeAisle,
   distanceToRings,
@@ -980,9 +979,10 @@ function rowGeometry(row, proj) {
   // that was set by hand.
   const adaKind = new Map((row.adaSlots || []).map(({ i, side, van }) => [`${i}:${side}`, van ? 'van' : 'ada']));
   const slots = [];
+  const islandSet = new Set(row.islands);
   for (const side of ['lower', 'upper']) {
     for (let i = 0; i < row.n; i++) {
-      if (row.islands.includes(i)) continue;
+      if (islandSet.has(i)) continue;
       const key = `${i}:${side}`;
       const ring = slot(i, side);
       const center = [ring.reduce((t, p) => t + p[0], 0) / 4, ring.reduce((t, p) => t + p[1], 0) / 4];
@@ -1009,6 +1009,7 @@ function rowGeometry(row, proj) {
     stallCount: 2 * row.n - 2 * row.islands.length - (row.removed ? row.removed.size : 0),
     stallAngle: mod.angle,
     angleDeg: Math.round(((row.angle * 180) / Math.PI) * 10) / 10,
+    angleExact: (row.angle * 180) / Math.PI,
     oneWay: !!row.dir,
   };
 }
@@ -1040,11 +1041,13 @@ export function hasSurfaceParking(type) {
   return type.mode === 'bars' || type.mode === 'industrial' || type.mode === 'parking' || type.mode === 'datacenter';
 }
 
-// A hand-placed building's corners in local feet.
+// A hand-placed building's pieces (one rectangle, or an L / U /
+// courtyard's wings), each as corners in local feet, grown by grow.
 function buildingFeet(b, proj, grow = 0) {
   const [cx, cy] = proj.toFeet(b.center);
-  return rectCorners(cx, cy, b.length + 2 * grow, b.depth + 2 * grow, (b.angle * Math.PI) / 180);
+  return placedPieces(b, cx, cy, (b.angle * Math.PI) / 180, grow);
 }
+const placedArea = (b) => placedWings(b).reduce((t, w) => t + (w.u1 - w.u0) * (w.v1 - w.v0), 0);
 
 function feetRingToGeo(ring, proj) {
   const pts = ring.map((p) => {
@@ -1059,10 +1062,10 @@ function feetRingToGeo(ring, proj) {
 // Parking is added by the caller.
 function solveManual(checkRings, s, type, proj, placed) {
   const floorsOf = (b) => Math.min(MAX_FLOORS, Math.max(1, Math.round(b.floors || s.floors || 1)));
-  const rects = placed.map((b) => ({ b, corners: buildingFeet(b, proj), floors: floorsOf(b) }));
-  const footprint = rects.reduce((sum, r) => sum + r.b.length * r.b.depth, 0);
+  const rects = placed.map((b) => ({ b, pieces: buildingFeet(b, proj), area: placedArea(b), floors: floorsOf(b) }));
+  const footprint = rects.reduce((sum, r) => sum + r.area, 0);
   const isIndustrial = type.mode === 'industrial';
-  const gsf = isIndustrial ? footprint : rects.reduce((sum, r) => sum + r.b.length * r.b.depth * r.floors, 0);
+  const gsf = isIndustrial ? footprint : rects.reduce((sum, r) => sum + r.area * r.floors, 0);
   const maxFloors = isIndustrial ? (rects.length ? 1 : 0) : Math.max(0, ...rects.map((r) => r.floors));
 
   let prog;
@@ -1083,12 +1086,12 @@ function solveManual(checkRings, s, type, proj, placed) {
   // Checked half a foot in from each edge, so a building converted from
   // the automatic layout (edges exactly on the setback, or touching a
   // neighbour, then rounded to whole feet) doesn't fail on rounding.
-  const checkCorners = placed.map((b) => buildingFeet(b, proj, -CHECK_TOLERANCE));
-  const outside = rects.filter((r, i) => !ringInsideShape(checkCorners[i], checkRings)).map((r) => r.b.id);
+  const checkPieces = placed.map((b) => buildingFeet(b, proj, -CHECK_TOLERANCE));
+  const outside = rects.filter((r, i) => checkPieces[i].some((piece) => !ringInsideShape(piece, checkRings))).map((r) => r.b.id);
   const overlaps = [];
   for (let i = 0; i < rects.length; i++) {
     for (let j = i + 1; j < rects.length; j++) {
-      if (convexOverlap(checkCorners[i], checkCorners[j])) overlaps.push([rects[i].b.id, rects[j].b.id]);
+      if (checkPieces[i].some((a) => checkPieces[j].some((b) => convexOverlap(a, b)))) overlaps.push([rects[i].b.id, rects[j].b.id]);
     }
   }
 
@@ -1097,8 +1100,9 @@ function solveManual(checkRings, s, type, proj, placed) {
     surplus: 0,
     angle: placed.length ? placed[0].angle * DEG : 0,
     shapes: { parking: [] },
-    buildingLatLngs: rects.map((r) => r.corners.map((p) => proj.toLatLng(p))),
-    buildingHeights: rects.map((r) => (isIndustrial ? s.clearHeight + INDUSTRIAL_ROOF_ALLOWANCE : podiumHeight + r.floors * s.floorToFloor)),
+    // One footprint per piece (a shaped building has several).
+    buildingLatLngs: rects.flatMap((r) => r.pieces.map((piece) => piece.map((p) => proj.toLatLng(p)))),
+    buildingHeights: rects.flatMap((r) => r.pieces.map(() => (isIndustrial ? s.clearHeight + INDUSTRIAL_ROOF_ALLOWANCE : podiumHeight + r.floors * s.floorToFloor))),
     metrics: {
       footprintSf: footprint,
       buildingCount: rects.length,
@@ -1503,7 +1507,7 @@ function solvePart(boundary, scheme, cutouts = []) {
 
   // ---- Parking areas drawn by hand ----
   const placed = supportsManualLayout(type) ? (scheme.edits?.buildings || []) : [];
-  const buildingCutouts = placed.map((b) => feetRingToGeo(buildingFeet(b, proj, BUILDING_CLEARANCE), proj));
+  const buildingCutouts = placed.flatMap((b) => buildingFeet(b, proj, BUILDING_CLEARANCE).map((piece) => feetRingToGeo(piece, proj)));
   const areas = surfaceParking ? (scheme.parkingAreas || []).filter((a) => a.polygon) : [];
   const areaRows = [];
   for (const area of areas) {
@@ -1662,7 +1666,7 @@ function solvePart(boundary, scheme, cutouts = []) {
       const rectFeet = (r, a) => [[r.u0, r.v0], [r.u1, r.v0], [r.u1, r.v1], [r.u0, r.v1]].map((p) => unrotate(p, a));
       const blocked = [
         ...(shapes.buildings || []).map((r) => rectFeet(grow(r), angle)),
-        ...placed.map((b) => buildingFeet(b, proj, keepOff)),
+        ...placed.flatMap((b) => buildingFeet(b, proj, keepOff)),
       ];
       const paths = routeAisles({
         region: regionRings,
@@ -1773,8 +1777,10 @@ function solvePart(boundary, scheme, cutouts = []) {
   }
   types.ev = Math.max(types.ev, marked.ev);
   types.compact = Math.max(types.compact, marked.compact);
-  types.van = Math.max(types.van, allRows.reduce((t, r) => t + r.adaSlots.filter((x) => x.van).length, 0));
-  types.standard = Math.max(0, types.total - types.ada - types.compact);
+  const vanByHand = allRows.reduce((t, r) => t + r.adaSlots.filter((x) => x.van).length, 0);
+  // What's required stays for the check; what's there counts in the types.
+  types.adaRequired = types.ada;
+  types.vanRequired = types.van;
   // Accessible stalls go in the rows nearest an entry, from the aisle end,
   // on stalls not marked by hand.
   if (types.ada > adaPlaced && allRows.length) {
@@ -1796,6 +1802,17 @@ function solvePart(boundary, scheme, cutouts = []) {
       }
     }
   }
+  // The van-accessible share: the first automatic ones, nearest the entry.
+  let vanLeft = types.vanRequired - vanByHand;
+  for (const r of allRows) {
+    for (const x of r.adaSlots) {
+      if (vanLeft <= 0) break;
+      if (!x.byHand && !x.van) { x.van = true; vanLeft--; }
+    }
+  }
+  types.ada = Math.max(types.adaRequired, adaPlaced);
+  types.van = Math.max(types.vanRequired, allRows.reduce((t, r) => t + r.adaSlots.filter((x) => x.van).length, 0));
+  types.standard = Math.max(0, types.total - types.ada - types.compact);
 
   const m = { ...EMPTY_METRICS, ...best.metrics };
 
@@ -1813,9 +1830,8 @@ function solvePart(boundary, scheme, cutouts = []) {
     } else if (placed.length) {
       for (const b of placed) {
         const floors = Math.min(MAX_FLOORS, Math.max(1, Math.round(b.floors || s.floors || 1)));
-        // The corridor runs down the longer side.
-        const wing = { u0: -b.length / 2, u1: b.length / 2, v0: -b.depth / 2, v1: b.depth / 2, axis: b.length >= b.depth ? 'u' : 'v' };
-        const prog = buildingProgram([wing], s, s.mix, floors, { walkUp });
+        // Its wings (the corridor runs down a rectangle's longer side).
+        const prog = buildingProgram(placedWings(b), s, s.mix, floors, { walkUp });
         if (!prog) { plans.failed = true; continue; }
         const [cx, cy] = proj.toFeet(b.center);
         const a = (b.angle * Math.PI) / 180;
@@ -1896,7 +1912,7 @@ function solvePart(boundary, scheme, cutouts = []) {
   if (!stepFailed && stepFloors > 0 && s.stepbackDepth > 0 && m.gsf > 0 && !['garage', 'lots', 'industrial'].includes(type.mode)) {
     const podium = type.id === 'mf-podium' ? s.podiumLevels * PODIUM_LEVEL_HEIGHT : 0;
     const footprints = placed.length
-      ? placed.map((b) => ({ geo: feetRingToGeo(buildingFeet(b, proj), proj), floors: Math.max(1, Math.round(b.floors || s.floors || 1)) }))
+      ? placed.flatMap((b) => buildingFeet(b, proj).map((piece) => ({ geo: feetRingToGeo(piece, proj), floors: Math.max(1, Math.round(b.floors || s.floors || 1)) })))
       : (shapes.buildings || []).map((r) => ({ geo: rectToGeo(r, angle, proj), floors: m.floors }));
     let lost = 0;
     footprints.forEach(({ geo, floors }, i) => {
@@ -1953,7 +1969,7 @@ function solvePart(boundary, scheme, cutouts = []) {
 
   // The orientation most of the stalls face, for "Fixed angle".
   const byAngle = new Map();
-  for (const r of allRows) byAngle.set(r.angle, (byAngle.get(r.angle) || 0) + r.perSide);
+  for (const r of allRows) byAngle.set(r.angle, (byAngle.get(r.angle) || 0) + r.perSide - r.removed.size / 2);
   const mainParkingAngle = [...byAngle.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? angle;
 
   const metrics = {
@@ -2032,7 +2048,7 @@ function solvePart(boundary, scheme, cutouts = []) {
       const dominant = rows.slice().sort((x, y) => y.perSide - x.perSide)[0];
       return {
         id: a.id,
-        stalls: rows.reduce((sum, r) => sum + 2 * r.perSide, 0),
+        stalls: rows.reduce((sum, r) => sum + 2 * r.perSide - (r.removed ? r.removed.size : 0), 0),
         orientationDeg: dominant ? Math.round(((dominant.angle * 180) / Math.PI) * 10) / 10 : null,
       };
     }),
@@ -2138,8 +2154,8 @@ function zoningChecks(s, totals, warnings, parkingParts) {
     } else if (withSurface.some((p) => p.aisleCount > 0)) {
       rows.push({ label: 'Drawn aisles', category: 'parking', limit: `Turns ≥ ${fmt(s.turnRadius, 0)} ft radius, no dead ends`, actual: 'Clear', status: 'pass' });
     }
-    const ada = withSurface.reduce((sum, p) => sum + p.types.ada, 0);
-    const van = withSurface.reduce((sum, p) => sum + p.types.van, 0);
+    const ada = withSurface.reduce((sum, p) => sum + (p.types.adaRequired ?? p.types.ada), 0);
+    const van = withSurface.reduce((sum, p) => sum + (p.types.vanRequired ?? p.types.van), 0);
     const placedAda = withSurface.reduce((sum, p) => sum + p.adaPlaced, 0);
     rows.push({
       label: 'Accessible stalls',

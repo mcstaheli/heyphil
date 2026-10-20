@@ -3,7 +3,9 @@ import L from 'leaflet';
 import '@geoman-io/leaflet-geoman-free';
 import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
-import { makeProjection, pointInShape, rectCorners } from './geometry';
+import { makeProjection } from './geometry';
+import { findStall, parseSelection, stallKey } from './SelectionBar';
+import { placedPieces } from './buildings';
 
 // The Site Planner's map: satellite imagery, the site boundary and any
 // spaces you draw (Geoman: draw, reshape, drag, rotate), hand-placed
@@ -133,11 +135,13 @@ export const UNIT_COLORS = ['#fbbf24', '#60a5fa', '#a78bfa', '#f472b6', '#34d399
 
 const geoToLatLngs = (geometry) => geometry.coordinates[0].slice(0, -1).map(([lng, lat]) => [lat, lng]);
 
-// A placed building's corners as [lat, lng], from its centre ([lng, lat]),
-// length, depth (ft) and angle (degrees).
+// A placed building's outline as [lat, lng], from its centre ([lng, lat]),
+// length, depth (ft), angle (degrees) and shape: one ring for a
+// rectangle, a multi-polygon of its wings for an L, U or courtyard.
 function buildingLatLngs(b) {
   const proj = makeProjection([b.center]);
-  return rectCorners(0, 0, b.length, b.depth, (b.angle * Math.PI) / 180).map((p) => proj.toLatLng(p));
+  const pieces = placedPieces(b, 0, 0, (b.angle * Math.PI) / 180).map((ring) => ring.map((p) => proj.toLatLng(p)));
+  return pieces.length === 1 ? pieces[0] : pieces.map((ring) => [ring]);
 }
 
 // Where a building's handles sit, as [lat, lng].
@@ -641,9 +645,8 @@ function SitePlanMap({
               L.DomEvent.stopPropagation(e);
               if (pickingRef.current) return;
               // On a stall: that stall; on the aisle: the bay.
-              const ll = [e.latlng.lat, e.latlng.lng];
-              const hit = (p.slots || []).find((x) => pointInShape([x.ring], ll));
-              if (hit) cb.current.onSelectGenerated?.('stall', `${hit.center[0]},${hit.center[1]}`);
+              const hit = findStall([p], [e.latlng.lat, e.latlng.lng]);
+              if (hit) cb.current.onSelectGenerated?.('stall', parseSelection(stallKey(hit.slot)).id);
               else cb.current.onSelectGenerated?.('bay', i);
             })
             .addTo(group);
@@ -658,8 +661,8 @@ function SitePlanMap({
         (p.compact || []).forEach((r) => L.polygon(r, STYLES.compact).addTo(group));
         if (g === layout && selected.kind === 'stall') {
           const at = selected.point;
-          const hit = (p.slots || []).find((x) => pointInShape([x.ring], at));
-          if (hit) L.polygon(hit.ring, STYLES.stallSelected).addTo(group);
+          const hit = findStall([p], at);
+          if (hit) L.polygon(hit.slot.ring, STYLES.stallSelected).addTo(group);
         }
         if (p.flow) {
           L.polyline(p.flow.line, STYLES.flow).addTo(group);

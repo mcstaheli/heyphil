@@ -55,6 +55,10 @@ function tidyBuilding(b) {
     angle: Math.round((((b.angle % 360) + 540) % 360 - 180) * 10) / 10,
   };
   if (b.floors) out.floors = b.floors;
+  if (b.shape && b.shape !== 'rect') {
+    out.shape = b.shape;
+    out.wing = Math.min(500, Math.max(10, Math.round(b.wing || 65)));
+  }
   return out;
 }
 
@@ -661,9 +665,10 @@ function SitePlanEditor() {
 
   // Takes over the generated buildings. pick: the one to select; moveTo:
   // where it was dragged to ([lng, lat] center).
-  const startManual = (pick = 0, moveTo = null) => {
+  // patch: a change to that one (its size, angle or floors).
+  const startManual = (pick = 0, moveTo = null, patch = null) => {
     const rects = activeResult?.buildingRects || [];
-    const buildings = rects.map((r, i) => ({ id: newId(), ...r, ...(i === pick && moveTo ? { center: moveTo } : {}) }));
+    const buildings = rects.map((r, i) => ({ id: newId(), ...r, ...(i === pick && moveTo ? { center: moveTo } : {}), ...(i === pick && patch ? patch : {}) }));
     if (!buildings.length && boundary) {
       const s = effectiveSettings(active);
       buildings.push({ id: newId(), center: ringCentroid(boundary), length: 200, depth: s.buildingDepth || 65, angle: activeResult?.metrics?.orientationDeg || 0 });
@@ -1355,7 +1360,7 @@ function SitePlanEditor() {
 
   // ---- The selection bar ----
   const generatedBuildings = activeType.mode !== 'lots' && !placed ? (activeResult?.geometry?.buildings || []) : [];
-  const bays = activeResult?.geometry?.parking || [];
+  const bays = hasSurfaceParking(activeType) ? (activeResult?.geometry?.parking || []) : [];
   const canTakeOver = supportsManualLayout(activeType) && !shaped;
   const selectionItems = [
     ...(placed || []).map((b, i) => ({ key: selectionKey('building', b.id), label: `Building ${i + 1}`, group: 'Buildings' })),
@@ -1376,7 +1381,11 @@ function SitePlanEditor() {
     const patch = withOverride(activeType, currentScheme().overrides || {}, 'frontEdge', index);
     updateScheme(active.id, { overrides: cur.frontEdge2 === index ? withOverride(activeType, patch, 'frontEdge2', undefined) : patch });
   };
-  const onSelectGenerated = (kind, i) => setSelection(selectionKey(kind, i));
+  // Garage decks aren't edited stall by stall.
+  const onSelectGenerated = (kind, i) => {
+    if ((kind === 'stall' || kind === 'bay') && !hasSurfaceParking(activeType)) return;
+    setSelection(selectionKey(kind, i));
+  };
   // Dragging a generated building takes the layout over by hand, with
   // that building where it was dropped.
   const onGeneratedDrag = (i, center) => startManual(i, center);
@@ -1388,17 +1397,37 @@ function SitePlanEditor() {
   const setStallKind = (slot, kind) => {
     const keep = (currentScheme().stallEdits || []).filter((e) => !pointInShape([slot.ring], [e.point[1], e.point[0]]));
     const next = kind ? [...keep, { point: [slot.center[1], slot.center[0]], kind }] : keep;
-    updateScheme(active.id, { stallEdits: next.length ? next.slice(-500) : undefined });
+    if (next.length > 500) {
+      window.alert('A scheme can hold 500 stall changes - put some back to automatic first.');
+      return;
+    }
+    updateScheme(active.id, { stallEdits: next.length ? next : undefined });
   };
   // A bay taken over by hand: a parking area on its outline, at its angle.
   const editBay = (bay) => {
-    const ring = bay.outline.map(([lat, lng]) => [lng, lat]);
     const existing = currentScheme().parkingAreas || [];
+    // A bay already inside a parking area is that area's to change.
+    const mid = [bay.outline.reduce((t, p) => t + p[0], 0) / bay.outline.length, bay.outline.reduce((t, p) => t + p[1], 0) / bay.outline.length];
+    const owner = existing.find((a) => pointInShape(a.polygon.coordinates.map((r) => r.map(([lng, lat]) => [lat, lng])), mid));
+    if (owner) {
+      setSelectedAreaId(owner.id);
+      return;
+    }
+    // A little room all round, so the bay fits again when re-solved.
+    const proj = makeProjection(bay.outline.map(([lat, lng]) => [lng, lat]));
+    const feet = bay.outline.map(([lat, lng]) => proj.toFeet([lng, lat]));
+    const cx = feet.reduce((t, p) => t + p[0], 0) / feet.length;
+    const cy = feet.reduce((t, p) => t + p[1], 0) / feet.length;
+    const ring = feet.map(([x, y]) => {
+      const d = Math.hypot(x - cx, y - cy) || 1;
+      const [lat, lng] = proj.toLatLng([x + ((x - cx) / d) * 1.5, y + ((y - cy) / d) * 1.5]);
+      return [lng, lat];
+    });
     if (existing.length >= 30) {
       window.alert('A scheme can hold 30 parking areas - remove one first.');
       return;
     }
-    const area = { id: newId(), polygon: { type: 'Polygon', coordinates: [[...ring, ring[0]]] }, angle: bay.angleDeg };
+    const area = { id: newId(), polygon: { type: 'Polygon', coordinates: [[...ring, ring[0]]] }, angle: Math.round(bay.angleExact * 1000) / 1000 };
     if (bay.stallAngle !== effectiveSettings(active).stallAngle) area.stallAngle = bay.stallAngle;
     updateScheme(active.id, { parkingAreas: [...existing, area] });
     setSelectedAreaId(area.id);
@@ -1421,6 +1450,7 @@ function SitePlanEditor() {
           label={buildingLabel(i, b)}
           type={activeType}
           defaultFloors={settings.floors}
+          wingDefault={settings.buildingDepth || 65}
           onUpdate={updateBuilding}
           onDuplicate={duplicateBuilding}
           onRemove={removeBuilding}
@@ -1430,7 +1460,15 @@ function SitePlanEditor() {
     }
     if (s.kind === 'auto') {
       const i = Number(s.id);
-      return <GeneratedBuilding label={buildingLabel(i)} rect={activeResult?.buildingRects?.[i]} canEdit={canTakeOver} onEdit={() => startManual(i)} />;
+      return (
+        <GeneratedBuilding
+          label={buildingLabel(i)}
+          rect={activeResult?.buildingRects?.[i]}
+          floors={m?.floors}
+          canEdit={canTakeOver}
+          onEdit={(patch) => startManual(i, null, patch)}
+        />
+      );
     }
     if (s.kind === 'bay') {
       const i = Number(s.id);

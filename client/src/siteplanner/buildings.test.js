@@ -1,5 +1,5 @@
 import { DEFAULT_MIX, bedsBaths, effectiveSettings } from './assetTypes';
-import { buildingProgram, largestRect, layoutBuilding, shapeWings } from './buildings';
+import { buildingProgram, largestRect, layoutBuilding, placedWings, shapeWings } from './buildings';
 import { solveScheme } from './solver';
 
 function rectSite(width, depth, lat = 40.76, lng = -111.89) {
@@ -110,4 +110,24 @@ test('automatic bars laid out unit by unit still meet their parking', () => {
   const r = solveScheme(rectSite(600, 400), scheme('mf-garden', { parkingRatio: 1.5 }));
   expect(r.metrics.unitLayout).toBeTruthy();
   expect(r.metrics.parkingProvided).toBeGreaterThanOrEqual(r.metrics.parkingRequired);
+});
+
+test('a hand-placed courtyard building counts its wings, not its box', () => {
+  const site = rectSite(600, 600);
+  const [lng0, lat0] = site.coordinates[0][0];
+  const center = [lng0 + 300 / (364000 * Math.cos((40.76 * Math.PI) / 180)), lat0 + 300 / 364000];
+  const box = { id: 'b', center, length: 260, depth: 220, angle: 0 };
+  const rect = solveScheme(site, { ...scheme('mf-podium'), edits: { buildings: [box] } });
+  const court = solveScheme(site, { ...scheme('mf-podium'), edits: { buildings: [{ ...box, shape: 'courtyard', wing: 65 }] } });
+  const wings = 260 * 220 - (260 - 130) * (220 - 130);
+  expect(court.metrics.footprintSf).toBeCloseTo(wings, 0);
+  expect(rect.metrics.footprintSf).toBeCloseTo(260 * 220, 0);
+  expect(court.geometry.buildings).toHaveLength(4);
+  expect(court.metrics.unitLayout.stairs).toBeGreaterThanOrEqual(4);
+  expect(court.warnings.outside).toEqual([]);
+});
+
+test('a shape too small for its wings stays a rectangle', () => {
+  expect(placedWings({ length: 100, depth: 80, shape: 'courtyard', wing: 65 })).toHaveLength(1);
+  expect(placedWings({ length: 300, depth: 200, shape: 'L', wing: 60 })).toHaveLength(2);
 });

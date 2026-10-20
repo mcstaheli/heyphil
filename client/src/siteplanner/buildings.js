@@ -279,3 +279,28 @@ export function buildingProgram(wings, s, mix, floors, { walkUp = false } = {}) 
 }
 
 export { FALLBACK };
+
+// Shapes for a building placed by hand: its length x depth box, made of
+// wings b.wing deep. A shape too small for its wings stays a rectangle.
+export const PLACED_SHAPES = [['rect', 'Rectangle'], ['L', 'L-shape'], ['U', 'U-shape'], ['courtyard', 'Courtyard']];
+const MIN_PLACED_COURT = 10;
+
+// The wings of a placed building in its own frame (centred, x along its
+// length, y along its depth).
+export function placedWings(b) {
+  const box = { u0: -b.length / 2, u1: b.length / 2, v0: -b.depth / 2, v1: b.depth / 2 };
+  const plain = [{ ...box, axis: b.length >= b.depth ? 'u' : 'v' }];
+  if (!b.shape || b.shape === 'rect' || !(b.wing > 0)) return plain;
+  const [minW, minH] = shapeMinimum(b.shape, b.wing, MIN_PLACED_COURT);
+  if (b.length < minW || b.depth < minH) return plain;
+  return shapeWings(b.shape, box, b.wing).wings;
+}
+
+// Its wings' corners in the plan's feet, around centre (cx, cy) at angle
+// (radians), each grown by grow.
+export function placedPieces(b, cx, cy, angle, grow = 0) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return placedWings(b).map((w) => [[w.u0 - grow, w.v0 - grow], [w.u1 + grow, w.v0 - grow], [w.u1 + grow, w.v1 + grow], [w.u0 - grow, w.v1 + grow]]
+    .map(([x, y]) => [cx + x * c - y * s, cy + x * s + y * c]));
+}

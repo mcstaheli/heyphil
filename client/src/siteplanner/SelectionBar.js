@@ -2,6 +2,7 @@ import React from 'react';
 import { ASSET_TYPES, COMMON_FIELDS, getAssetType } from './assetTypes';
 import { pointInShape } from './geometry';
 import { aisleWidthOf } from './solver';
+import { PLACED_SHAPES, placedWings } from './buildings';
 import { NumberInput, OrientationField, SchemeSettings, fmtDec, fmtInt } from './settingsFields';
 import { yieldOf } from './results';
 
@@ -66,12 +67,28 @@ const Field = ({ label, unit, children }) => (
 );
 
 // A building placed by hand.
-export function BuildingEditor({ building: b, label, type, defaultFloors, onUpdate, onDuplicate, onRemove, problem }) {
+export function BuildingEditor({ building: b, label, type, defaultFloors, wingDefault = 65, onUpdate, onDuplicate, onRemove, problem }) {
   return (
     <>
       <div className="siteplan-selection-title">{label}</div>
       {problem && <p className="siteplan-neg siteplan-small">⚠ {problem}</p>}
       <div className="siteplan-selection-grid">
+        {type.mode !== 'industrial' && (
+          <Field label="Shape">
+            <select
+              value={b.shape || 'rect'}
+              onChange={(e) => onUpdate(b.id, e.target.value === 'rect' ? { shape: undefined, wing: undefined } : { shape: e.target.value, wing: b.wing || wingDefault })}
+            >
+              {PLACED_SHAPES.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+            </select>
+          </Field>
+        )}
+        {b.shape && b.shape !== 'rect' && (
+          <Field label="Wing depth" unit="ft"><NumberInput value={b.wing} min={10} max={500} onChange={(n) => onUpdate(b.id, { wing: n })} /></Field>
+        )}
+        {b.shape && b.shape !== 'rect' && placedWings(b).length === 1 && (
+          <p className="siteplan-warn siteplan-small">Too small for that shape at this wing depth - drawn as a rectangle. Make it bigger or the wings shallower.</p>
+        )}
         <Field label="Length" unit="ft"><NumberInput value={b.length} min={1} max={5000} onChange={(n) => onUpdate(b.id, { length: n })} /></Field>
         <Field label="Depth" unit="ft"><NumberInput value={b.depth} min={1} max={5000} onChange={(n) => onUpdate(b.id, { depth: n })} /></Field>
         <Field label="Angle" unit="°"><NumberInput value={b.angle} min={-360} max={360} step={0.5} onChange={(n) => onUpdate(b.id, { angle: n })} /></Field>
@@ -100,18 +117,27 @@ export function BuildingEditor({ building: b, label, type, defaultFloors, onUpda
   );
 }
 
-// A building the solver generated: what it is, and a way to take it over.
-export function GeneratedBuilding({ label, rect, onEdit, canEdit }) {
+// A building the solver generated: what it is, and its size to change
+// right here - which takes the layout over by hand with that change.
+export function GeneratedBuilding({ label, rect, floors, onEdit, canEdit }) {
   return (
     <>
       <div className="siteplan-selection-title">{label}</div>
-      {rect && (
+      {rect && !canEdit && (
         <p className="siteplan-small">{fmtInt(rect.length)} × {fmtInt(rect.depth)} ft · {fmtInt(rect.length * rect.depth)} sf footprint · {fmtDec(rect.angle, 1)}°</p>
       )}
       {canEdit ? (
         <>
-          <button type="button" className="siteplan-small-btn" onClick={onEdit}>✋ Move or resize</button>
-          <p className="siteplan-muted siteplan-small">Or just drag it on the map. Either one switches the layout to placed by hand; the other buildings stay where they are.</p>
+          {rect && (
+            <div className="siteplan-selection-grid">
+              <Field label="Length" unit="ft"><NumberInput value={Math.round(rect.length)} min={1} max={5000} onChange={(n) => onEdit({ length: n })} /></Field>
+              <Field label="Depth" unit="ft"><NumberInput value={Math.round(rect.depth)} min={1} max={5000} onChange={(n) => onEdit({ depth: n })} /></Field>
+              <Field label="Angle" unit="°"><NumberInput value={Math.round(rect.angle * 10) / 10} min={-360} max={360} step={0.5} onChange={(n) => onEdit({ angle: n })} /></Field>
+              {floors > 0 && <Field label="Floors"><NumberInput value={floors} min={1} max={100} onChange={(n) => onEdit({ floors: Math.round(n) })} /></Field>}
+            </div>
+          )}
+          <button type="button" className="siteplan-small-btn" onClick={() => onEdit(null)}>✋ Move, resize or reshape</button>
+          <p className="siteplan-muted siteplan-small">Changing a number, dragging it on the map or ✋ switches the layout to placed by hand (the other buildings stay put); then pick an L, U or courtyard shape.</p>
         </>
       ) : (
         <p className="siteplan-muted siteplan-small">Shaped buildings (L, U, courtyard, wrap) are laid out automatically. Set the shape to Bars to place buildings by hand.</p>

@@ -166,6 +166,13 @@ function validateEdits(value) {
       }
     }
     const out = { id: b.id, center: [c[0], c[1]], length: b.length, depth: b.depth, angle: b.angle };
+    // A shape other than a rectangle, and its wings' depth (ft).
+    if (b.shape !== undefined && b.shape !== null && b.shape !== 'rect') {
+      if (!['L', 'U', 'courtyard'].includes(b.shape)) throw new SitePlanValidationError('A building\'s shape must be rect, L, U or courtyard.');
+      if (!isFiniteNumber(b.wing) || b.wing < 10 || b.wing > 500) throw new SitePlanValidationError('A shaped building\'s wing depth must be 10 to 500 ft.');
+      out.shape = b.shape;
+      out.wing = b.wing;
+    }
     if (b.floors !== undefined && b.floors !== null) {
       if (!Number.isInteger(b.floors) || b.floors < 1 || b.floors > 100) {
         throw new SitePlanValidationError('A building\'s floors must be a whole number from 1 to 100.');

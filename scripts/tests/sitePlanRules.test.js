@@ -162,3 +162,13 @@ test('stall edits keep a point and a known kind', () => {
   assert.throws(() => one({ stallEdits: [{ point: [-111.9, 40.7], kind: 'golf' }] }), SitePlanValidationError);
   assert.throws(() => one({ stallEdits: [{ point: [500, 40.7], kind: 'ev' }] }), SitePlanValidationError);
 });
+
+test('a placed building can be L, U or courtyard shaped, with a wing depth', () => {
+  const b = { id: 'b', center: [-111.9, 40.7], length: 200, depth: 150, angle: 0 };
+  const out = one({ edits: { buildings: [{ ...b, shape: 'U', wing: 60 }] } });
+  assert.equal(out.edits.buildings[0].shape, 'U');
+  assert.equal(out.edits.buildings[0].wing, 60);
+  assert.equal(one({ edits: { buildings: [{ ...b, shape: 'rect' }] } }).edits.buildings[0].shape, undefined);
+  assert.throws(() => one({ edits: { buildings: [{ ...b, shape: 'star', wing: 60 }] } }), SitePlanValidationError);
+  assert.throws(() => one({ edits: { buildings: [{ ...b, shape: 'L' }] } }), SitePlanValidationError);
+});

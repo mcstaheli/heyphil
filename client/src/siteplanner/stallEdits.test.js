@@ -36,3 +36,31 @@ test('accessible stalls marked by hand count toward the requirement', () => {
   expect(r.parking.adaPlaced).toBe(required);
   expect(r.geometry.parking.reduce((t, b) => t + b.ada.length, 0)).toBe(required);
 });
+
+test('more accessible stalls than required count as accessible, and vans are placed', () => {
+  const before = lot();
+  expect(before.geometry.parking.reduce((t, b) => t + b.van.length, 0)).toBe(before.totals.stallTypes.van);
+  const slots = before.geometry.parking.flatMap((b) => b.slots).filter((x) => x.kind === 'standard').slice(0, before.totals.stallTypes.ada + 3);
+  const r = lot(slots.map((x) => ({ point: [x.center[1], x.center[0]], kind: 'ada' })));
+  const t = r.totals.stallTypes;
+  expect(t.ada).toBe(slots.length);
+  expect(t.standard + t.ada + t.compact).toBe(t.total);
+  expect(r.checks.find((c) => c.label === 'Accessible stalls').limit).toMatch(new RegExp(`^${before.totals.stallTypes.ada} required`));
+});
+
+test('a bay taken over as a parking area keeps its stalls', () => {
+  const site = rectSite(400, 300);
+  const before = lot();
+  const bay = before.geometry.parking[2];
+  const ring = bay.outline.map(([lat, lng]) => [lng, lat]);
+  // Grown 1.5 ft as the editor does.
+  const cx = ring.reduce((t, p) => t + p[0], 0) / 4;
+  const cy = ring.reduce((t, p) => t + p[1], 0) / 4;
+  const grown = ring.map(([x, y]) => [x + Math.sign(x - cx) * 1.5 / 280000, y + Math.sign(y - cy) * 1.5 / 364000]);
+  const r = solveScheme(site, {
+    id: 'a', name: 'A', assetType: 'parking', overrides: {},
+    parkingAreas: [{ id: 'p', polygon: { type: 'Polygon', coordinates: [[...grown, grown[0]]] }, angle: Math.round(bay.angleExact * 1000) / 1000 }],
+  });
+  const area = r.parking.areas.find((a) => a.id === 'p');
+  expect(area.stalls).toBeGreaterThanOrEqual(bay.stallCount - 2);
+});
