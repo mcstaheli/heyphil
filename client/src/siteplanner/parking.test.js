@@ -269,3 +269,83 @@ test('an aisle ending at the setback line is not a dead end', () => {
   }));
   expect(r.parking.aisleIssues.filter((x) => x.kind === 'dead')).toEqual([]);
 });
+
+// ---- Auto-routed aisles and one-way flow -------------------------------
+
+import { routeAisles, simplifyPath } from './routing';
+import { bayDirection } from './parking';
+
+test('routing finds a path around a building to the network', () => {
+  const region = [[[0, 0], [400, 0], [400, 300], [0, 300]]];
+  const wall = [[150, 0], [250, 0], [250, 250], [150, 250]]; // open only along the top
+  const paths = routeAisles({ region, blocked: [wall], network: [[[390, 0], [400, 0], [400, 300], [390, 300]]], sources: [[50, 50]], cell: 10 });
+  expect(paths).toHaveLength(1);
+  const path = paths[0];
+  expect(path[0]).toEqual([50, 50]);
+  // It goes over the top of the wall, not through it.
+  expect(Math.max(...path.map((p) => p[1]))).toBeGreaterThan(250);
+  expect(simplifyPath([[0, 0], [10, 0.2], [20, 0], [30, 0.1]], 1)).toEqual([[0, 0], [30, 0.1]]);
+});
+
+test('one-way bays alternate direction', () => {
+  const mod = { oneWay: true, depth: 50 };
+  expect(bayDirection(0, mod)).toBe(1);
+  expect(bayDirection(50, mod)).toBe(-1);
+  expect(bayDirection(100, mod)).toBe(1);
+  expect(bayDirection(0, { oneWay: false, depth: 60 })).toBe(0);
+});
+
+test('with no drive at all, aisles are routed so every bay connects', () => {
+  const site = rectSite(600, 400);
+  const r = solveScheme(site, scheme('parking', { perimeterDrive: 0 }));
+  expect(r.parking.routedAisles.length).toBeGreaterThan(0);
+  expect(r.parking.hasDrive).toBe(true);
+  expect(r.parking.disconnected).toBe(0);
+  expect(r.checks.find((c) => c.label === 'Circulation').status).toBe('pass');
+  // Turning routing off flags the bays instead (none checked without a drive).
+  const off = solveScheme(site, scheme('parking', { perimeterDrive: 0, autoAisles: 0 }));
+  expect(off.parking.routedAisles).toEqual([]);
+});
+
+test('angled bays flow one way and the plan reports it', () => {
+  const r = solveScheme(rectSite(600, 400), scheme('parking', { stallAngle: 60 }));
+  const flows = r.geometry.parking.filter((p) => p.flow);
+  expect(flows.length).toBe(r.geometry.parking.length);
+  expect(r.checks.find((c) => c.label === 'One-way flow').status).toBe('pass');
+});
+
+test('one-way drawn aisles: head-on meetings and one-direction entries are flagged', () => {
+  const site = rectSite(600, 400);
+  const [[lng, lat]] = site.coordinates[0];
+  const at = (x, y) => [lng + x / (364000 * Math.cos((lat * Math.PI) / 180)), lat + y / 364000];
+  const line = (pts) => ({ type: 'LineString', coordinates: pts.map(([x, y]) => at(x, y)) });
+  // Two one-way aisles meeting nose to nose in the middle.
+  const r = solveScheme(site, scheme('parking', { perimeterDrive: 0, autoAisles: 0 }, {
+    driveAisles: [
+      { id: 'a', line: line([[100, 200], [300, 200]]), twoWay: false },
+      { id: 'b', line: line([[500, 200], [300, 200]]), twoWay: false },
+    ],
+  }));
+  expect(r.parking.flowIssues.some((x) => x.kind === 'headon')).toBe(true);
+  expect(r.checks.find((c) => c.label === 'One-way flow').status).toBe('fail');
+  // A single one-way aisle out of the only entry: no way in.
+  const [elng, elat] = at(300, 0);
+  const out = solveScheme(site, scheme('parking', { perimeterDrive: 0, autoAisles: 0 }, {
+    entries: [{ id: 'e', point: [elng, elat] }],
+    driveAisles: [{ id: 'a', line: line([[300, 380], [300, 0]]), twoWay: false }],
+  }));
+  expect(out.parking.flowIssues.some((x) => x.kind === 'entry')).toBe(true);
+});
+
+test('review fixes: fromBay aisles have no dead start; routes not drawn inside spaces', () => {
+  const box = [[[-100, -100], [500, -100], [500, 500], [-100, 500]]];
+  const issues = analyzeAisle([[100, 100], [300, 100], [300, 520]], { width: 24, twoWay: true, turnRadius: 25, connectsTo: box, fromBay: true });
+  expect(issues.filter((x) => x.kind === 'dead')).toHaveLength(0);
+  const site = rectSite(800, 400);
+  const r = solveScheme(site, {
+    ...scheme('mf-garden'),
+    spaces: [{ id: 'p', name: 'Lot', kind: 'asset', assetType: 'parking', overrides: { setback: 0 }, polygon: rectIn(site, 560, 0, 240, 400) }],
+  });
+  const spaceResult = r.spaces[0].result;
+  expect(spaceResult.parking.routedAisles).toEqual([]);
+});

@@ -38,6 +38,29 @@ const OVERLAYS = [
     minZoom: 11,
     attribution: 'Wetlands: U.S. Fish &amp; Wildlife Service NWI',
   },
+  {
+    label: 'Contours, 50 ft and finer (zoom in)',
+    url: 'https://carto.nationalmap.gov/arcgis/rest/services/contours/MapServer',
+    layerId: 19,
+    minZoom: 13,
+    opacity: 0.9,
+    attribution: 'Contours: USGS The National Map',
+  },
+  {
+    label: 'Shaded relief',
+    tiles: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSShadedReliefOnly/MapServer/tile/{z}/{y}/{x}',
+    maxNativeZoom: 16,
+    opacity: 0.45,
+    attribution: 'Relief: USGS The National Map',
+  },
+  {
+    label: 'Soils (zoom in)',
+    wms: 'https://SDMDataAccess.sc.egov.usda.gov/Spatial/SDM.wms',
+    wmsLayers: 'mapunitpoly',
+    minZoom: 14,
+    opacity: 0.6,
+    attribution: 'Soils: USDA NRCS Soil Survey (SSURGO)',
+  },
 ];
 
 const ArcGISExportLayer = L.TileLayer.extend({
@@ -83,6 +106,8 @@ const STYLES = {
   ramp: { color: '#c2410c', weight: 1, fillColor: '#fb923c', fillOpacity: 0.75, pmIgnore: true },
   core: { color: '#111827', weight: 1, fillColor: '#374151', fillOpacity: 0.9, pmIgnore: true, interactive: false },
   arrow: { color: '#f97316', weight: 3, opacity: 0.9, pmIgnore: true, interactive: false },
+  flow: { color: '#facc15', weight: 1.5, opacity: 0.9, pmIgnore: true, interactive: false },
+  routed: { color: '#22d3ee', weight: 2, dashArray: '6 6', opacity: 0.9, pmIgnore: true, interactive: false },
 };
 
 const geoToLatLngs = (geometry) => geometry.coordinates[0].slice(0, -1).map(([lng, lat]) => [lat, lng]);
@@ -202,10 +227,18 @@ function SitePlanMap({
     const satellite = L.tileLayer(SATELLITE.url, { attribution: SATELLITE.attribution, maxNativeZoom: 19, maxZoom: 21 });
     const streets = L.tileLayer(STREETS.url, { attribution: STREETS.attribution, maxNativeZoom: 19, maxZoom: 21 });
     satellite.addTo(map);
-    const overlays = Object.fromEntries(OVERLAYS.map((o) => [
-      o.label,
-      new ArcGISExportLayer(o.url, { layerId: o.layerId, minZoom: o.minZoom, maxZoom: 21, opacity: 0.55, attribution: o.attribution }),
-    ]));
+    const overlays = Object.fromEntries(OVERLAYS.map((o) => {
+      const opacity = o.opacity ?? 0.55;
+      let layer;
+      if (o.tiles) {
+        layer = L.tileLayer(o.tiles, { maxNativeZoom: o.maxNativeZoom, maxZoom: 21, opacity, attribution: o.attribution });
+      } else if (o.wms) {
+        layer = L.tileLayer.wms(o.wms, { layers: o.wmsLayers, format: 'image/png', transparent: true, minZoom: o.minZoom, maxZoom: 21, opacity, attribution: o.attribution });
+      } else {
+        layer = new ArcGISExportLayer(o.url, { layerId: o.layerId, minZoom: o.minZoom, maxZoom: 21, opacity, attribution: o.attribution });
+      }
+      return [o.label, layer];
+    }));
     L.control.layers({ Satellite: satellite, Streets: streets }, overlays, { position: 'topright' }).addTo(map);
     L.control.scale({ imperial: true, metric: false }).addTo(map);
     layoutGroupRef.current = L.layerGroup().addTo(map);
@@ -499,7 +532,13 @@ function SitePlanMap({
         p.stalls.forEach((line) => L.polyline(line, STYLES.stall).addTo(group));
         (p.islands || []).forEach((r) => L.polygon(r, STYLES.island).addTo(group));
         (p.ada || []).forEach((r) => L.polygon(r, STYLES.ada).addTo(group));
+        if (p.flow) {
+          L.polyline(p.flow.line, STYLES.flow).addTo(group);
+          L.polyline(p.flow.head, STYLES.flow).addTo(group);
+        }
       });
+      (g.aisleArrows || []).forEach((chevron) => L.polyline(chevron, { ...STYLES.flow, weight: 3 }).addTo(group));
+      (g.routedAisles || []).forEach((line) => L.polyline(line, STYLES.routed).bindTooltip('Aisle routed automatically', { sticky: true }).addTo(group));
       if (g.garage) {
         g.garage.arrows.forEach((line) => {
           // The dot marks the uphill end.

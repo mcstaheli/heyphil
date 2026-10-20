@@ -24,6 +24,7 @@ import {
   unrotate,
 } from './geometry';
 import { combineProformas, proformaFor } from './proforma';
+import { routeAisles } from './routing';
 import {
   analyzeAisle,
   distanceToRings,
@@ -32,6 +33,8 @@ import {
   layBay,
   netStalls,
   parkingModule,
+  rowEndPoints,
+  rowEnds,
   rowReachesDrive,
   sharedRequirement,
   stallTypes,
@@ -51,6 +54,7 @@ const INDUSTRIAL_ROOF_ALLOWANCE = 8; // clear height to roof
 const INDUSTRIAL_DEPTH_STEP = 20;
 const TRAILER_WIDTH = 12;
 const ONE_WAY_AISLE_DEFAULT = 16;
+const MAX_ROUTED_AISLES = 60;
 
 // A drawn aisle's width: its own, else the scheme's two-way aisle, else
 // a one-way default.
@@ -108,6 +112,7 @@ function sanitize(s) {
     aisle60: pos(s.aisle60, 8),
     aisle45: pos(s.aisle45, 8),
     perimeterDrive: s.perimeterDrive ? 1 : 0,
+    autoAisles: s.autoAisles ? 1 : 0,
     islandEvery: Math.max(0, Math.round(s.islandEvery || 0)),
     endIslands: s.endIslands ? 1 : 0,
     compactPct: Math.min(100, pos(s.compactPct, 0)),
@@ -616,8 +621,11 @@ function rectToGeo(r, angle, proj) {
 function rowGeometry(row, proj) {
   const { mod } = row;
   const toLL = (p) => proj.toLatLng(unrotate(p, row.angle));
-  const lean = mod.angle === 90 ? 0 : mod.proj / Math.tan(mod.angle * DEG);
-  const start = row.u0 + mod.endLoss;
+  // Angled stalls lean back against the flow; a row flowing toward -u
+  // leans the other way, with the room for it at the other end.
+  const dir = row.dir || 1;
+  const lean = mod.angle === 90 ? 0 : (mod.proj / Math.tan(mod.angle * DEG)) * dir;
+  const start = dir > 0 ? row.u0 + mod.endLoss : row.u0;
   const stalls = [];
   for (let k = 0; k <= row.n; k++) {
     const u = start + k * mod.pitch;
@@ -629,12 +637,24 @@ function rowGeometry(row, proj) {
     const [edge, outer] = side === 'lower' ? [row.v0 + mod.proj, row.v0] : [row.v1 - mod.proj, row.v1];
     return [[u, edge], [u + mod.pitch, edge], [u + mod.pitch - lean, outer], [u - lean, outer]].map(toLL);
   };
+  // One-way rows get an arrow down the aisle, head at the way out.
+  let flow = null;
+  if (row.dir) {
+    const vmid = row.v0 + mod.proj + mod.aisle / 2;
+    const [from, to] = row.dir > 0 ? [row.u0 + 6, row.u1 - 6] : [row.u1 - 6, row.u0 + 6];
+    const back = to - row.dir * 7;
+    flow = {
+      line: [[from, vmid], [to, vmid]].map(toLL),
+      head: [[back, vmid - 4], [to, vmid], [back, vmid + 4]].map(toLL),
+    };
+  }
   return {
     outline: [[row.u0, row.v0], [row.u1, row.v0], [row.u1, row.v1], [row.u0, row.v1]].map(toLL),
     stalls,
     islands: row.islands.flatMap((i) => [slot(i, 'lower'), slot(i, 'upper')]),
     ada: (row.adaSlots || []).map(({ i, side }) => slot(i, side)),
     connected: row.connected !== false,
+    flow,
   };
 }
 
@@ -1037,17 +1057,23 @@ function solvePart(boundary, scheme, cutouts = []) {
   // a space don't. Spaces are solved with the site's aisles but leave the
   // checking to the main plan.
   const setbackRings = s.setback > 0 ? feetRings(inset) : boundaryRings;
+  // Routed aisles start at a bay's end by design, so they aren't checked
+  // for dead ends; the bays they serve are.
   const aisleIssues = !scheme.skipAisleChecks ? aisles.flatMap((x, i) => analyzeAisle(x.a.line.coordinates.map(proj.toFeet), {
     width: aisleWidthOf(x.a, s),
     twoWay: x.a.twoWay !== false,
     turnRadius: s.turnRadius,
     connectsTo: [...aisles.filter((_, j) => j !== i).flatMap((y) => y.rings), ...perimeterEdge, ...setbackRings, ...boundaryRings],
+    fromBay: !!(x.a.auto || x.a.fromBay),
   }).map((issue) => ({ ...issue, aisleId: x.a.id }))) : [];
   const rotatedDrive = new Map();
+  const driveIn = (angle) => {
+    if (!rotatedDrive.has(angle)) rotatedDrive.set(angle, rotateRings(driveEdge, angle));
+    return rotatedDrive.get(angle);
+  };
   const reaches = (row, angle) => {
     if (!driveEdge) return true;
-    if (!rotatedDrive.has(angle)) rotatedDrive.set(angle, rotateRings(driveEdge, angle));
-    return rowReachesDrive(row, rotatedDrive.get(angle));
+    return rowReachesDrive(row, driveIn(angle));
   };
 
   // Every separate piece of a Feature parked at its own best (or a fixed)
@@ -1058,7 +1084,13 @@ function solvePart(boundary, scheme, cutouts = []) {
     for (const poly of piecesOf(feature)) {
       const rings = poly.map((r) => openRing(r).map(proj.toFeet)).filter((r) => r.length >= 3);
       if (!rings.length || shapeArea(rings) < MIN_PARKING_PIECE_SF) continue;
-      const best = bestOrientation(rings, s, pieceMod, { ...search, fixedDeg, keep: keepOnly && driveEdge ? reaches : null });
+      // Kept if either end reaches a drive; a one-way row missing its other
+      // end is then routed or flagged rather than silently dropped.
+      const keepEither = (row, a) => {
+        const e = rowEnds(row, driveIn(a));
+        return e.a || e.b;
+      };
+      const best = bestOrientation(rings, s, pieceMod, { ...search, fixedDeg, keep: keepOnly && driveEdge ? keepEither : null });
       for (const r of best.rows) r.connected = reaches(r, r.angle);
       rows.push(...best.rows);
     }
@@ -1103,7 +1135,7 @@ function solvePart(boundary, scheme, cutouts = []) {
   let best = null;
   let otherRows = [];
   if (placed.length) {
-    const checkCuts = [...areas.map((a) => a.polygon), ...aisleGeoms];
+    const checkCuts = [...areas.map((a) => a.polygon), ...aisles.filter((x) => !x.a.auto).map((x) => x.f.geometry)];
     const checkRegion = checkCuts.length ? safeSubtract(region, checkCuts, region) : region;
     best = solveManual(checkRegion ? feetRings(checkRegion) : [], s, type, proj, placed);
     const parkRegion = layout ? safeSubtract(layout, buildingCutouts, null) : null;
@@ -1160,7 +1192,7 @@ function solvePart(boundary, scheme, cutouts = []) {
     const near = nearestPointOnRings(regionRings, ef);
     const reach = !driveEdge
       || (driveFeature && near && near.d <= s.setback + 30)
-      || aisles.some((x) => distanceToRings(x.rings, ef) <= 30);
+      || aisles.some((x) => distanceToRings(x.rings, ef) <= s.setback + 30);
     let drive = null;
     if (driveFeature && near && near.d > 0.5) {
       const dx = (near.p[0] - ef[0]) / near.d;
@@ -1172,6 +1204,131 @@ function solvePart(boundary, scheme, cutouts = []) {
     }
     return { id: e.id, auto: e.auto, point: e.point, feet: ef, reaches: reach, drive };
   });
+
+  // ---- Auto-routed aisles: from every bay that can't reach a drive (or,
+  // with no drive at all, every bay) the cheapest path to the network or
+  // an entry; then the plan is solved again with those aisles in it ----
+  let routedPending = null;
+  if (s.autoAisles && surfaceParking && !scheme.routed && !scheme.skipAisleChecks && allRows.length) {
+    const nearestEntry = (p) => Math.min(...entryInfo.map((e) => Math.hypot(e.feet[0] - p[0], e.feet[1] - p[1])), Infinity);
+    const sources = [];
+    for (const r of allRows) {
+      const { a, b } = rowEndPoints(r);
+      const pa = unrotate(a, r.angle);
+      const pb = unrotate(b, r.angle);
+      const nearer = nearestEntry(pa) <= nearestEntry(pb) ? pa : pb;
+      if (!driveEdge) {
+        if (r.dir) sources.push(pa, pb);
+        else sources.push(nearer);
+        continue;
+      }
+      if (r.connected !== false) continue;
+      const ends = rowEnds(r, driveIn(r.angle));
+      if (!r.dir) sources.push(nearer);
+      else {
+        const [inPt, outPt] = r.dir > 0 ? [pa, pb] : [pb, pa];
+        if (!ends.in) sources.push(inPt);
+        if (!ends.out) sources.push(outPt);
+      }
+    }
+    if (sources.length) {
+      // A path's centre keeps half an aisle plus the clearance away from
+      // buildings, so the paved aisle never touches one.
+      const keepOff = s.aisleWidth / 2 + BUILDING_CLEARANCE;
+      const grow = (r) => ({ u0: r.u0 - keepOff, u1: r.u1 + keepOff, v0: r.v0 - keepOff, v1: r.v1 + keepOff });
+      const rectFeet = (r, a) => [[r.u0, r.v0], [r.u1, r.v0], [r.u1, r.v1], [r.u0, r.v1]].map((p) => unrotate(p, a));
+      const blocked = [
+        ...(shapes.buildings || []).map((r) => rectFeet(grow(r), angle)),
+        ...placed.map((b) => buildingFeet(b, proj, keepOff)),
+      ];
+      const paths = routeAisles({
+        region: regionRings,
+        blocked,
+        costly: allRows.map((r) => rectFeet(r, r.angle)),
+        network: driveEdge || [],
+        targets: entryInfo.map((e) => e.feet),
+        targetRadius: s.setback + 12,
+        sources: sources.slice(0, MAX_ROUTED_AISLES),
+        straighten: s.aisleWidth / 2,
+      });
+      if (paths.length) {
+        const routed = paths.map((line, i) => ({
+          id: `auto-${i}`,
+          line: { type: 'LineString', coordinates: line.map((p) => { const [la, ln] = proj.toLatLng(p); return [ln, la]; }) },
+          twoWay: true,
+          auto: true,
+        }));
+        routedPending = routed;
+      }
+    }
+  }
+
+  // ---- One-way flow ----
+  const flowIssues = [];
+  // One-way bays need a way in and a way out. (A space leaves these
+  // checks to the main plan, which sees the whole of each drawn aisle.)
+  const checkFlow = !scheme.skipAisleChecks;
+  if (driveEdge && checkFlow) {
+    for (const r of allRows) {
+      if (!r.dir) continue;
+      const ends = rowEnds(r, driveIn(r.angle));
+      if (ends.in && ends.out) continue;
+      const { a, b } = rowEndPoints(r);
+      const [inPt, outPt] = r.dir > 0 ? [a, b] : [b, a];
+      if (!ends.in) flowIssues.push({ kind: 'in', at: unrotate(inPt, r.angle), text: 'One-way bay with no way in' });
+      if (!ends.out) flowIssues.push({ kind: 'out', at: unrotate(outPt, r.angle), text: 'One-way bay with no way out' });
+    }
+  }
+  // Drawn one-way aisles flow from their first point to their last.
+  const oneWays = !checkFlow ? [] : aisles.filter((x) => !x.a.auto && x.a.twoWay === false).map((x) => {
+    const pts = x.a.line.coordinates.map(proj.toFeet);
+    return { x, start: pts[0], end: pts[pts.length - 1], width: aisleWidthOf(x.a, s) };
+  });
+  const twoWayRings = [...perimeterEdge, ...aisles.filter((x) => x.a.twoWay !== false).flatMap((x) => x.rings)];
+  const nearTwoWay = (p, d) => twoWayRings.length > 0 && distanceToRings(twoWayRings, p) <= d;
+  for (let i = 0; i < oneWays.length; i++) {
+    for (let j = i + 1; j < oneWays.length; j++) {
+      const A = oneWays[i];
+      const B = oneWays[j];
+      const d = Math.max(A.width, B.width);
+      if (Math.hypot(A.end[0] - B.end[0], A.end[1] - B.end[1]) <= d && !nearTwoWay(A.end, d)) {
+        flowIssues.push({ kind: 'headon', at: A.end, text: 'Two one-way aisles flow into each other here, with no way out' });
+      }
+      if (Math.hypot(A.start[0] - B.start[0], A.start[1] - B.start[1]) <= d && !nearTwoWay(A.start, d)) {
+        flowIssues.push({ kind: 'headon', at: A.start, text: 'Two one-way aisles both flow away from here, with no way in' });
+      }
+    }
+  }
+  // An entry served only by one-way aisles needs one flowing in and one out.
+  for (const e of entryInfo) {
+    const reach = s.setback + 30;
+    const twoWayHere = (driveFeature && nearestPointOnRings(regionRings, e.feet)?.d <= reach)
+      || aisles.some((x) => x.a.twoWay !== false && distanceToRings(x.rings, e.feet) <= reach);
+    const touching = oneWays.filter((o) => distanceToRings(o.x.rings, e.feet) <= reach);
+    if (twoWayHere || !touching.length) continue;
+    const inbound = touching.some((o) => Math.hypot(o.start[0] - e.feet[0], o.start[1] - e.feet[1]) <= Math.hypot(o.end[0] - e.feet[0], o.end[1] - e.feet[1]));
+    const outbound = touching.some((o) => Math.hypot(o.end[0] - e.feet[0], o.end[1] - e.feet[1]) < Math.hypot(o.start[0] - e.feet[0], o.start[1] - e.feet[1]));
+    if (!inbound) flowIssues.push({ kind: 'entry', at: e.feet, text: 'This entry only has one-way aisles flowing out - no way in' });
+    if (!outbound) flowIssues.push({ kind: 'entry', at: e.feet, text: 'This entry only has one-way aisles flowing in - no way out' });
+  }
+  // Arrows along drawn one-way aisles.
+  const aisleArrows = oneWays.flatMap((o) => {
+    const pts = o.x.a.line.coordinates.map(proj.toFeet);
+    const out = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [ax, ay] = pts[i];
+      const [bx, by] = pts[i + 1];
+      const len = Math.hypot(bx - ax, by - ay);
+      if (len < 20) continue;
+      const ux = (bx - ax) / len;
+      const uy = (by - ay) / len;
+      const mx = (ax + bx) / 2;
+      const my = (ay + by) / 2;
+      out.push([[mx - ux * 8 - uy * 5, my - uy * 8 + ux * 5], [mx, my], [mx - ux * 8 + uy * 5, my - uy * 8 - ux * 5]].map((p) => proj.toLatLng(p)));
+    }
+    return out;
+  });
+  const oneWayCount = allRows.filter((r) => r.dir).length + oneWays.length;
 
   const types = stallTypes(rawStalls, s);
   let adaPlaced = 0;
@@ -1239,7 +1396,9 @@ function solvePart(boundary, scheme, cutouts = []) {
       ...(driveFeature ? piecesOf(driveFeature) : []),
       ...aisles.flatMap((x) => piecesOf(x.f)),
     ].map((poly) => poly.map((ring) => openRing(ring).map(([lng, lat]) => [lat, lng]))),
-    aisleIssues: aisleIssues.map((issue) => ({ latlng: proj.toLatLng(issue.at), text: issue.text, kind: issue.kind, aisleId: issue.aisleId })),
+    aisleIssues: [...aisleIssues, ...flowIssues].map((issue) => ({ latlng: proj.toLatLng(issue.at), text: issue.text, kind: issue.kind, aisleId: issue.aisleId })),
+    aisleArrows,
+    routedAisles: [],
     entryDrives: entryInfo.map((e) => e.drive).filter(Boolean),
     entries: entryInfo.map((e) => ({ id: e.id, auto: e.auto, point: e.point, reaches: e.reaches })),
   };
@@ -1263,6 +1422,9 @@ function solvePart(boundary, scheme, cutouts = []) {
     hasDrive: !!driveEdge,
     aisleCount: aisles.length,
     aisleIssues: aisleIssues.map((issue) => ({ aisleId: issue.aisleId, kind: issue.kind, text: issue.text })),
+    flowIssues: flowIssues.map((issue) => ({ kind: issue.kind, text: issue.text })),
+    oneWayCount,
+    routedAisles: [],
     entries: entryInfo.map((e) => ({ id: e.id, auto: e.auto, reaches: e.reaches })),
     areas: areas.map((a) => {
       const rows = areaRows.filter((r) => r.areaId === a.id);
@@ -1276,7 +1438,7 @@ function solvePart(boundary, scheme, cutouts = []) {
     stallAngle: s.stallAngle,
   } : null;
 
-  return {
+  const result = {
     metrics,
     geometry,
     limits: best.limits,
@@ -1288,6 +1450,19 @@ function solvePart(boundary, scheme, cutouts = []) {
     type,
     settings: s,
   };
+
+  // With routed aisles in hand, solve again with them in the plan; keep
+  // that only if it works and connects more bays than before.
+  if (routedPending) {
+    const second = solvePart(boundary, { ...scheme, driveAisles: [...(scheme.driveAisles || []), ...routedPending], routed: true }, cutouts);
+    const unconnectedBefore = driveEdge ? disconnected : allRows.length;
+    if (!second.error && second.parking && second.parking.disconnected < unconnectedBefore) {
+      second.parking.routedAisles = routedPending.map(({ line }) => line);
+      second.geometry.routedAisles = routedPending.map(({ line }) => line.coordinates.map(([ln, la]) => [la, ln]));
+      return second;
+    }
+  }
+  return result;
 }
 
 const SUM_KEYS = ['footprintSf', 'buildingCount', 'gsf', 'nsf', 'units', 'keys', 'docks', 'trailerStalls', 'trailerRequired',
@@ -1354,6 +1529,22 @@ function zoningChecks(s, totals, warnings, parkingParts) {
       limit: `${fmt(ada, 0)} required (${fmt(van, 0)} van)`,
       actual: `${fmt(placedAda, 0)} placed`,
       status: placedAda >= ada ? 'pass' : 'fail',
+    });
+  }
+  const oneWay = parkingParts.reduce((sum, p) => sum + (p.oneWayCount || 0), 0);
+  if (oneWay > 0) {
+    const flow = parkingParts.flatMap((p) => p.flowIssues || []);
+    const count = (k) => flow.filter((x) => x.kind === k).length;
+    const parts = [
+      (count('in') + count('out')) && `${count('in') + count('out')} bay end${count('in') + count('out') === 1 ? '' : 's'} with no way through`,
+      count('headon') && `${count('headon')} head-on meeting${count('headon') === 1 ? '' : 's'}`,
+      count('entry') && `${count('entry')} entr${count('entry') === 1 ? 'y' : 'ies'} without both directions`,
+    ].filter(Boolean);
+    rows.push({
+      label: 'One-way flow',
+      limit: 'Every one-way route has a way in and out',
+      actual: parts.length ? parts.join(', ') : 'Flows through',
+      status: parts.length ? 'fail' : 'pass',
     });
   }
   if (totals.trailerRequired > 0 || totals.trailerStalls > 0) {

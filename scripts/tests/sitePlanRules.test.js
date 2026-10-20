@@ -142,3 +142,9 @@ test('schemes keep drawn drive aisles, checked', () => {
   assert.throws(() => one({ driveAisles: [{ id: 'a', line, width: 4 }] }), SitePlanValidationError);
   assert.throws(() => one({ driveAisles: [{ id: 'a', line: square }] }), SitePlanValidationError);
 });
+
+test('a kept routed aisle keeps its fromBay mark', () => {
+  const line = { type: 'LineString', coordinates: [[-111.9, 40.7], [-111.899, 40.7]] };
+  assert.equal(one({ driveAisles: [{ id: 'a', line, fromBay: true }] }).driveAisles[0].fromBay, true);
+  assert.equal(one({ driveAisles: [{ id: 'a', line, fromBay: 'yes' }] }).driveAisles[0].fromBay, undefined);
+});

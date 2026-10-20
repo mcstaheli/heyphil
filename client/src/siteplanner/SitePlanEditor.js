@@ -264,7 +264,7 @@ const STALL_ANGLES = COMMON_FIELDS.find((f) => f.key === 'stallAngle').options;
 // drawn by hand, and the driveway entries.
 function ParkingSection({
   scheme, type, result, selectedAreaId, onSelectArea, onDraw, onUpdateArea, onRemoveArea, onSetOverride, onRemoveEntry, onAddEntry,
-  selectedAisleId, onSelectAisle, onDrawAisle, onUpdateAisle, onRemoveAisle,
+  selectedAisleId, onSelectAisle, onDrawAisle, onUpdateAisle, onRemoveAisle, onKeepRouted,
 }) {
   if (!hasSurfaceParking(type)) return null;
   const settings = effectiveSettings(scheme);
@@ -360,6 +360,19 @@ function ParkingSection({
           <p className="siteplan-muted siteplan-small">Reshape, drag or rotate the area with the map&apos;s edit tools; drag ⟳ to turn its stalls.</p>
           <button type="button" className="siteplan-link-btn siteplan-danger-link" onClick={() => onRemoveArea(selected.id)}>Remove parking area</button>
         </div>
+      )}
+
+      {(p?.routedAisles || []).length > 0 && (
+        <div className="siteplan-routed">
+          <span>
+            <b>{p.routedAisles.length}</b> aisle{p.routedAisles.length === 1 ? '' : 's'} routed automatically (dashed blue) to connect bays to a drive
+            {p.disconnected ? ` - ${p.disconnected} bay${p.disconnected === 1 ? ' still can\'t' : 's still can\'t'} reach one` : ''}.
+          </span>
+          <button type="button" className="siteplan-small-btn" onClick={onKeepRouted}>Keep as drawn aisles</button>
+        </div>
+      )}
+      {(p?.flowIssues || []).length > 0 && (
+        <p className="siteplan-neg siteplan-small">⚠ One-way flow: {p.flowIssues.map((x) => x.text).join('; ')}</p>
       )}
 
       <div className="siteplan-section-head">
@@ -839,6 +852,18 @@ function SitePlanEditor() {
     updateScheme(scheme.id, { driveAisles: (scheme.driveAisles || []).map((a) => (a.id === id ? { ...a, ...patch } : a)) });
   }, [activeId, updateScheme]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The routed aisles become drawn ones you can edit; routing then has
+  // nothing left to do for them.
+  const keepRouted = () => {
+    const lines = activeResult?.parking?.routedAisles || [];
+    if (!lines.length) return;
+    const existing = currentScheme().driveAisles || [];
+    const room = Math.max(0, 30 - existing.length);
+    const kept = lines.slice(0, room).map((line) => ({ id: newId(), line, twoWay: true, fromBay: true }));
+    if (kept.length < lines.length) window.alert(`Only ${kept.length} of ${lines.length} fit - a scheme holds 30 drive aisles.`);
+    updateScheme(active.id, { driveAisles: [...existing, ...kept] });
+  };
+
   const removeAisle = (id) => {
     const rest = (currentScheme().driveAisles || []).filter((a) => a.id !== id);
     updateScheme(active.id, { driveAisles: rest.length ? rest : undefined });
@@ -1146,6 +1171,7 @@ function SitePlanEditor() {
               onDrawAisle={() => setDrawRequest({ target: 'aisle', shape: 'Line', at: Date.now() })}
               onUpdateAisle={updateAisle}
               onRemoveAisle={removeAisle}
+              onKeepRouted={keepRouted}
             />
 
             <GarageSection result={activeResult} />

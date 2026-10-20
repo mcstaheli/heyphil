@@ -51,8 +51,17 @@ export function islandSlots(n, s) {
   return out;
 }
 
+// One-way bays alternate direction from one bay to the next, so traffic
+// snakes up one aisle and back down the next. +1 flows toward +u.
+export function bayDirection(v0, mod) {
+  if (!mod.oneWay) return 0;
+  const k = Math.round(v0 / mod.depth);
+  return ((k % 2) + 2) % 2 === 0 ? 1 : -1;
+}
+
 // The rows of one bay starting at v0.
 export function layBay(rings, v0, s, mod) {
+  const dir = bayDirection(v0, mod);
   const rows = [];
   let stalls = 0;
   for (const [a, b] of bandIntervals(rings, v0, v0 + mod.depth, 2 * mod.pitch + mod.endLoss)) {
@@ -61,7 +70,7 @@ export function layBay(rings, v0, s, mod) {
     const islands = islandSlots(n, s);
     const perSide = n - islands.size;
     if (perSide < 1) continue;
-    rows.push({ u0: a, u1: a + mod.endLoss + n * mod.pitch, v0, v1: v0 + mod.depth, n, islands: [...islands], perSide, mod });
+    rows.push({ u0: a, u1: a + mod.endLoss + n * mod.pitch, v0, v1: v0 + mod.depth, n, islands: [...islands], perSide, mod, dir });
     stalls += 2 * perSide;
   }
   return { rows, stalls };
@@ -158,12 +167,30 @@ export function distanceToRings(rings, [x, y]) {
   return best;
 }
 
-// A row reaches the drive if either end of its aisle comes to the drive's
-// edge (rings in the same rotated frame), within half a bay.
-export function rowReachesDrive(row, driveEdgeRings) {
+// Where a row's aisle meets the drive (rings in the same rotated frame,
+// within half a bay): { in, out } for a one-way row (in = the end traffic
+// enters by), and either end for a two-way row.
+export function rowEnds(row, driveEdgeRings) {
   const vmid = row.v0 + row.mod.proj + row.mod.aisle / 2;
   const tol = row.mod.depth / 2;
-  return distanceToRings(driveEdgeRings, [row.u0, vmid]) <= tol || distanceToRings(driveEdgeRings, [row.u1, vmid]) <= tol;
+  const a = distanceToRings(driveEdgeRings, [row.u0, vmid]) <= tol;
+  const b = distanceToRings(driveEdgeRings, [row.u1, vmid]) <= tol;
+  if (!row.dir) return { in: a || b, out: a || b, a, b };
+  return row.dir > 0 ? { in: a, out: b, a, b } : { in: b, out: a, a, b };
+}
+
+// A two-way row needs one end on a drive; a one-way row needs both - a
+// way in and a way out.
+export function rowReachesDrive(row, driveEdgeRings) {
+  const ends = rowEnds(row, driveEdgeRings);
+  return row.dir ? ends.in && ends.out : ends.in;
+}
+
+// A row's aisle ends (rotated frame), for routing from the one(s) that
+// don't reach a drive.
+export function rowEndPoints(row) {
+  const vmid = row.v0 + row.mod.proj + row.mod.aisle / 2;
+  return { a: [row.u0, vmid], b: [row.u1, vmid] };
 }
 
 // Time-of-day shares of each use's peak parking (weekday day, weekday
@@ -219,7 +246,9 @@ export const MIN_ONE_WAY_WIDTH = 12;
 //           street (the boundary)
 // connectsTo: rings (feet) an end may meet - other aisles, the perimeter
 // drive's edge, the site boundary.
-export function analyzeAisle(pts, { width, twoWay, turnRadius, connectsTo }) {
+// fromBay: the aisle starts at a bay's end by design (routed, or kept
+// from routing), so its start isn't a dead end.
+export function analyzeAisle(pts, { width, twoWay, turnRadius, connectsTo, fromBay = false }) {
   const issues = [];
   for (let i = 1; i + 1 < pts.length; i++) {
     const [ax, ay] = pts[i - 1];
@@ -248,7 +277,7 @@ export function analyzeAisle(pts, { width, twoWay, turnRadius, connectsTo }) {
   if (width < minWidth) {
     issues.push({ kind: 'width', at: pts[Math.floor(pts.length / 2)], text: `${Math.round(width)} ft is narrow for ${twoWay ? 'two-way' : 'one-way'} traffic (${minWidth} ft min)` });
   }
-  for (const end of [pts[0], pts[pts.length - 1]]) {
+  for (const end of fromBay ? [pts[pts.length - 1]] : [pts[0], pts[pts.length - 1]]) {
     if (!connectsTo.length || distanceToRings(connectsTo, end) > width) {
       issues.push({ kind: 'dead', at: end, text: 'Dead end: connect it to another drive or the street, or add a turnaround' });
     }

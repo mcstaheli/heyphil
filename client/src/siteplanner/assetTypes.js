@@ -32,6 +32,7 @@ export const COMMON_FIELDS = [
   { key: 'aisle45', label: 'One-way aisle (45°)', unit: 'ft', default: 13, group: 'Parking' },
   { key: 'turnRadius', label: 'Min turning radius', unit: 'ft', default: 25, hint: 'inside radius a drawn aisle\'s turns must allow', group: 'Parking' },
   { key: 'perimeterDrive', label: 'Perimeter drive', unit: '', default: 1, group: 'Parking', options: [[1, 'On - a loop road inside the setback'], [0, 'Off']] },
+  { key: 'autoAisles', label: 'Route aisles automatically', unit: '', default: 1, group: 'Parking', options: [[1, 'On - connect every bay to a drive'], [0, 'Off - flag bays that can\'t reach one']] },
   { key: 'islandEvery', label: 'Landscape island every', unit: 'stalls', default: 0, hint: '0 = none', group: 'Parking' },
   { key: 'endIslands', label: 'End islands', unit: '', default: 0, group: 'Parking', options: [[0, 'Off'], [1, 'At both ends of each row']] },
   { key: 'compactPct', label: 'Compact stalls', unit: '%', default: 0, group: 'Parking' },
