@@ -64,3 +64,18 @@ test('a bay taken over as a parking area keeps its stalls', () => {
   const area = r.parking.areas.find((a) => a.id === 'p');
   expect(area.stalls).toBeGreaterThanOrEqual(bay.stallCount - 2);
 });
+
+test('a park is planted, counted as open space, and kept free of buildings and parking', () => {
+  const site = rectSite(500, 400);
+  const [lng0, lat0] = site.coordinates[0][0];
+  const ft = (x, y) => [lng0 + x / (364000 * Math.cos((40.76 * Math.PI) / 180)), lat0 + y / 364000];
+  const park = { type: 'Polygon', coordinates: [[ft(150, 150), ft(300, 150), ft(300, 250), ft(150, 250), ft(150, 150)]] };
+  const r = solveScheme(site, { id: 'a', name: 'A', assetType: 'mf-garden', overrides: {}, spaces: [{ id: 'p', name: 'Park', kind: 'green', polygon: park }] });
+  expect(r.totals.openSpaceSf).toBeGreaterThan(150 * 100 * 0.95);
+  expect(r.trees.length).toBeGreaterThan(10);
+  const [x0, y0] = ft(150, 150);
+  const [x1, y1] = ft(300, 250);
+  const inPark = ([lat, lng]) => lng > x0 + 1e-6 && lng < x1 - 1e-6 && lat > y0 + 1e-6 && lat < y1 - 1e-6;
+  expect(r.geometry.buildings.every((ring) => !ring.some(inPark))).toBe(true);
+  expect(r.trees.filter(inPark).length).toBeGreaterThan(5);
+});

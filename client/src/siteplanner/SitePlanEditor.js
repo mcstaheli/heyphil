@@ -10,7 +10,7 @@ import { aisleWidthOf, hasSurfaceParking, solveScheme, supportsManualLayout } fr
 import { OrientationField, SchemeSettings, fmtDec, fmtInt, fmtMoney, fmtPct, withOverride } from './settingsFields';
 import { ChecksPanel, CompareView, ProformaPanel, QuantitiesPanel, Scoreboard, planMetrics, yieldOf } from './results';
 import { Step } from './Steps';
-import { modelSteps } from './stepPlan';
+import { PARKING_PROGRAM_KEYS, modelSteps } from './stepPlan';
 import { changedKeys, createHistory } from './history';
 import {
   AisleEditor, AreaEditor, BayDetails, BuildingEditor, GeneratedBuilding, STALL_ANGLES, SelectionBar, SpaceEditor, StallEditor,
@@ -168,20 +168,22 @@ function LayoutSection({ scheme, type, result, selectedId, onSelect, onStart, on
 }
 
 // Spaces (#3): no-build areas, or areas with their own asset type.
-function SpacesSection({ scheme, results, selectedId, onSelect, onDraw }) {
+function SpacesSection({ scheme, results, selectedId, onSelect, onDraw, onPlacePark }) {
   const spaces = scheme.spaces || [];
+  const SPACE_LABEL = { 'no-build': 'No-build', green: 'Park / open space' };
   return (
     <div className="siteplan-section">
       <div className="siteplan-section-head">
         <span className="siteplan-group-title">Spaces</span>
         <span>
+          <button type="button" className="siteplan-small-btn" onClick={onPlacePark} title="Drop a park in the middle of the site, then drag and reshape it">🌳 + Park</button>
           <button type="button" className="siteplan-small-btn" onClick={() => onDraw('Rectangle')} title="Draw a rectangle on the map">+ Rectangle</button>
           <button type="button" className="siteplan-small-btn" onClick={() => onDraw('Polygon')} title="Click corners on the map; click the first to close">+ Shape</button>
         </span>
       </div>
       {spaces.length === 0 && (
         <p className="siteplan-muted siteplan-small">
-          Mark an easement, pond or open space as no-build, or give an area its own use (a retail pad beside apartments).
+          🌳 + Park drops a planted green you can drag and reshape. Or draw an area and mark it no-build (an easement, a pond), a park, or its own use (a retail pad beside apartments).
         </p>
       )}
       {spaces.map((sp) => {
@@ -190,9 +192,9 @@ function SpacesSection({ scheme, results, selectedId, onSelect, onDraw }) {
         const y = t && r?.metrics ? yieldOf(t, r.metrics) : null;
         return (
           <button type="button" key={sp.id} className={`siteplan-space-row ${sp.id === selectedId ? 'active' : ''}`} onClick={() => onSelect(sp.id)}>
-            <span className={`siteplan-space-swatch ${sp.kind === 'no-build' ? 'nobuild' : 'asset'}`} />
+            <span className={`siteplan-space-swatch ${sp.kind === 'no-build' ? 'nobuild' : sp.kind === 'green' ? 'green' : 'asset'}`} />
             <span className="siteplan-space-name">{sp.name}</span>
-            <span className="siteplan-muted siteplan-small">{t ? `${t.label}${y ? ` · ${y.value} ${y.label}` : ''}` : 'No-build'}</span>
+            <span className="siteplan-muted siteplan-small">{t ? `${t.label}${y ? ` · ${y.value} ${y.label}` : ''}` : SPACE_LABEL[sp.kind]}</span>
           </button>
         );
       })}
@@ -497,6 +499,7 @@ function SitePlanEditor() {
   const hadBoundaryRef = useRef(null); // whether the plan had a boundary last time we looked
   // Undo / redo (history.js); canUndo / canRedo for the buttons.
   const historyRef = useRef(createHistory());
+  const deleteSelectedRef = useRef(null); // set each render: removes what's selected
   const [undoState, setUndoState] = useState({ canUndo: false, canRedo: false });
   const syncUndo = () => setUndoState({ canUndo: historyRef.current.canUndo(), canRedo: historyRef.current.canRedo() });
 
@@ -631,8 +634,19 @@ function SitePlanEditor() {
       if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
       else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
     };
+    // Delete / Backspace removes what's selected (not while typing).
+    const onDelete = (e) => {
+      if ((e.key !== 'Delete' && e.key !== 'Backspace') || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      if (deleteSelectedRef.current?.()) e.preventDefault();
+    };
+    window.addEventListener('keydown', onDelete);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onDelete);
+    };
   }, [undo, redo]);
 
   // Only the boundary and schemes change a layout; renaming the site or
@@ -802,6 +816,27 @@ function SitePlanEditor() {
     updateScheme(scheme.id, { spaces: [...existing, sp] });
     setSelectedSpaceId(sp.id);
   }, [activeId, updateScheme]);
+
+  // A park dropped by hand: 150 x 100 ft in the middle of the site, to drag
+  // and reshape with the map's edit tools.
+  const placePark = () => {
+    if (!boundary) return;
+    const existing = currentScheme().spaces || [];
+    if (existing.length >= 20) {
+      window.alert('A scheme can hold 20 spaces - remove one first.');
+      return;
+    }
+    const center = ringCentroid(boundary);
+    const proj = makeProjection([center]);
+    const ring = [[-75, -50], [75, -50], [75, 50], [-75, 50]].map((p) => {
+      const [lat, lng] = proj.toLatLng(p);
+      return [lng, lat];
+    });
+    const parks = existing.filter((sp) => sp.kind === 'green').length;
+    const sp = { id: newId(), name: parks ? `Park ${parks + 1}` : 'Park', kind: 'green', polygon: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } };
+    updateScheme(active.id, { spaces: [...existing, sp] });
+    setSelectedSpaceId(sp.id);
+  };
 
   const updateSpace = useCallback((id, patch) => {
     const scheme = draftRef.current.schemes.find((s) => s.id === activeId) || draftRef.current.schemes[0];
@@ -1163,7 +1198,7 @@ function SitePlanEditor() {
   const checkStep = (c) => (c.category === 'zoning' ? 'zoning' : isTruckCheck(c) ? 'trucks' : 'parking');
   const parkingFailsHere = parkingChecks.filter((c) => c.status === 'fail');
   const truckFails = truckChecks.filter((c) => c.status === 'fail');
-  const PARKING_PROGRAM = ['parkingRatio', 'parkingFixed', 'garageStalls', 'sfPerStructuredStall'];
+  const PARKING_PROGRAM = PARKING_PROGRAM_KEYS;
 
   function stepMeta(st) {
     const plural = (n, word) => `${fmtInt(n)} ${word}${n === 1 ? '' : 's'}`;
@@ -1193,7 +1228,11 @@ function SitePlanEditor() {
         return {
           status: draft.boundary ? 'done' : 'todo',
           summary: spaces.length
-            ? `${plural(spaces.filter((sp) => sp.kind === 'no-build').length, 'no-build area')} · ${plural(spaces.filter((sp) => sp.kind === 'asset').length, 'other use')}`
+            ? [
+              [spaces.filter((sp) => sp.kind === 'green').length, 'park'],
+              [spaces.filter((sp) => sp.kind === 'no-build').length, 'no-build area'],
+              [spaces.filter((sp) => sp.kind === 'asset').length, 'other use'],
+            ].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(' · ')
             : 'Optional: easements, open space, a second use',
         };
       }
@@ -1303,6 +1342,7 @@ function SitePlanEditor() {
               selectedId={selectedSpaceId}
               onSelect={setSelectedSpaceId}
               onDraw={(shape) => setDrawRequest({ target: 'space', shape, at: Date.now() })}
+              onPlacePark={placePark}
             />
           </>
         );
@@ -1471,14 +1511,20 @@ function SitePlanEditor() {
       setSelectedAreaId(owner.id);
       return;
     }
-    // A little room all round, so the bay fits again when re-solved.
+    // 1.5 ft more on every side (in the bay's own frame), so the bay fits
+    // again when re-solved.
     const proj = makeProjection(bay.outline.map(([lat, lng]) => [lng, lat]));
-    const feet = bay.outline.map(([lat, lng]) => proj.toFeet([lng, lat]));
-    const cx = feet.reduce((t, p) => t + p[0], 0) / feet.length;
-    const cy = feet.reduce((t, p) => t + p[1], 0) / feet.length;
-    const ring = feet.map(([x, y]) => {
-      const d = Math.hypot(x - cx, y - cy) || 1;
-      const [lat, lng] = proj.toLatLng([x + ((x - cx) / d) * 1.5, y + ((y - cy) / d) * 1.5]);
+    const a = (bay.angleExact * Math.PI) / 180;
+    const [c, sn] = [Math.cos(a), Math.sin(a)];
+    const local = bay.outline.map(([lat, lng]) => {
+      const [x, y] = proj.toFeet([lng, lat]);
+      return [x * c + y * sn, -x * sn + y * c];
+    });
+    const us = local.map((p) => p[0]);
+    const vs = local.map((p) => p[1]);
+    const [u0, u1, v0, v1] = [Math.min(...us) - 1.5, Math.max(...us) + 1.5, Math.min(...vs) - 1.5, Math.max(...vs) + 1.5];
+    const ring = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => {
+      const [lat, lng] = proj.toLatLng([u * c - v * sn, u * sn + v * c]);
       return [lng, lat];
     });
     if (existing.length >= 30) {
@@ -1492,6 +1538,27 @@ function SitePlanEditor() {
   };
   // A selection that's gone (a bay re-laid out, a building removed) shows as none.
   const selectedKey = selectionItems.some((x) => x.key === selection) ? selection : null;
+
+  // Delete / Backspace: the selected building, space, parking area or
+  // aisle goes; a stall is removed (landscaped); a generated building goes
+  // too, the layout switching to placed by hand without it. Returns
+  // whether anything was removed.
+  deleteSelectedRef.current = () => {
+    const s = parseSelection(selectedKey);
+    if (!s) return false;
+    if (s.kind === 'building') removeBuilding(s.id);
+    else if (s.kind === 'space') removeSpace(s.id);
+    else if (s.kind === 'area') removeArea(s.id);
+    else if (s.kind === 'aisle') removeAisle(s.id);
+    else if (s.kind === 'stall' && stallHit) setStallKind(stallHit.slot, 'removed');
+    else if (s.kind === 'auto' && canTakeOver) {
+      const rest = (activeResult?.buildingRects || []).filter((_, i) => i !== Number(s.id));
+      if (!rest.length) return false;
+      setPlaced(rest.map((r) => ({ id: newId(), ...r })));
+      setSelection(null);
+    } else return false;
+    return true;
+  };
 
   function selectionBody() {
     const s = parseSelection(selectedKey);
@@ -1729,6 +1796,7 @@ function SitePlanEditor() {
               onParcelPick={onParcelPick}
               parcelHighlight={parcel?.parcel?.boundary || null}
               terrainPoints={terrain?.key === boundaryKey ? terrain?.samples : null}
+              trees={activeResult?.trees || NONE}
               selectedGenerated={sel && ['auto', 'bay', 'stall'].includes(sel.kind) ? selection : null}
               onSelectGenerated={onSelectGenerated}
               onGeneratedDrag={canTakeOver ? onGeneratedDrag : null}
@@ -1748,6 +1816,8 @@ function SitePlanEditor() {
               {hasSurfaceParking(activeType) && <><span><i className="lg-drive" />Drive</span><span><i className="lg-ada" />Accessible</span></>}
               {(active.parkingAreas || NONE).length > 0 && <span><i className="lg-parkarea" />Parking area</span>}
               {(active.spaces || NONE).some((sp) => sp.kind === 'no-build') && <span><i className="lg-nobuild" />No-build</span>}
+              {(active.spaces || NONE).some((sp) => sp.kind === 'green') && <span><i className="lg-green" />Park</span>}
+              {(activeResult?.trees || NONE).length > 0 && <span><i className="lg-tree" />Trees</span>}
               {(active.spaces || NONE).some((sp) => sp.kind === 'asset') && <span><i className="lg-space" />Space</span>}
               {activeType.mode === 'lots' && <><span><i className="lg-lot" />Lots</span><span><i className="lg-street" />Streets</span></>}
               {activeType.mode === 'industrial' && <><span><i className="lg-truck" />Truck court</span><span><i className="lg-trailer" />Trailers</span></>}

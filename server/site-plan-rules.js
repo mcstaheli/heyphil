@@ -18,7 +18,8 @@ export const MAX_OVERRIDES_BYTES = 8000;
 export const MAX_SETTING_VALUE = 1e10;
 export const MAX_PLACED_BUILDINGS = 100;
 export const MAX_SPACES = 20;
-export const SPACE_KINDS = ['no-build', 'asset'];
+// green: a park or open space - no buildings or parking, planted.
+export const SPACE_KINDS = ['no-build', 'green', 'asset'];
 export const MAX_PARKING_AREAS = 30;
 export const MAX_ENTRIES = 10;
 export const STALL_ANGLES = [90, 60, 45];

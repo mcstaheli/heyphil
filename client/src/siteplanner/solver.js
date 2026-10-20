@@ -17,6 +17,7 @@ import {
   convexOverlap,
   makeProjection,
   openRing,
+  pointInShape,
   ringInsideShape,
   rotate,
   rotateRings,
@@ -1324,7 +1325,7 @@ function solvePart(boundary, scheme, cutouts = []) {
   const siteSf = turfArea(toFeature(boundary)) * SF_PER_SQM;
   const proj = makeProjection(boundary.coordinates[0]);
   const base = { siteSf, siteAcres: siteSf / SF_PER_ACRE };
-  const edgeList = (list) => list.map(({ index, role, setback, facing, lengthFt, mid }) => ({ index, role, setback, facing, lengthFt, mid }));
+  const edgeList = (list) => list.map(({ index, role, setback, facing, lengthFt, mid, a, b }) => ({ index, role, setback, facing, lengthFt, mid, a, b }));
   // Called only once the edges below are worked out.
   const empty = (error) => ({
     edges: edgeList(edges),
@@ -1507,7 +1508,9 @@ function solvePart(boundary, scheme, cutouts = []) {
 
   // ---- Parking areas drawn by hand ----
   const placed = supportsManualLayout(type) ? (scheme.edits?.buildings || []) : [];
-  const buildingCutouts = placed.flatMap((b) => buildingFeet(b, proj, BUILDING_CLEARANCE).map((piece) => feetRingToGeo(piece, proj)));
+  // A U or courtyard's court isn't parking either: no aisle gets in.
+  const buildingCutouts = placed.flatMap((b) => buildingFeet(b.shape === 'U' || b.shape === 'courtyard' ? { ...b, shape: undefined } : b, proj, BUILDING_CLEARANCE)
+    .map((piece) => feetRingToGeo(piece, proj)));
   const areas = surfaceParking ? (scheme.parkingAreas || []).filter((a) => a.polygon) : [];
   const areaRows = [];
   for (const area of areas) {
@@ -1783,13 +1786,14 @@ function solvePart(boundary, scheme, cutouts = []) {
   types.vanRequired = types.van;
   // Accessible stalls go in the rows nearest an entry, from the aisle end,
   // on stalls not marked by hand.
+  const centre = (r) => {
+    const mid = unrotate([(r.u0 + r.u1) / 2, (r.v0 + r.v1) / 2], r.angle);
+    return Math.min(...entryInfo.map((e) => Math.hypot(e.feet[0] - mid[0], e.feet[1] - mid[1])), Infinity);
+  };
+  const byEntry = [...allRows].sort((a, b) => centre(a) - centre(b));
   if (types.ada > adaPlaced && allRows.length) {
-    const centre = (r) => {
-      const mid = unrotate([(r.u0 + r.u1) / 2, (r.v0 + r.v1) / 2], r.angle);
-      return Math.min(...entryInfo.map((e) => Math.hypot(e.feet[0] - mid[0], e.feet[1] - mid[1])), Infinity);
-    };
     let left = types.ada - adaPlaced;
-    for (const r of [...allRows].sort((a, b) => centre(a) - centre(b))) {
+    for (const r of byEntry) {
       if (left <= 0) break;
       const islands = new Set(r.islands);
       for (const side of ['lower', 'upper']) {
@@ -1804,14 +1808,15 @@ function solvePart(boundary, scheme, cutouts = []) {
   }
   // The van-accessible share: the first automatic ones, nearest the entry.
   let vanLeft = types.vanRequired - vanByHand;
-  for (const r of allRows) {
+  for (const r of byEntry) {
     for (const x of r.adaSlots) {
       if (vanLeft <= 0) break;
       if (!x.byHand && !x.van) { x.van = true; vanLeft--; }
     }
   }
   types.ada = Math.max(types.adaRequired, adaPlaced);
-  types.van = Math.max(types.vanRequired, allRows.reduce((t, r) => t + r.adaSlots.filter((x) => x.van).length, 0));
+  // What's drawn (hand-marked accessible stalls can leave the van share short).
+  types.van = allRows.reduce((t, r) => t + r.adaSlots.filter((x) => x.van).length, 0);
   types.standard = Math.max(0, types.total - types.ada - types.compact);
 
   const m = { ...EMPTY_METRICS, ...best.metrics };
@@ -1952,7 +1957,7 @@ function solvePart(boundary, scheme, cutouts = []) {
       }
       if (type.yieldKind === 'units' || type.yieldKind === 'keys') m.parkingRequired = parkingNeed(s, m.units || m.keys);
       else if (type.yieldKind === 'sf') m.parkingRequired = parkingNeed(s, m.nsf / 1000);
-      else m.parkingRequired = Math.ceil(m.parkingRequired * keep - 1e-9);
+      else if (!(s.parkingFixed > 0)) m.parkingRequired = Math.ceil(m.parkingRequired * keep - 1e-9);
     }
   }
 
@@ -2219,7 +2224,7 @@ export function solveScheme(boundary, scheme) {
   // the parking ratio scaled by how much sharing saves, and keep that if
   // it builds more.
   const t = first.totals;
-  if (t && t.sharedParking && t.parkingRequiredRaw > 0 && t.parkingRequired < t.parkingRequiredRaw && first.settings.parkingRatio > 0) {
+  if (t && t.sharedParking && t.parkingRequiredRaw > 0 && t.parkingRequired < t.parkingRequiredRaw && first.settings.parkingRatio > 0 && !(first.settings.parkingFixed > 0)) {
     const ratio = t.parkingRequired / t.parkingRequiredRaw;
     const second = solveOnce(boundary, {
       ...scheme,
@@ -2229,6 +2234,59 @@ export function solveScheme(boundary, scheme) {
     if (passes(second) && (second.totals.units + second.totals.keys + second.totals.gsf / 1e6) > (t.units + t.keys + t.gsf / 1e6)) return second;
   }
   return first;
+}
+
+// Trees for the plan drawing ([lat, lng] each): a grid across each park,
+// a row along the setback strip inside each edge, and one in every
+// landscape island (bay ends and islands within rows). Capped, so a big
+// site stays quick to draw.
+const TREE_SPACING = 35; // ft, in a park
+const STREET_TREE_SPACING = 40; // ft, along the setback
+const MAX_TREES = 1500;
+function plantTrees(boundary, main, spaceResults, greens) {
+  const out = [];
+  const proj = makeProjection(boundary.coordinates[0]);
+  // Landscape islands, the main layout's and each space's.
+  for (const g of [main.geometry, ...spaceResults.map((sp) => sp.result?.geometry)]) {
+    for (const bay of g?.parking || []) {
+      for (const ring of bay.islands || []) {
+        out.push([ring.reduce((t, p) => t + p[0], 0) / ring.length, ring.reduce((t, p) => t + p[1], 0) / ring.length]);
+      }
+    }
+  }
+  // Parks: a grid, kept inside.
+  for (const g of greens) {
+    const rings = ringsOf(g).map((r) => openRing(r).map(proj.toFeet));
+    const xs = rings.flat().map((p) => p[0]);
+    const ys = rings.flat().map((p) => p[1]);
+    for (let x = Math.min(...xs) + TREE_SPACING / 2; x < Math.max(...xs); x += TREE_SPACING) {
+      for (let y = Math.min(...ys) + TREE_SPACING / 2; y < Math.max(...ys); y += TREE_SPACING) {
+        // Every other row offset, so it reads as planting, not a grid.
+        const pt = [x + ((Math.round((y - Math.min(...ys)) / TREE_SPACING) % 2) * TREE_SPACING) / 2, y];
+        if (pointInShape(rings, pt)) out.push(proj.toLatLng(pt));
+      }
+    }
+  }
+  // The setback strip: halfway between the line and the edge.
+  for (const e of main.edges || []) {
+    if (!(e.setback >= 8)) continue;
+    const a = proj.toFeet(e.a);
+    const b = proj.toFeet(e.b);
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < STREET_TREE_SPACING) continue;
+    // Inward: away from the outward normal the edge carries (lat/lng frame
+    // is close enough to the feet frame's directions at site scale).
+    const [nx, ny] = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const inside = pointInShape([openRing(boundary.coordinates[0]).map(proj.toFeet)], [mid[0] + nx, mid[1] + ny]);
+    const sgn = inside ? 1 : -1;
+    const n = Math.floor(len / STREET_TREE_SPACING);
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n;
+      out.push(proj.toLatLng([a[0] + (b[0] - a[0]) * t + sgn * nx * (e.setback / 2), a[1] + (b[1] - a[1]) * t + sgn * ny * (e.setback / 2)]));
+    }
+  }
+  return out.slice(0, MAX_TREES);
 }
 
 // A target yield (targetYield: units, keys, sf, MW or stalls): the most
@@ -2292,7 +2350,7 @@ function toTarget(boundary, scheme, cutouts, first) {
   } else if (type.yieldKind === 'mw') {
     m.generators = Math.ceil(m.generators * keep - 1e-9);
     m.itMw = target;
-    m.parkingRequired = Math.ceil(m.parkingRequired * keep - 1e-9);
+    if (!(s.parkingFixed > 0)) m.parkingRequired = Math.ceil(m.parkingRequired * keep - 1e-9);
   }
   m.density = m.siteAcres > 0 ? (m.units || m.keys) / m.siteAcres : 0;
   return { ...r, metrics: m, proforma: proformaFor(type, s, m), target: target0 };
@@ -2330,17 +2388,22 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
       id: sp.id,
       name: sp.name,
       kind: sp.kind,
+      // A park's outline, for the 3D view.
+      ...(sp.kind === 'green' ? { polygon: sp.polygon } : {}),
       // The site's own loop road already runs around a space (its cutout
       // is ringed too), so a space has no perimeter drive of its own unless
       // its settings ask for one.
       result: polygon
-        ? solvePart(polygon, {
-          assetType: sp.assetType,
-          // A space's edges aren't the site's: one setback all round.
-          overrides: { perimeterDrive: 0, ...(sp.overrides || {}), setbackMode: 0 },
-          driveAisles: scheme.driveAisles,
-          skipAisleChecks: true,
-        })
+        ? (() => {
+          const spaceScheme = {
+            assetType: sp.assetType,
+            // A space's edges aren't the site's: one setback all round.
+            overrides: { perimeterDrive: 0, ...(sp.overrides || {}), setbackMode: 0 },
+            driveAisles: scheme.driveAisles,
+            skipAisleChecks: true,
+          };
+          return toTarget(polygon, spaceScheme, [], solvePart(polygon, spaceScheme));
+        })()
         : null,
     };
   });
@@ -2386,8 +2449,14 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
   totals.sfPerStall = rawStalls > 0 ? totals.parkingPavedSf / rawStalls : 0;
   totals.stallsPerAcre = totals.parkingPavedSf > 0 ? totals.parkingSurface / (totals.parkingPavedSf / SF_PER_ACRE) : 0;
 
+  // Parks and open space: their area (inside the site) and the trees.
+  const greens = spaces.filter((sp) => sp.kind === 'green').map((sp) => clipToSite(sp.polygon)).filter(Boolean);
+  totals.openSpaceSf = greens.reduce((t, g) => t + turfArea(toFeature(g)) * SF_PER_SQM, 0);
+  const trees = plantTrees(boundary, main, spaceResults, greens);
+
   return {
     ...main,
+    trees,
     spaces: spaceResults,
     totals,
     proforma: combineProformas(parts.map((p) => p.proforma).filter(Boolean)),

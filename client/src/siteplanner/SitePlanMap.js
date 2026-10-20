@@ -109,10 +109,12 @@ const STYLES = {
   street: { color: '#9ca3af', weight: 1, fillColor: '#6b7280', fillOpacity: 0.6, pmIgnore: true, interactive: false },
   truck: { color: '#d1d5db', weight: 1, fillColor: '#9ca3af', fillOpacity: 0.45, dashArray: '4 4', pmIgnore: true, interactive: false },
   spaceNoBuild: { color: '#10b981', weight: 2, dashArray: '5 4', fillColor: '#34d399', fillOpacity: 0.3 },
+  spaceGreen: { color: '#166534', weight: 2, fillColor: '#86efac', fillOpacity: 0.6 },
+  tree: { color: '#14532d', weight: 1, fillColor: '#16a34a', fillOpacity: 0.85, pmIgnore: true, interactive: false },
   spaceAsset: { color: '#f43f5e', weight: 2, fillColor: '#fb7185', fillOpacity: 0.25 },
   parkingArea: { color: '#38bdf8', weight: 2, dashArray: '8 5', fillColor: '#0ea5e9', fillOpacity: 0.08 },
   parkingBad: { color: '#ef4444', weight: 2, fillColor: '#374151', fillOpacity: 0.55, pmIgnore: true, interactive: false },
-  island: { color: '#15803d', weight: 0.5, fillColor: '#22c55e', fillOpacity: 0.85, pmIgnore: true, interactive: false },
+  island: { color: '#166534', weight: 0.5, fillColor: '#86efac', fillOpacity: 0.9, pmIgnore: true, interactive: false },
   ada: { color: '#1d4ed8', weight: 0.5, fillColor: '#3b82f6', fillOpacity: 0.9, pmIgnore: true, interactive: false },
   drive: { color: '#9ca3af', weight: 0.5, fillColor: '#4b5563', fillOpacity: 0.55, pmIgnore: true, interactive: false },
   trailer: { color: '#fde68a', weight: 1, fillColor: '#78716c', fillOpacity: 0.55, pmIgnore: true, interactive: false },
@@ -209,7 +211,7 @@ function SitePlanMap({
   parkingAreas, areaInfo, selectedAreaId, onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
   driveAisles, selectedAisleId, onSelectAisle, onAisleChange, onAisleDrawn, truckMode,
   parcelPicking, onParcelPick, parcelHighlight, terrainPoints,
-  selectedGenerated, onSelectGenerated, onGeneratedDrag, edges, onPickEdge,
+  selectedGenerated, onSelectGenerated, onGeneratedDrag, edges, onPickEdge, trees,
 }) {
   const elRef = useRef(null);
   const mapRef = useRef(null);
@@ -223,6 +225,7 @@ function SitePlanMap({
   const areaHandleGroupRef = useRef(null);
   const entryGroupRef = useRef(null);
   const edgeGroupRef = useRef(null);
+  const treeGroupRef = useRef(null);
   const aisleGroupRef = useRef(null);
   const aisleLayersRef = useRef(new Map()); // id -> { layer, json }
   const placedGroupRef = useRef(null);
@@ -282,6 +285,7 @@ function SitePlanMap({
     L.control.layers({ Satellite: satellite, Streets: streets }, overlays, { position: 'topright' }).addTo(map);
     L.control.scale({ imperial: true, metric: false }).addTo(map);
     layoutGroupRef.current = L.layerGroup().addTo(map);
+    treeGroupRef.current = L.layerGroup().addTo(map);
     spaceGroupRef.current = L.featureGroup().addTo(map);
     areaGroupRef.current = L.featureGroup().addTo(map);
     areaHandleGroupRef.current = L.layerGroup().addTo(map);
@@ -428,7 +432,7 @@ function SitePlanMap({
         entry = { layer, json };
         layers.set(sp.id, entry);
       }
-      const style = sp.kind === 'no-build' ? STYLES.spaceNoBuild : STYLES.spaceAsset;
+      const style = sp.kind === 'no-build' ? STYLES.spaceNoBuild : sp.kind === 'green' ? STYLES.spaceGreen : STYLES.spaceAsset;
       entry.layer.setStyle({ ...style, weight: sp.id === selectedSpaceId ? 4 : style.weight });
       entry.layer.unbindTooltip();
       entry.layer.bindTooltip(sp.name, { permanent: true, direction: 'center', className: 'siteplan-space-label' });
@@ -597,6 +601,18 @@ function SitePlanMap({
       });
     }
   }, [layout]);
+
+  // Trees (parks, islands and end caps, the setback strip): canopies
+  // about 26 ft across, with a light crown so they read as trees.
+  useEffect(() => {
+    const group = treeGroupRef.current;
+    if (!group) return;
+    group.clearLayers();
+    for (const t of trees || []) {
+      L.circle(t, { ...STYLES.tree, radius: 4 }).addTo(group);
+      L.circle([t[0] + 0.000008, t[1] - 0.00001], { radius: 1.6, stroke: false, fillColor: '#4ade80', fillOpacity: 0.7, pmIgnore: true, interactive: false }).addTo(group);
+    }
+  }, [trees]);
 
   // Setbacks by edge: each edge's role and setback at its middle. Click
   // one to make it the front; shift-click for a corner lot's second front.

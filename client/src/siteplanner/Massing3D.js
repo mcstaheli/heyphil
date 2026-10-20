@@ -6,11 +6,14 @@ import { makeProjection } from './geometry';
 // with a simple axonometric projection; drag sideways to turn it.
 
 const TILT = 0.55; // how flat the ground looks
+const TREE_HEIGHT = 24; // ft to the top of a crown
+const CROWN = 12; // ft, crown radius
 const LIFT = 0.9; // how tall a foot of height looks
 const COLORS = {
   ground: '#e7f0dc', site: '#9ccc65', parking: '#9ca3af', drive: '#6b7280', lot: '#bbf7d0', yard: '#4b5563',
   top: '#a5b4fc', side1: '#6366f1', side2: '#4f46e5', garageTop: '#c4b5fd', edge: 'rgba(30, 27, 75, 0.55)',
   envelope: 'rgba(234, 88, 12, 0.85)',
+  tree: '#16a34a', treeDark: '#166534', trunk: '#78350f', park: '#86efac',
 };
 
 function collect(boundary, results) {
@@ -54,6 +57,12 @@ function collect(boundary, results) {
     env.lower.forEach((r) => envelope.push({ ring: r.map(toFeet), base: 0, height: lowTop }));
     if (env.upper && env.stepFt < env.topFt) env.upper.forEach((r) => envelope.push({ ring: r.map(toFeet), base: env.stepFt, height: env.topFt }));
   }
+  // Parks on the ground; trees as a trunk and a round crown, sorted with
+  // the buildings so the near ones hide what's behind.
+  (results.spaces || []).forEach((sp) => {
+    if (sp.kind === 'green' && sp.polygon) flat.push({ ring: sp.polygon.coordinates[0].slice(0, -1).map(proj.toFeet), color: COLORS.park });
+  });
+  (results.trees || []).forEach((t) => masses.push({ tree: true, ring: [toFeet(t)], base: 0, height: TREE_HEIGHT }));
   return { site, flat, masses, envelope };
 }
 
@@ -130,6 +139,25 @@ function Massing3D({ boundary, result, onClose }) {
       return ring.reduce((sum, p) => sum + view(p)[2], 0) / ring.length;
     };
     [...scene.masses].sort((a, b) => depth(b) - depth(a) || a.base - b.base).forEach((m) => {
+      if (m.tree) {
+        const [x0, y0] = screen(m.ring[0], 0);
+        const [x1, y1] = screen(m.ring[0], m.height - CROWN);
+        ctx.strokeStyle = COLORS.trunk;
+        ctx.lineWidth = Math.max(1, 1.5 * k);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+        const r = Math.max(2, CROWN * k);
+        ctx.beginPath();
+        ctx.ellipse(x1, y1, r, r * 0.9, 0, 0, Math.PI * 2);
+        ctx.fillStyle = COLORS.tree;
+        ctx.fill();
+        ctx.strokeStyle = COLORS.treeDark;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        return;
+      }
       const faces = m.ring.map((p, i) => {
         const q = m.ring[(i + 1) % m.ring.length];
         return { p, q, d: (view(p)[2] + view(q)[2]) / 2, i };

@@ -20,11 +20,19 @@ export const fmtMoney = (n) => {
 
 // A number input that lets you type freely ("1." on the way to "1.5")
 // and reports only valid numbers.
-export function NumberInput({ value, onChange, step, min = 0, max = 1e10, ...rest }) {
+// commitOnBlur: report the number only on Enter or leaving the box, not
+// on every keystroke (for a change that's big to make, like taking a
+// layout over by hand).
+export function NumberInput({ value, onChange, step, min = 0, max = 1e10, commitOnBlur = false, ...rest }) {
   const [text, setText] = useState(String(value ?? ''));
   useEffect(() => {
     setText((t) => (Number(t) === value && t.trim() !== '' ? t : String(value ?? '')));
   }, [value]);
+  const valid = (t) => t.trim() !== '' && Number.isFinite(Number(t)) && Number(t) >= min && Number(t) <= max;
+  const commit = () => {
+    if (valid(text) && Number(text) !== value) onChange(Number(text));
+    else setText(String(value ?? ''));
+  };
   return (
     <input
       type="number"
@@ -35,10 +43,10 @@ export function NumberInput({ value, onChange, step, min = 0, max = 1e10, ...res
       value={text}
       onChange={(e) => {
         setText(e.target.value);
-        const n = Number(e.target.value);
-        if (e.target.value.trim() !== '' && Number.isFinite(n) && n >= min && n <= max) onChange(n);
+        if (!commitOnBlur && valid(e.target.value)) onChange(Number(e.target.value));
       }}
-      onBlur={() => setText(String(value ?? ''))}
+      onBlur={() => (commitOnBlur ? commit() : setText(String(value ?? '')))}
+      onKeyDown={commitOnBlur ? (e) => { if (e.key === 'Enter') commit(); } : undefined}
       {...rest}
     />
   );

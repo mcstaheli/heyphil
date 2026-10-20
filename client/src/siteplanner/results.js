@@ -51,6 +51,7 @@ export function metricRows(type, m) {
     if (m.keys) rows.push(['Keys', fmtInt(m.keys)]);
     if (m.units || m.keys) rows.push(['Density', `${fmtDec(m.density, 1)} per acre`]);
     rows.push(['FAR', fmtDec(m.far)], ['Lot coverage', fmtPct(m.coverage)]);
+    if (m.openSpaceSf > 0) rows.push(['Open space (parks)', `${fmtInt(m.openSpaceSf)} sf (${fmtPct(m.siteSf > 0 ? m.openSpaceSf / m.siteSf : 0)})`]);
     if (m.docks) rows.push(['Dock doors', fmtInt(m.docks)]);
     if (m.itMw) rows.push(['IT load', `${fmtDec(m.itMw, 1)} MW`], ['Generators', fmtInt(m.generators)]);
     rows.push(['Parking required', fmtInt(m.parkingRequired)]);

@@ -11,7 +11,7 @@ import { fieldsFor } from './assetTypes';
 const USE_KEYS = ['targetYield', 'mix', 'efficiency', 'grossPerKey', 'homeSize', 'whiteSpacePct', 'wattsPerSf', 'generatorMw', 'redundancyPct'];
 const TRUCK_KEYS = ['truckCourt', 'dockSpacing', 'trailerStallsPerDock', 'minTruckCourt', 'truckAisleWidth', 'truckTurnRadius', 'trailerDepth'];
 // How many stalls the use needs, and podium parking's area per stall.
-const PARKING_PROGRAM_KEYS = ['parkingRatio', 'parkingFixed', 'garageStalls', 'sfPerStructuredStall'];
+export const PARKING_PROGRAM_KEYS = ['parkingRatio', 'parkingFixed', 'garageStalls', 'sfPerStructuredStall'];
 
 function buildingsTitle(type) {
   if (type.mode === 'lots') return 'Lots & streets';

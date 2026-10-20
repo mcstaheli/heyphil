@@ -130,14 +130,14 @@ export function GeneratedBuilding({ label, rect, floors, onEdit, canEdit }) {
         <>
           {rect && (
             <div className="siteplan-selection-grid">
-              <Field label="Length" unit="ft"><NumberInput value={Math.round(rect.length)} min={1} max={5000} onChange={(n) => onEdit({ length: n })} /></Field>
-              <Field label="Depth" unit="ft"><NumberInput value={Math.round(rect.depth)} min={1} max={5000} onChange={(n) => onEdit({ depth: n })} /></Field>
-              <Field label="Angle" unit="°"><NumberInput value={Math.round(rect.angle * 10) / 10} min={-360} max={360} step={0.5} onChange={(n) => onEdit({ angle: n })} /></Field>
-              {floors > 0 && <Field label="Floors"><NumberInput value={floors} min={1} max={100} onChange={(n) => onEdit({ floors: Math.round(n) })} /></Field>}
+              <Field label="Length" unit="ft"><NumberInput commitOnBlur value={Math.round(rect.length)} min={1} max={5000} onChange={(n) => onEdit({ length: n })} /></Field>
+              <Field label="Depth" unit="ft"><NumberInput commitOnBlur value={Math.round(rect.depth)} min={1} max={5000} onChange={(n) => onEdit({ depth: n })} /></Field>
+              <Field label="Angle" unit="°"><NumberInput commitOnBlur value={Math.round(rect.angle * 10) / 10} min={-360} max={360} step={0.5} onChange={(n) => onEdit({ angle: n })} /></Field>
+              {floors > 0 && <Field label="Floors"><NumberInput commitOnBlur value={floors} min={1} max={100} onChange={(n) => onEdit({ floors: Math.round(n) })} /></Field>}
             </div>
           )}
           <button type="button" className="siteplan-small-btn" onClick={() => onEdit(null)}>✋ Move, resize or reshape</button>
-          <p className="siteplan-muted siteplan-small">Changing a number, dragging it on the map or ✋ switches the layout to placed by hand (the other buildings stay put); then pick an L, U or courtyard shape.</p>
+          <p className="siteplan-muted siteplan-small">Type a number and press Enter, drag it on the map, or ✋ - any of them switches the layout to placed by hand (the other buildings stay put); then pick an L, U or courtyard shape.</p>
         </>
       ) : (
         <p className="siteplan-muted siteplan-small">Shaped buildings (L, U, courtyard, wrap) are laid out automatically. Set the shape to Bars to place buildings by hand.</p>
@@ -216,11 +216,12 @@ export function SpaceEditor({ space, result, onUpdate, onRemove }) {
       </Field>
       <Field label="Use">
         <select
-          value={space.kind === 'no-build' ? 'no-build' : space.assetType}
-          onChange={(e) => (e.target.value === 'no-build'
-            ? onUpdate(space.id, { kind: 'no-build', assetType: undefined, overrides: undefined })
+          value={space.kind === 'asset' ? space.assetType : space.kind}
+          onChange={(e) => (e.target.value === 'no-build' || e.target.value === 'green'
+            ? onUpdate(space.id, { kind: e.target.value, assetType: undefined, overrides: undefined })
             : onUpdate(space.id, { kind: 'asset', assetType: e.target.value, overrides: { setback: 0 } }))}
         >
+          <option value="green">Park / open space</option>
           <option value="no-build">No-build</option>
           {ASSET_TYPES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
         </select>

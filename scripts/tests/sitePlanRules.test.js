@@ -172,3 +172,8 @@ test('a placed building can be L, U or courtyard shaped, with a wing depth', () 
   assert.throws(() => one({ edits: { buildings: [{ ...b, shape: 'star', wing: 60 }] } }), SitePlanValidationError);
   assert.throws(() => one({ edits: { buildings: [{ ...b, shape: 'L' }] } }), SitePlanValidationError);
 });
+
+test('a space can be a park', () => {
+  const polygon = { type: 'Polygon', coordinates: [[[-111.9, 40.7], [-111.899, 40.7], [-111.899, 40.701], [-111.9, 40.7]]] };
+  assert.equal(one({ spaces: [{ id: 's', name: 'Park', kind: 'green', polygon }] }).spaces[0].kind, 'green');
+});

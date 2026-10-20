@@ -2,7 +2,7 @@ import { adaRequired, bestOrientation, islandSlots, layBay, netStalls, parkingMo
 import { defaultsFor, getAssetType } from './assetTypes';
 import { solveScheme } from './solver';
 
-const base = { ...defaultsFor(getAssetType('parking')) };
+const base = { ...defaultsFor(getAssetType('parking')), endIslands: 0 }; // the stall counts below assume no end caps
 
 function rectSite(width, depth, lat = 40.76, lng = -111.89) {
   const dx = width / (364000 * Math.cos((lat * Math.PI) / 180));
