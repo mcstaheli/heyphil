@@ -5,6 +5,7 @@ import React from 'react';
 
 const STEPS = [
   ['Find the site', 'Search an address, or turn on Parcels in the layer menu (top right) and use ▦ Pick a parcel to grab a parcel as the site. You can also trace the site with the polygon or rectangle tool on the left.'],
+  ['Set the envelope', 'Under Site, choose Front, side and rear setbacks and pick the front edge (or click an edge label on the map; shift-click a second front for a corner lot). Under Zoning, set height, FAR, coverage, density (units per acre) and an upper-floor stepback. ◆ 3D shows the envelope as orange dashes.'],
   ['Pick an asset type', 'Each type starts from standard defaults - multifamily, townhomes, single-family, hotel, industrial, retail, data center, surface parking or a parking garage. Use sets what it is (unit mix with beds and baths, efficiency); changed fields turn amber and ↺ puts one back.'],
   ['Set aside ground', 'In Spaces, draw no-build areas (easements, ponds, open space) or areas with their own use. Buildings and parking are planned around them.'],
   ['Shape the buildings', 'The steps follow the asset type: multifamily picks a building shape (bars, garden walk-ups, L, U, courtyard, double courtyard or a wrap around a garage) and lays out units, stairs and elevators floor by floor; industrial adds a truck court step; a garage has decks and ramps. Click any building or parking bay on the map - its details and controls are pinned at the top of the panel. Drag a generated building to move it, which switches to placing by hand.'],
@@ -21,6 +22,7 @@ const TERMS = [
   ['Bay', 'A drive aisle with a row of stalls on each side (60 ft deep at 90° with standard stalls).'],
   ['Perimeter drive', 'A loop road just inside the setback that every bay can open onto.'],
   ['Shared parking', 'Mixed uses peak at different times, so they can share stalls; the plan uses typical time-of-day patterns.'],
+  ['Stepback', 'Upper floors set further back from the property line than the floors below; here, every floor above the set count keeps the extra distance from each setback line.'],
   ['WB-67', 'A standard tractor-trailer (53 ft trailer) used to size truck courts and turns.'],
 ];
 

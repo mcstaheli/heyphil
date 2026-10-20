@@ -10,6 +10,7 @@ const LIFT = 0.9; // how tall a foot of height looks
 const COLORS = {
   ground: '#e7f0dc', site: '#9ccc65', parking: '#9ca3af', drive: '#6b7280', lot: '#bbf7d0', yard: '#4b5563',
   top: '#a5b4fc', side1: '#6366f1', side2: '#4f46e5', garageTop: '#c4b5fd', edge: 'rgba(30, 27, 75, 0.55)',
+  envelope: 'rgba(234, 88, 12, 0.85)',
 };
 
 function collect(boundary, results) {
@@ -24,19 +25,43 @@ function collect(boundary, results) {
     (g.lots || []).forEach((r) => flat.push({ ring: r.map(toFeet), color: COLORS.lot }));
     (g.yards || []).forEach((r) => flat.push({ ring: r.map(toFeet), color: COLORS.yard }));
     (g.truckCourts || []).forEach((r) => flat.push({ ring: r.map(toFeet), color: COLORS.parking }));
-    (g.buildings || []).forEach((r, i) => masses.push({ ring: r.map(toFeet), height: (g.buildingHeights || [])[i] || 30 }));
-    if (g.garage) g.garage.outline.forEach((r) => masses.push({ ring: r.map(toFeet), height: garageHeight || 40, garage: true }));
+    // A stepped-back building is two masses: the full footprint up to the
+    // stepback, the smaller upper plate(s) from there to the roof.
+    const steps = new Map((g.stepbacks || []).map((st) => [st.index, st]));
+    (g.buildings || []).forEach((r, i) => {
+      const height = (g.buildingHeights || [])[i] || 30;
+      const st = steps.get(i);
+      if (!st || st.atFt >= height) {
+        masses.push({ ring: r.map(toFeet), base: 0, height });
+        return;
+      }
+      const footprint = r.map(toFeet);
+      masses.push({ ring: footprint, base: 0, height: st.atFt });
+      // Sorted with its building, so it draws over its own lower part.
+      st.upper.forEach((ring) => masses.push({ ring: ring.map(toFeet), base: st.atFt, height, sortRing: footprint }));
+    });
+    if (g.garage) g.garage.outline.forEach((r) => masses.push({ ring: r.map(toFeet), base: 0, height: garageHeight || 40, garage: true }));
   };
   add(results.geometry, results.metrics?.heightFt);
   (results.spaces || []).forEach((sp) => add(sp.result?.geometry, sp.result?.metrics?.heightFt));
   const site = boundary.coordinates[0].slice(0, -1).map(proj.toFeet);
-  return { site, flat, masses };
+  // The zoning envelope, as wireframe boxes: the setback line to the
+  // stepback (or the height limit), the stepped line above it.
+  const env = results.geometry?.envelope;
+  const envelope = [];
+  if (env && env.topFt) {
+    const lowTop = env.upper && env.stepFt < env.topFt ? env.stepFt : env.topFt;
+    env.lower.forEach((r) => envelope.push({ ring: r.map(toFeet), base: 0, height: lowTop }));
+    if (env.upper && env.stepFt < env.topFt) env.upper.forEach((r) => envelope.push({ ring: r.map(toFeet), base: env.stepFt, height: env.topFt }));
+  }
+  return { site, flat, masses, envelope };
 }
 
 function Massing3D({ boundary, result, onClose }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const [angle, setAngle] = useState(-35);
+  const [showEnvelope, setShowEnvelope] = useState(true);
   const dragRef = useRef(null);
   const [size, setSize] = useState({ w: 800, h: 520 });
   // Projected once per scheme; turning only changes the view transform.
@@ -65,7 +90,10 @@ function Massing3D({ boundary, result, onClose }) {
       return [rx, -ry * TILT - z * LIFT, ry];
     };
     // Fit everything (ground and roofs) to the canvas.
-    const all = [...scene.site.map((p) => view(p)), ...scene.masses.flatMap((m) => m.ring.map((p) => view(p, m.height)))];
+    const all = [
+      ...scene.site.map((p) => view(p)),
+      ...[...scene.masses, ...(showEnvelope ? scene.envelope : [])].flatMap((m) => m.ring.map((p) => view(p, m.height))),
+    ];
     const xs = all.map((p) => p[0]);
     const ys = all.map((p) => p[1]);
     const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
@@ -97,18 +125,46 @@ function Massing3D({ boundary, result, onClose }) {
     scene.flat.forEach((f) => poly(f.ring.map((p) => screen(p, 0)), f.color, null));
 
     // Far buildings first; within one, side faces far to near, then the roof.
-    const depth = (m) => m.ring.reduce((sum, p) => sum + view(p)[2], 0) / m.ring.length;
-    [...scene.masses].sort((a, b) => depth(b) - depth(a)).forEach((m) => {
+    const depth = (m) => {
+      const ring = m.sortRing || m.ring;
+      return ring.reduce((sum, p) => sum + view(p)[2], 0) / ring.length;
+    };
+    [...scene.masses].sort((a, b) => depth(b) - depth(a) || a.base - b.base).forEach((m) => {
       const faces = m.ring.map((p, i) => {
         const q = m.ring[(i + 1) % m.ring.length];
         return { p, q, d: (view(p)[2] + view(q)[2]) / 2, i };
       }).sort((a, b) => b.d - a.d);
       faces.forEach(({ p, q, i }) => {
-        poly([screen(p, 0), screen(q, 0), screen(q, m.height), screen(p, m.height)], i % 2 ? COLORS.side1 : COLORS.side2, COLORS.edge);
+        poly([screen(p, m.base), screen(q, m.base), screen(q, m.height), screen(p, m.height)], i % 2 ? COLORS.side1 : COLORS.side2, COLORS.edge);
       });
       poly(m.ring.map((p) => screen(p, m.height)), m.garage ? COLORS.garageTop : COLORS.top, COLORS.edge);
     });
-  }, [scene, angle, size]);
+
+    // The envelope on top, as dashed outlines: base, top and corner posts.
+    if (showEnvelope) {
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = COLORS.envelope;
+      ctx.lineWidth = 1.25;
+      scene.envelope.forEach((m) => {
+        for (const z of [m.base, m.height]) {
+          ctx.beginPath();
+          m.ring.forEach((p, i) => { const [x, y] = screen(p, z); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+          ctx.closePath();
+          ctx.stroke();
+        }
+        m.ring.forEach((p) => {
+          ctx.beginPath();
+          const [x0, y0] = screen(p, m.base);
+          const [x1, y1] = screen(p, m.height);
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+        });
+      });
+      ctx.restore();
+    }
+  }, [scene, angle, size, showEnvelope]);
 
   const onDown = (e) => { dragRef.current = { x: e.clientX, angle }; };
   const onMove = (e) => {
@@ -141,7 +197,15 @@ function Massing3D({ boundary, result, onClose }) {
               Turn
               <input type="range" min={-180} max={180} value={Math.round(((angle + 180) % 360 + 360) % 360 - 180)} onChange={(e) => setAngle(Number(e.target.value))} />
             </label>
-            <span className="siteplan-muted siteplan-small">Drag the view to turn it. Buildings are drawn at their full height; parking and drives sit on the ground.</span>
+            {scene?.envelope.length > 0 && (
+              <label className="siteplan-small">
+                <input type="checkbox" checked={showEnvelope} onChange={(e) => setShowEnvelope(e.target.checked)} /> Zoning envelope
+              </label>
+            )}
+            <span className="siteplan-muted siteplan-small">
+              Drag the view to turn it. Buildings are drawn at their full height, stepped back where the zoning asks.
+              {scene && !scene.envelope.length ? ' Set a max height under Zoning to see the envelope.' : ' Orange dashes: the setbacks up to the height limit.'}
+            </span>
           </div>
         </div>
         <div className="modal-footer siteplan-modal-footer">

@@ -185,6 +185,15 @@ const entryIcon = (auto, reaches) => L.divIcon({
   iconAnchor: [13, 9],
 });
 
+// A site edge's label: its role and setback; click to make it the front.
+const ROLE_LETTER = { front: 'F', side: 'S', rear: 'R' };
+const edgeIcon = (e) => L.divIcon({
+  className: `siteplan-edge-label siteplan-edge-${e.role}`,
+  html: `${ROLE_LETTER[e.role] || ''} ${Math.round(e.setback)}′`,
+  iconSize: [44, 18],
+  iconAnchor: [22, 9],
+});
+
 function SitePlanMap({
   boundary, initialView, layout, spaceLayouts, flyTo, onBoundaryChange, buildingLabel,
   spaces, selectedSpaceId, onSelectSpace, onSpaceChange, onSpaceDrawn, drawRequest,
@@ -192,7 +201,7 @@ function SitePlanMap({
   parkingAreas, areaInfo, selectedAreaId, onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
   driveAisles, selectedAisleId, onSelectAisle, onAisleChange, onAisleDrawn, truckMode,
   parcelPicking, onParcelPick, parcelHighlight, terrainPoints,
-  selectedGenerated, onSelectGenerated, onGeneratedDrag,
+  selectedGenerated, onSelectGenerated, onGeneratedDrag, edges, onPickEdge,
 }) {
   const elRef = useRef(null);
   const mapRef = useRef(null);
@@ -205,6 +214,7 @@ function SitePlanMap({
   const areaLayersRef = useRef(new Map()); // id -> { layer, json }
   const areaHandleGroupRef = useRef(null);
   const entryGroupRef = useRef(null);
+  const edgeGroupRef = useRef(null);
   const aisleGroupRef = useRef(null);
   const aisleLayersRef = useRef(new Map()); // id -> { layer, json }
   const placedGroupRef = useRef(null);
@@ -215,7 +225,7 @@ function SitePlanMap({
   cb.current = {
     onBoundaryChange, onSelectSpace, onSpaceChange, onSpaceDrawn, onSelectBuilding, onBuildingChange,
     onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
-    onSelectAisle, onAisleChange, onAisleDrawn, onParcelPick, onSelectGenerated, onGeneratedDrag,
+    onSelectAisle, onAisleChange, onAisleDrawn, onParcelPick, onSelectGenerated, onGeneratedDrag, onPickEdge,
   };
   const pickingRef = useRef(false);
   pickingRef.current = !!parcelPicking;
@@ -268,6 +278,7 @@ function SitePlanMap({
     areaGroupRef.current = L.featureGroup().addTo(map);
     areaHandleGroupRef.current = L.layerGroup().addTo(map);
     entryGroupRef.current = L.layerGroup().addTo(map);
+    edgeGroupRef.current = L.layerGroup().addTo(map);
     aisleGroupRef.current = L.featureGroup().addTo(map);
     placedGroupRef.current = L.layerGroup().addTo(map);
 
@@ -578,6 +589,20 @@ function SitePlanMap({
       });
     }
   }, [layout]);
+
+  // Setbacks by edge: each edge's role and setback at its middle. Click
+  // one to make it the front; shift-click for a corner lot's second front.
+  useEffect(() => {
+    const group = edgeGroupRef.current;
+    if (!group) return;
+    group.clearLayers();
+    for (const e of edges || []) {
+      L.marker(e.mid, { icon: edgeIcon(e), pmIgnore: true, zIndexOffset: 800 })
+        .bindTooltip(`Edge ${e.index} · faces ${e.facing} · ${Math.round(e.lengthFt)} ft · ${e.role} setback ${Math.round(e.setback)} ft. Click to make it the front; shift-click for a second front.`, { direction: 'top' })
+        .on('click', (ev) => cb.current.onPickEdge?.(e.index, !!ev.originalEvent?.shiftKey))
+        .addTo(group);
+    }
+  }, [edges]);
 
   // The solver's layout (and each asset space's). With buildings placed
   // by hand, those are drawn by the placed-building layer instead.

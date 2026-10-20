@@ -387,6 +387,39 @@ function TerrainSection({ hasBoundary, terrain, terrainStats, boundaryKey, onChe
   );
 }
 
+// Setbacks by edge: which edge is the front (and a corner lot's second
+// front), and what each edge ends up with.
+function EdgePicker({ edges, settings, onFront, onSecond }) {
+  const label = (e) => `Edge ${e.index} · faces ${e.facing} · ${fmtInt(e.lengthFt)} ft`;
+  return (
+    <div className="siteplan-section">
+      <label className="siteplan-field">
+        <span className="siteplan-field-label">Front edge</span>
+        <span className="siteplan-field-input">
+          <select value={settings.frontEdge || 0} onChange={(e) => onFront(Number(e.target.value) || undefined)}>
+            <option value={0}>Longest edge</option>
+            {edges.map((e) => <option key={e.index} value={e.index}>{label(e)}</option>)}
+          </select>
+          <span className="siteplan-reset-spacer" />
+        </span>
+      </label>
+      <label className="siteplan-field">
+        <span className="siteplan-field-label">Second front<span className="siteplan-field-unit"> (corner lot)</span></span>
+        <span className="siteplan-field-input">
+          <select value={settings.frontEdge2 || 0} onChange={(e) => onSecond(Number(e.target.value))}>
+            <option value={0}>None</option>
+            {edges.map((e) => <option key={e.index} value={e.index}>{label(e)}</option>)}
+          </select>
+          <span className="siteplan-reset-spacer" />
+        </span>
+      </label>
+      <p className="siteplan-muted siteplan-small">
+        {edges.map((e) => `${e.index}: ${e.role} ${fmtInt(e.setback)} ft`).join(' · ')}. Or click an edge&apos;s label on the map (shift-click for a second front).
+      </p>
+    </div>
+  );
+}
+
 // Presets (#4): save a scheme's asset type and settings, apply them on
 // any site.
 function PresetsSection({ presets, scheme, onApply, onSave, onDelete }) {
@@ -1029,7 +1062,10 @@ function SitePlanEditor() {
   // Each check says whether the Zoning or the Parking step owns it.
   const zoningChecks = (activeResult?.checks || []).filter((c) => c.category === 'zoning');
   const zoningFails = failing.filter((c) => c.category === 'zoning');
-  const siteSetback = activeResult?.settings?.setback ?? effectiveSettings(active).setback;
+  const siteSettings = activeResult?.settings || effectiveSettings(active);
+  const siteSetbackLabel = siteSettings.setbackMode === 1
+    ? `${fmtInt(siteSettings.frontSetback)} / ${fmtInt(siteSettings.setback)} / ${fmtInt(siteSettings.rearSetback)} ft setbacks`
+    : `${fmtInt(siteSettings.setback)} ft setback`;
   // One place for a step's share of the settings.
   const settingsFor = (id, keys, extra = {}) => (keys.length ? (
     <SchemeSettings
@@ -1069,7 +1105,7 @@ function SitePlanEditor() {
           status: !draft.boundary ? 'todo' : (activeResult?.error || terrainStats?.steepPads) ? 'warn' : 'done',
           summary: !draft.boundary ? 'Find the site and draw or pick its boundary'
             : activeResult?.error && !m ? activeResult.error
-              : `${fmtDec(m?.siteAcres || 0)} ac · ${fmtInt(siteSetback)} ft setback${terrainStats ? ` · ${fmtDec(terrainStats.gradePct, 1)}% slope` : ''}`,
+              : `${fmtDec(m?.siteAcres || 0)} ac · ${siteSetbackLabel}${terrainStats ? ` · ${fmtDec(terrainStats.gradePct, 1)}% slope` : ''}`,
           noNext: !draft.boundary,
         };
       case 'use':
@@ -1144,6 +1180,14 @@ function SitePlanEditor() {
               </div>
             )}
             {settingsFor(st.id, st.keys)}
+            {byEdge && (activeResult?.edges || []).length > 0 && (
+              <EdgePicker
+                edges={activeResult.edges}
+                settings={effectiveSettings(active)}
+                onFront={(i) => pickEdge(i, false)}
+                onSecond={(i) => setOverrideKey('frontEdge2', i || undefined)}
+              />
+            )}
             <TerrainSection hasBoundary={!!draft.boundary} terrain={terrain} terrainStats={terrainStats} boundaryKey={boundaryKey} onCheck={checkTerrain} />
             <p className="siteplan-muted siteplan-small">Flood zones, wetlands, contours, relief, soils and lot lines are in the map&apos;s layer menu (top right).</p>
             {draft.boundary && (
@@ -1316,6 +1360,17 @@ function SitePlanEditor() {
     ...(hasSurfaceParking(activeType) ? (active.driveAisles || []) : []).map((a, i) => ({ key: selectionKey('aisle', a.id), label: `Aisle ${i + 1}`, group: 'Drive aisles' })),
     ...bays.map((bay, i) => ({ key: selectionKey('bay', i), label: `Bay ${i + 1} · ${fmtInt(bay.stallCount)} stalls`, group: 'Parking bays' })),
   ];
+  // Setbacks by edge: the front edge (and a corner lot's second front).
+  const byEdge = effectiveSettings(active).setbackMode === 1;
+  const pickEdge = (index, second) => {
+    const cur = effectiveSettings(currentScheme());
+    if (second) {
+      setOverrideKey('frontEdge2', cur.frontEdge2 === index || cur.frontEdge === index ? undefined : index);
+      return;
+    }
+    const patch = withOverride(activeType, currentScheme().overrides || {}, 'frontEdge', index);
+    updateScheme(active.id, { overrides: cur.frontEdge2 === index ? withOverride(activeType, patch, 'frontEdge2', undefined) : patch });
+  };
   const onSelectGenerated = (kind, i) => setSelection(selectionKey(kind, i));
   // Dragging a generated building takes the layout over by hand, with
   // that building where it was dropped.
@@ -1538,6 +1593,8 @@ function SitePlanEditor() {
               selectedGenerated={sel && (sel.kind === 'auto' || sel.kind === 'bay') ? selection : null}
               onSelectGenerated={onSelectGenerated}
               onGeneratedDrag={canTakeOver ? onGeneratedDrag : null}
+              edges={byEdge ? (activeResult?.edges || NONE) : NONE}
+              onPickEdge={pickEdge}
             />
             {!draft.boundary && (
               <div className="siteplan-map-hint">

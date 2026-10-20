@@ -47,10 +47,16 @@ const mfLayoutFields = () => [
 
 // Zoning limits and stall geometry every type shares. 0 means no limit.
 export const COMMON_FIELDS = [
-  { key: 'setback', label: 'Setback', unit: 'ft', default: 20, group: 'Site' },
+  { key: 'setbackMode', label: 'Setbacks', unit: '', default: 0, group: 'Site', options: [[0, 'Same on every edge'], [1, 'Front, side and rear']] },
+  { key: 'setback', label: 'Setback', unit: 'ft', default: 20, group: 'Site', hint: 'side setback when front, side and rear differ' },
+  { key: 'frontSetback', label: 'Front setback', unit: 'ft', default: 25, group: 'Site', showIf: (s) => s.setbackMode === 1 },
+  { key: 'rearSetback', label: 'Rear setback', unit: 'ft', default: 20, group: 'Site', showIf: (s) => s.setbackMode === 1 },
   { key: 'maxHeight', label: 'Max height', unit: 'ft', default: 0, hint: '0 = no limit', group: 'Zoning' },
   { key: 'maxFar', label: 'Max FAR', unit: '', default: 0, step: 0.1, hint: '0 = no limit', group: 'Zoning' },
   { key: 'maxCoverage', label: 'Max lot coverage', unit: '%', default: 0, hint: '0 = no limit', group: 'Zoning' },
+  { key: 'maxDensity', label: 'Max density', unit: 'per acre', default: 0, step: 0.5, hint: 'units (or hotel keys) per acre; 0 = no limit', group: 'Zoning' },
+  { key: 'stepbackAbove', label: 'Step back above', unit: 'floors', default: 0, hint: 'upper floors set back further; 0 = no stepback', group: 'Zoning' },
+  { key: 'stepbackDepth', label: 'Stepback', unit: 'ft', default: 10, group: 'Zoning', showIf: (s) => s.stepbackAbove > 0 },
   { key: 'stallAngle', label: 'Stall angle', unit: '', default: 90, group: 'Parking', options: [[90, '90° · two-way aisle'], [60, '60° · one-way aisle'], [45, '45° · one-way aisle']] },
   { key: 'stallWidth', label: 'Stall width', unit: 'ft', default: 9, step: 0.5, group: 'Parking' },
   { key: 'stallDepth', label: 'Stall depth', unit: 'ft', default: 18, step: 0.5, group: 'Parking' },
@@ -274,6 +280,10 @@ export function fieldsFor(type) {
 export function defaultsFor(type) {
   const out = Object.fromEntries(fieldsFor(type).map((fd) => [fd.key, fd.default]));
   if (type.hasMix) out.mix = DEFAULT_MIX;
+  // The front edge and a corner lot's second front (envelope.js), set on
+  // the map or in the Site step rather than as fields; 0 = longest / none.
+  out.frontEdge = 0;
+  out.frontEdge2 = 0;
   out.rotation = 'auto';
   out.parkingRotation = 'auto';
   return out;

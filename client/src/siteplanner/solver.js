@@ -25,6 +25,7 @@ import {
 } from './geometry';
 import { combineProformas, proformaFor } from './proforma';
 import { routeAisles } from './routing';
+import { insetByEdges, setbackNear, siteEdges } from './envelope';
 import { FALLBACK, buildingProgram, largestRect, shapeKey, shapeMinimum, shapeWings } from './buildings';
 import {
   analyzeAisle,
@@ -68,6 +69,7 @@ export const MAX_FLOORS = 100;
 export const LIMIT_LABELS = {
   parking: 'Parking',
   far: 'FAR',
+  density: 'Density',
   coverage: 'Lot coverage',
   height: 'Height',
   site: 'Site size',
@@ -85,6 +87,14 @@ function sanitize(s) {
   return {
     ...s,
     setback: pos(s.setback, 0),
+    setbackMode: s.setbackMode === 1 ? 1 : 0,
+    frontSetback: pos(s.frontSetback, 0),
+    rearSetback: pos(s.rearSetback, 0),
+    frontEdge: Math.max(0, Math.round(s.frontEdge || 0)),
+    frontEdge2: Math.max(0, Math.round(s.frontEdge2 || 0)),
+    maxDensity: pos(s.maxDensity, 0),
+    stepbackAbove: Math.min(MAX_FLOORS, Math.max(0, Math.round(s.stepbackAbove || 0))),
+    stepbackDepth: pos(s.stepbackDepth, 0),
     stallWidth: pos(s.stallWidth, 1),
     stallDepth: pos(s.stallDepth, 1),
     aisleWidth: pos(s.aisleWidth, 0),
@@ -201,11 +211,18 @@ export function splitByMix(units, mix) {
   return mix.map((u, i) => ({ name: u.name, size: u.size, count: counts[i] }));
 }
 
-function zoningFails(s, siteSf, gsf, footprint) {
+// count: units or keys, for the density limit.
+function zoningFails(s, siteSf, gsf, footprint, count = 0) {
   const fails = [];
+  if (s.maxDensity > 0 && count > densityCap(s, siteSf)) fails.push('density');
   if (s.maxFar > 0 && gsf > s.maxFar * siteSf + 1e-6) fails.push('far');
   if (s.maxCoverage > 0 && footprint > (s.maxCoverage / 100) * siteSf + 1e-6) fails.push('coverage');
   return fails;
+}
+
+// The most units (or keys) the density limit allows on siteSf.
+function densityCap(s, siteSf) {
+  return s.maxDensity > 0 ? Math.floor((s.maxDensity * siteSf) / SF_PER_ACRE + 1e-9) : Infinity;
 }
 
 // ---- Bars: building bars alternating with parking bays -----------------
@@ -302,7 +319,7 @@ function barsLayouts(pts, s, type, siteSf, extraRaw = 0) {
         }
         const prog = barsProgram(type, s, footprint, floors);
         const provided = netStalls(surface + extraRaw) + prog.structured;
-        const fails = zoningFails(s, siteSf, prog.gsf, footprint);
+        const fails = zoningFails(s, siteSf, prog.gsf, footprint, prog.units + prog.keys);
         if (provided < prog.required) fails.push('parking');
         return { ...prog, footprint, surface, provided, fails, floors, flipped: new Set(flipped) };
       };
@@ -420,6 +437,7 @@ function lotsLayouts(pts, s, type, siteSf) {
         const cap = Math.floor((s.maxFar * siteSf) / s.homeSize);
         if (cap < units) { units = cap; limits.push('far'); }
       }
+      if (densityCap(s, siteSf) < units) { units = densityCap(s, siteSf); limits.push('density'); }
       if (s.maxCoverage > 0 && homeFootprint > 0) {
         const cap = Math.floor(((s.maxCoverage / 100) * siteSf) / homeFootprint);
         if (cap < units) { units = cap; limits.push('coverage'); }
@@ -654,7 +672,7 @@ function shapedLayouts(pts, s, type, siteSf, extraRaw = 0, helpers = {}) {
         + (type.id === 'mf-podium' ? Math.floor((footprint * s.podiumLevels) / s.sfPerStructuredStall) : 0);
       const required = Math.ceil(units * s.parkingRatio - 1e-9);
       const provided = netStalls(bays.stalls + extraRaw) + structured;
-      const fails = zoningFails(s, siteSf, gsf, footprint + garageSf);
+      const fails = zoningFails(s, siteSf, gsf, footprint + garageSf, units);
       if (provided < required) fails.push('parking');
       if (fails.length) {
         if (n === placed.length && floors === floorsMax) limits.push(...fails);
@@ -830,13 +848,6 @@ function ringsOf(geometry) {
 
 function toFeature(geometry) {
   return { type: 'Feature', properties: {}, geometry };
-}
-
-// The site inside its setback, as a Feature, or null if nothing is left.
-function insetSite(boundary, setback) {
-  if (!(setback > 0)) return toFeature(boundary);
-  const res = buffer(toFeature(boundary), -setback, { units: 'feet' });
-  return res && res.geometry && ringsOf(res.geometry).length ? res : null;
 }
 
 // region minus each cutout (spaces, placed buildings), or null if
@@ -1230,7 +1241,10 @@ function solvePart(boundary, scheme, cutouts = []) {
   const siteSf = turfArea(toFeature(boundary)) * SF_PER_SQM;
   const proj = makeProjection(boundary.coordinates[0]);
   const base = { siteSf, siteAcres: siteSf / SF_PER_ACRE };
+  const edgeList = (list) => list.map(({ index, role, setback, facing, lengthFt, mid }) => ({ index, role, setback, facing, lengthFt, mid }));
+  // Called only once the edges below are worked out.
   const empty = (error) => ({
+    edges: edgeList(edges),
     error,
     metrics: { ...base, ...EMPTY_METRICS, buildableSf: 0, far: 0, coverage: 0, density: 0 },
     geometry: null,
@@ -1245,10 +1259,13 @@ function solvePart(boundary, scheme, cutouts = []) {
   const feetRings = (feature) => ringsOf(feature.geometry).map((r) => openRing(r).map(proj.toFeet)).filter((r) => r.length >= 3);
   const latLngRings = (feature) => ringsOf(feature.geometry).map((r) => openRing(r).map(([lng, lat]) => [lat, lng]));
 
+  // Setbacks by edge (envelope.js); one number for the checks that need it.
+  const edges = siteEdges(boundary, s);
+  const anySetback = edges.some((e) => e.setback > 0);
   let region;
   let inset;
   try {
-    inset = insetSite(boundary, s.setback);
+    inset = insetByEdges(boundary, edges, 0, s.setback);
     region = inset ? subtract(inset, cutouts) : null;
   } catch {
     return { ...noBoundary, error: 'Couldn\'t work with that boundary - redraw it without crossing lines.', type, settings: s };
@@ -1258,7 +1275,7 @@ function solvePart(boundary, scheme, cutouts = []) {
   if (!regionRings.length) return empty('The setback leaves no room to build.');
   const buildableSf = shapeArea(regionRings);
 
-  const setbackGeom = s.setback > 0 ? latLngRings(inset) : null;
+  const setbackGeom = anySetback ? latLngRings(inset) : null;
 
   // ---- A parking garage fills its site: a typical level's bays, cores,
   // end aisles and ramp, stacked ----
@@ -1363,7 +1380,7 @@ function solvePart(boundary, scheme, cutouts = []) {
   // Reaching the setback line counts as reaching the street; ends inside
   // a space don't. Spaces are solved with the site's aisles but leave the
   // checking to the main plan.
-  const setbackRings = s.setback > 0 ? feetRings(inset) : boundaryRings;
+  const setbackRings = anySetback ? feetRings(inset) : boundaryRings;
   // Routed aisles start at a bay's end by design, so they aren't checked
   // for dead ends; the bays they serve are.
   const aisleIssues = !scheme.skipAisleChecks ? aisles.flatMap((x, i) => analyzeAisle(x.a.line.coordinates.map(proj.toFeet), {
@@ -1513,10 +1530,12 @@ function solvePart(boundary, scheme, cutouts = []) {
     : [];
   const entryInfo = entries.map((e) => {
     const ef = proj.toFeet(e.point);
+    // The setback of the edge the entry is on.
+    const setbackHere = setbackNear(edges, proj, e.point, s.setback);
     const near = nearestPointOnRings(regionRings, ef);
     const reach = !driveEdge
-      || (driveFeature && near && near.d <= s.setback + 30)
-      || aisles.some((x) => distanceToRings(x.rings, ef) <= s.setback + 30);
+      || (driveFeature && near && near.d <= setbackHere + 30)
+      || aisles.some((x) => distanceToRings(x.rings, ef) <= setbackHere + 30);
     let drive = null;
     if (driveFeature && near && near.d > 0.5) {
       const dx = (near.p[0] - ef[0]) / near.d;
@@ -1526,7 +1545,7 @@ function solvePart(boundary, scheme, cutouts = []) {
       drive = [[ef[0] - dy * w, ef[1] + dx * w], [end[0] - dy * w, end[1] + dx * w], [end[0] + dy * w, end[1] - dx * w], [ef[0] + dy * w, ef[1] - dx * w]]
         .map((p) => proj.toLatLng(p));
     }
-    return { id: e.id, auto: e.auto, point: e.point, feet: ef, reaches: reach, drive };
+    return { id: e.id, auto: e.auto, point: e.point, feet: ef, setbackHere, reaches: reach, drive };
   });
 
   // ---- Auto-routed aisles: from every bay that can't reach a drive (or,
@@ -1571,7 +1590,7 @@ function solvePart(boundary, scheme, cutouts = []) {
         costly: allRows.map((r) => rectFeet(r, r.angle)),
         network: driveEdge || [],
         targets: entryInfo.map((e) => e.feet),
-        targetRadius: s.setback + 12,
+        targetRadius: Math.max(s.setback, ...entryInfo.map((e) => e.setbackHere)) + 12,
         sources: sources.slice(0, MAX_ROUTED_AISLES),
         straighten: s.aisleWidth / 2,
       });
@@ -1625,7 +1644,7 @@ function solvePart(boundary, scheme, cutouts = []) {
   }
   // An entry served only by one-way aisles needs one flowing in and one out.
   for (const e of entryInfo) {
-    const reach = s.setback + 30;
+    const reach = e.setbackHere + 30;
     const twoWayHere = (driveFeature && nearestPointOnRings(regionRings, e.feet)?.d <= reach)
       || aisles.some((x) => x.a.twoWay !== false && distanceToRings(x.rings, e.feet) <= reach);
     const touching = oneWays.filter((o) => distanceToRings(o.x.rings, e.feet) <= reach);
@@ -1714,11 +1733,14 @@ function solvePart(boundary, scheme, cutouts = []) {
     if (plans.length && !plans.failed) {
       const byType = s.mix.map((_, i) => plans.reduce((t, p) => t + (p.byType ? p.byType[i] : 0), 0));
       let nsfLaid = plans.reduce((t, p) => t + (p.nrsf || 0), 0);
-      // Automatic bars were sized for parking on the ratio estimate; when
-      // the plan holds more units than its stalls can serve, the extra
-      // units come off (left as amenity), so the parking still works.
-      if (!best.unitPlans && !placed.length && s.parkingRatio > 0) {
-        const cap = Math.floor((best.metrics.parkingProvided || 0) / s.parkingRatio + 1e-9);
+      // Automatic bars were sized for parking and density on the ratio
+      // estimate; when the plan holds more units than its stalls can serve
+      // or the density allows, the extra units come off (left as amenity).
+      if (!best.unitPlans && !placed.length) {
+        const cap = Math.min(
+          s.parkingRatio > 0 ? Math.floor((best.metrics.parkingProvided || 0) / s.parkingRatio + 1e-9) : Infinity,
+          densityCap(s, siteSf),
+        );
         let total = byType.reduce((t, c) => t + c, 0);
         const avg = total ? nsfLaid / total : 0;
         while (total > cap) {
@@ -1758,6 +1780,66 @@ function solvePart(boundary, scheme, cutouts = []) {
     }
   }
 
+  // ---- Stepbacks: floors above stepbackAbove keep stepbackDepth further
+  // in from every setback line. What a building loses up there comes off
+  // its area, units and keys (in proportion), and the 3D view steps it. ----
+  const stepbacks = [];
+  let envelopeUpper = null;
+  const stepFloors = s.stepbackAbove;
+  // Single-storey and stacked-deck types don't step back.
+  let stepFailed = false;
+  if (stepFloors > 0 && s.stepbackDepth > 0 && m.gsf > 0 && !['garage', 'lots', 'industrial'].includes(type.mode)) {
+    // A geometry failure skips the stepback rather than counting every
+    // upper floor as lost.
+    try { envelopeUpper = insetByEdges(boundary, edges, s.stepbackDepth, s.setback); } catch { stepFailed = true; }
+  }
+  if (!stepFailed && stepFloors > 0 && s.stepbackDepth > 0 && m.gsf > 0 && !['garage', 'lots', 'industrial'].includes(type.mode)) {
+    const podium = type.id === 'mf-podium' ? s.podiumLevels * PODIUM_LEVEL_HEIGHT : 0;
+    const footprints = placed.length
+      ? placed.map((b) => ({ geo: feetRingToGeo(buildingFeet(b, proj), proj), floors: Math.max(1, Math.round(b.floors || s.floors || 1)) }))
+      : (shapes.buildings || []).map((r) => ({ geo: rectToGeo(r, angle, proj), floors: m.floors }));
+    let lost = 0;
+    footprints.forEach(({ geo, floors }, i) => {
+      if (floors <= stepFloors) return;
+      const upper = envelopeUpper ? intersect(geo, envelopeUpper) : null;
+      const full = turfArea(toFeature(geo)) * SF_PER_SQM;
+      const kept = upper ? turfArea(upper) * SF_PER_SQM : 0;
+      if (full - kept < 1) return;
+      lost += (full - kept) * (floors - stepFloors);
+      stepbacks.push({ index: i, atFt: podium + stepFloors * s.floorToFloor, upper: upper ? latLngRings(upper) : [] });
+    });
+    if (lost > 0) {
+      const keep = Math.max(0, 1 - lost / m.gsf);
+      const scaled = (n) => Math.floor(n * keep + 1e-9);
+      m.gsf -= lost;
+      m.nsf *= keep;
+      if (m.units) {
+        const before = m.units;
+        m.units = scaled(m.units);
+        // Each type in proportion; the remainder to the largest shares.
+        const counts = (m.unitsByType || []).map((u) => u.count * keep);
+        const floorCounts = counts.map(Math.floor);
+        let left = m.units - floorCounts.reduce((t, c) => t + c, 0);
+        counts.map((c, k) => [c - floorCounts[k], k]).sort((a, b) => b[0] - a[0]).forEach(([, k]) => { if (left > 0) { floorCounts[k]++; left--; } });
+        m.unitsByType = (m.unitsByType || []).map((u, k) => ({ ...u, count: floorCounts[k] }));
+        if (unitStats) {
+          const f = before ? m.units / before : 0;
+          unitStats = { ...unitStats, beds: Math.round(unitStats.beds * f), baths: Math.round(unitStats.baths * f), efficiency: m.gsf > 0 ? m.nsf / m.gsf : 0 };
+        }
+      }
+      if (m.keys) m.keys = scaled(m.keys);
+      // Data halls lose IT load and generators with their floor area.
+      if (m.itMw) {
+        const gensPerMw = m.generators / m.itMw;
+        m.itMw *= keep;
+        m.generators = Math.ceil(m.itMw * gensPerMw - 1e-9);
+      }
+      if (type.yieldKind === 'units' || type.yieldKind === 'keys') m.parkingRequired = Math.ceil((m.units || m.keys) * s.parkingRatio - 1e-9);
+      else if (type.yieldKind === 'sf') m.parkingRequired = Math.ceil((m.nsf / 1000) * s.parkingRatio - 1e-9);
+      else m.parkingRequired = Math.ceil(m.parkingRequired * keep - 1e-9);
+    }
+  }
+
   const surface = netStalls(rawStalls);
   if (surfaceParking) {
     m.parkingSurface = surface;
@@ -1790,6 +1872,15 @@ function solvePart(boundary, scheme, cutouts = []) {
   const autoBuildings = shapes.buildings || [];
   const geometry = {
     setback: setbackGeom,
+    // The zoning envelope for the 3D view: the setback line up to the
+    // stepback, the stepped line above, to the height limit (if set).
+    envelope: {
+      lower: anySetback ? latLngRings(inset) : latLngRings(toFeature(boundary)),
+      upper: envelopeUpper ? latLngRings(envelopeUpper) : null,
+      stepFt: envelopeUpper ? (type.id === 'mf-podium' ? s.podiumLevels * PODIUM_LEVEL_HEIGHT : 0) + stepFloors * s.floorToFloor : null,
+      topFt: s.maxHeight > 0 ? s.maxHeight : null,
+    },
+    stepbacks,
     buildings: best.buildingLatLngs || autoBuildings.map((r) => rectToLatLngs(r, angle, proj)),
     buildingHeights: best.buildingHeights || autoBuildings.map(() => m.heightFt || 0),
     parking: allRows.map((r) => rowGeometry(r, proj)),
@@ -1865,6 +1956,8 @@ function solvePart(boundary, scheme, cutouts = []) {
     warnings: best.warnings || { outside: [], overlaps: [] },
     buildingRects,
     parking,
+    // The site's edges with their setbacks, for the edge labels and picker.
+    edges: edgeList(edges),
     proforma: proformaFor(type, s, metrics),
     error: null,
     type,
@@ -1906,12 +1999,13 @@ function zoningChecks(s, totals, warnings, parkingParts) {
       actual: `${fmt(totals.parkingProvided, 0)} provided`,
       status: totals.parkingProvided >= totals.parkingRequired ? 'pass' : 'fail',
     },
+    ...(s.maxDensity > 0 ? [row('Density', `${fmt(s.maxDensity, 1)} per acre`, `${fmt(totals.density, 1)} per acre`, totals.density <= s.maxDensity + 1e-6)] : []),
     {
       label: 'Setback',
       category: 'zoning',
-      limit: `${fmt(s.setback, 0)} ft`,
+      limit: s.setbackMode === 1 ? `${fmt(s.frontSetback, 0)} / ${fmt(s.setback, 0)} / ${fmt(s.rearSetback, 0)} ft (front / side / rear)` : `${fmt(s.setback, 0)} ft`,
       actual: warnings.outside.length ? `${warnings.outside.length} building${warnings.outside.length === 1 ? '' : 's'} over the line` : 'Clear',
-      status: warnings.outside.length ? 'fail' : (s.setback > 0 ? 'pass' : 'none'),
+      status: warnings.outside.length ? 'fail' : (s.setback > 0 || (s.setbackMode === 1 && (s.frontSetback > 0 || s.rearSetback > 0)) ? 'pass' : 'none'),
     },
   ];
   if (warnings.overlaps.length) {
@@ -2058,7 +2152,8 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
       result: polygon
         ? solvePart(polygon, {
           assetType: sp.assetType,
-          overrides: { perimeterDrive: 0, ...(sp.overrides || {}) },
+          // A space's edges aren't the site's: one setback all round.
+          overrides: { perimeterDrive: 0, ...(sp.overrides || {}), setbackMode: 0 },
           driveAisles: scheme.driveAisles,
           skipAisleChecks: true,
         })

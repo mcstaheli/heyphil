@@ -197,7 +197,7 @@ export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOri
                 {changed > 0 && <span className="siteplan-changed-count">{changed} changed</span>}
               </button>
             )}
-            {(flat || open.has(g)) && fields.filter((f) => f.group === g).map((f) => (
+            {(flat || open.has(g)) && fields.filter((f) => f.group === g && (!f.showIf || f.showIf(settings))).map((f) => (
               <SettingField
                 key={`${idPrefix}-${f.key}`}
                 field={f}
