@@ -119,6 +119,8 @@ function sanitize(s) {
     dockSpacing: pos(s.dockSpacing, 1),
     clearHeight: pos(s.clearHeight, 0),
     parkingRatio: pos(s.parkingRatio, 0),
+    parkingFixed: Math.max(0, Math.round(s.parkingFixed || 0)),
+    targetYield: pos(s.targetYield, 0),
     maxHeight: pos(s.maxHeight, 0),
     maxFar: pos(s.maxFar, 0),
     maxCoverage: pos(s.maxCoverage, 0),
@@ -212,6 +214,12 @@ export function splitByMix(units, mix) {
   return mix.map((u, i) => ({ name: u.name, size: u.size, count: counts[i] }));
 }
 
+// Stalls a use needs: the number set by hand (parkingFixed), else the
+// ratio on its count (units, keys, or thousands of sf).
+function parkingNeed(s, count) {
+  return s.parkingFixed > 0 ? s.parkingFixed : Math.ceil(count * s.parkingRatio - 1e-9);
+}
+
 // count: units or keys, for the density limit.
 function zoningFails(s, siteSf, gsf, footprint, count = 0) {
   const fails = [];
@@ -235,15 +243,15 @@ function barsProgram(type, s, footprint, floors, gsf = footprint * floors) {
   if (type.yieldKind === 'units') {
     out.nsf = (gsf * s.efficiency) / 100;
     out.units = s.mix ? Math.floor(out.nsf / mixAverage(s.mix)) : 0;
-    out.required = Math.ceil(out.units * s.parkingRatio - 1e-9);
+    out.required = parkingNeed(s, out.units);
     out.score = out.units;
   } else if (type.yieldKind === 'keys') {
     out.keys = Math.floor(gsf / s.grossPerKey);
-    out.required = Math.ceil(out.keys * s.parkingRatio - 1e-9);
+    out.required = parkingNeed(s, out.keys);
     out.score = out.keys;
   } else {
     out.nsf = (gsf * s.efficiency) / 100;
-    out.required = Math.ceil((out.nsf / 1000) * s.parkingRatio - 1e-9);
+    out.required = parkingNeed(s, out.nsf / 1000);
     out.score = out.nsf;
   }
   if (s.podiumLevels > 0 && type.id === 'mf-podium') {
@@ -444,7 +452,7 @@ function lotsLayouts(pts, s, type, siteSf) {
         if (cap < units) { units = cap; limits.push('coverage'); }
       }
       const garage = units * s.garageStalls;
-      const required = Math.ceil(units * s.parkingRatio - 1e-9);
+      const required = parkingNeed(s, units);
       if (garage < required) limits.push('parking');
 
       candidates.push({
@@ -527,7 +535,7 @@ function industrialLayouts(pts, s, type, siteSf, extraRaw = 0) {
       }
     }
     const footprint = areaOf(shapes.buildings);
-    const required = Math.ceil((footprint / 1000) * s.parkingRatio - 1e-9);
+    const required = parkingNeed(s, footprint / 1000);
     const trailerRequired = Math.ceil(docks * s.trailerStallsPerDock - 1e-9);
     const fails = zoningFails(s, siteSf, footprint, footprint);
     if (netStalls(surface + extraRaw) < required) fails.push('parking');
@@ -671,7 +679,7 @@ function shapedLayouts(pts, s, type, siteSf, extraRaw = 0, helpers = {}) {
       const gsf = footprint * floors;
       const structured = garageLevel.reduce((t, st) => t + Math.floor(st * floors * WRAP_RAMP_SHARE), 0)
         + (type.id === 'mf-podium' ? Math.floor((footprint * s.podiumLevels) / s.sfPerStructuredStall) : 0);
-      const required = Math.ceil(units * s.parkingRatio - 1e-9);
+      const required = parkingNeed(s, units);
       const provided = netStalls(bays.stalls + extraRaw) + structured;
       const fails = zoningFails(s, siteSf, gsf, footprint + garageSf, units);
       if (provided < required) fails.push('parking');
@@ -778,7 +786,7 @@ function dataCenterLayouts(pts, s, type, siteSf, extraRaw = 0) {
       if (!floors) shapes.buildings = [];
       const gsf = footprint * floors;
       const { itMw, generators } = dataCenterProgram(gsf, s);
-      const required = Math.ceil((gsf / 1000) * s.parkingRatio - 1e-9);
+      const required = parkingNeed(s, gsf / 1000);
       const provided = netStalls(surface + extraRaw);
       const fails = zoningFails(s, siteSf, gsf, footprint);
       if (provided < required) fails.push('parking');
@@ -1060,7 +1068,7 @@ function solveManual(checkRings, s, type, proj, placed) {
   let prog;
   let docks = 0;
   if (isIndustrial) {
-    const required = Math.ceil((footprint / 1000) * s.parkingRatio - 1e-9);
+    const required = parkingNeed(s, footprint / 1000);
     prog = { gsf, nsf: gsf, units: 0, keys: 0, structured: 0, required };
     docks = placed.reduce((sum, b) => sum + Math.floor(Math.max(b.length, b.depth) / s.dockSpacing), 0);
   } else {
@@ -1830,7 +1838,7 @@ function solvePart(boundary, scheme, cutouts = []) {
       // or the density allows, the extra units come off (left as amenity).
       if (!best.unitPlans && !placed.length) {
         const cap = Math.min(
-          s.parkingRatio > 0 ? Math.floor((best.metrics.parkingProvided || 0) / s.parkingRatio + 1e-9) : Infinity,
+          s.parkingRatio > 0 && !(s.parkingFixed > 0) ? Math.floor((best.metrics.parkingProvided || 0) / s.parkingRatio + 1e-9) : Infinity,
           densityCap(s, siteSf),
         );
         let total = byType.reduce((t, c) => t + c, 0);
@@ -1850,7 +1858,7 @@ function solvePart(boundary, scheme, cutouts = []) {
         m.units = units;
         m.nsf = nsf;
         m.unitsByType = s.mix.map((u, i) => ({ name: u.name, size: u.size, count: byType[i] }));
-        m.parkingRequired = Math.ceil(units * s.parkingRatio - 1e-9);
+        m.parkingRequired = parkingNeed(s, units);
       }
       unitStats = {
         efficiency: m.gsf > 0 ? nsf / m.gsf : 0,
@@ -1926,8 +1934,8 @@ function solvePart(boundary, scheme, cutouts = []) {
         m.itMw *= keep;
         m.generators = Math.ceil(m.itMw * gensPerMw - 1e-9);
       }
-      if (type.yieldKind === 'units' || type.yieldKind === 'keys') m.parkingRequired = Math.ceil((m.units || m.keys) * s.parkingRatio - 1e-9);
-      else if (type.yieldKind === 'sf') m.parkingRequired = Math.ceil((m.nsf / 1000) * s.parkingRatio - 1e-9);
+      if (type.yieldKind === 'units' || type.yieldKind === 'keys') m.parkingRequired = parkingNeed(s, m.units || m.keys);
+      else if (type.yieldKind === 'sf') m.parkingRequired = parkingNeed(s, m.nsf / 1000);
       else m.parkingRequired = Math.ceil(m.parkingRequired * keep - 1e-9);
     }
   }
@@ -2207,12 +2215,80 @@ export function solveScheme(boundary, scheme) {
   return first;
 }
 
+// A target yield (targetYield: units, keys, sf, MW or stalls): the most
+// that fits is laid out first; with a target below it, the fewest floors
+// (garage levels) that still reach it are used, and the plan counts the
+// target exactly. result.target says whether the site can reach it.
+const fmtTarget = (type, n) => {
+  const v = (n || 0).toLocaleString('en-US', { maximumFractionDigits: type.yieldKind === 'mw' ? 1 : 0 });
+  return `${v} ${{ units: type.mode === 'lots' ? 'homes' : 'units', keys: 'keys', sf: 'sf', mw: 'MW', stalls: 'stalls' }[type.yieldKind] || ''}`;
+};
+const yieldCount = (type, m) => ({ units: m.units, keys: m.keys, sf: m.nsf, mw: m.itMw, stalls: m.parkingProvided }[type.yieldKind] || 0);
+
+function toTarget(boundary, scheme, cutouts, first) {
+  const s = first.settings;
+  const target = s && s.targetYield;
+  if (!target || !first.metrics) return first;
+  const type = first.type;
+  const most = yieldCount(type, first.metrics);
+  let r = first;
+  // Fewer floors, when the plan has room to spare and isn't placed by hand.
+  const key = type.mode === 'garage' ? 'levels' : 'floors';
+  const floorsNow = key === 'levels' ? s.levels : first.metrics.floors;
+  if (most > target && floorsNow > 1 && !(scheme.edits?.buildings?.length) && type.mode !== 'lots' && type.mode !== 'industrial' && type.mode !== 'parking') {
+    let lo = 1;
+    let hi = floorsNow;
+    let found = null;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const t = solvePart(boundary, { ...scheme, overrides: { ...scheme.overrides, [key]: mid } }, cutouts);
+      if (t.metrics && yieldCount(type, t.metrics) >= target) {
+        hi = mid;
+        found = t;
+      } else {
+        lo = mid + 1;
+      }
+    }
+    if (found && hi < floorsNow) r = { ...found, settings: s };
+  }
+  const got = yieldCount(type, r.metrics);
+  const target0 = { target, most, fits: most >= target - 1e-9 };
+  if (got <= target || type.yieldKind === 'stalls') return { ...r, target: target0 };
+  // Count exactly the target; the extra room is left over (shown on the plan).
+  const m = { ...r.metrics };
+  const keep = target / got;
+  if (type.yieldKind === 'units') {
+    const counts = (m.unitsByType || []).map((u) => u.count * keep);
+    const whole = counts.map(Math.floor);
+    let left = Math.round(target) - whole.reduce((t, c) => t + c, 0);
+    counts.map((c, k) => [c - whole[k], k]).sort((a, b) => b[0] - a[0]).forEach(([, k]) => { if (left > 0) { whole[k]++; left--; } });
+    m.unitsByType = (m.unitsByType || []).map((u, k) => ({ ...u, count: whole[k] }));
+    m.units = Math.round(target);
+    m.nsf *= keep;
+    if (m.unitLayout) m.unitLayout = { ...m.unitLayout, beds: Math.round(m.unitLayout.beds * keep), baths: Math.round(m.unitLayout.baths * keep) };
+    m.parkingRequired = parkingNeed(s, m.units);
+  } else if (type.yieldKind === 'keys') {
+    m.keys = Math.round(target);
+    m.parkingRequired = parkingNeed(s, m.keys);
+  } else if (type.yieldKind === 'sf') {
+    m.nsf = target;
+    m.parkingRequired = parkingNeed(s, m.nsf / 1000);
+  } else if (type.yieldKind === 'mw') {
+    m.generators = Math.ceil(m.generators * keep - 1e-9);
+    m.itMw = target;
+    m.parkingRequired = Math.ceil(m.parkingRequired * keep - 1e-9);
+  }
+  m.density = m.siteAcres > 0 ? (m.units || m.keys) / m.siteAcres : 0;
+  return { ...r, metrics: m, proforma: proformaFor(type, s, m), target: target0 };
+}
+
 // One solve of the whole plan. mainRequiredScale undoes a scaled parking
 // ratio so the main part reports its standalone requirement; baseOverrides
 // are the scheme's own settings (for what the panel shows).
 function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = null } = {}) {
   const spaces = (scheme.spaces || []).filter((sp) => sp.polygon);
-  const main = solvePart(boundary, scheme, spaces.map((sp) => sp.polygon));
+  const cutouts = spaces.map((sp) => sp.polygon);
+  const main = toTarget(boundary, scheme, cutouts, solvePart(boundary, scheme, cutouts));
   if (!main.metrics) return { ...main, spaces: [], totals: null, checks: [] };
   if (mainRequiredScale !== 1) {
     main.metrics = { ...main.metrics, parkingRequired: Math.ceil(main.metrics.parkingRequired * mainRequiredScale - 1e-9) };
@@ -2300,6 +2376,13 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
     totals,
     proforma: combineProformas(parts.map((p) => p.proforma).filter(Boolean)),
     checks: [
+      ...(main.target ? [{
+        label: 'Target',
+        category: 'zoning',
+        limit: `${fmtTarget(main.type, main.target.target)}`,
+        actual: main.target.fits ? `Met (room for ${fmtTarget(main.type, main.target.most)})` : `Only ${fmtTarget(main.type, main.target.most)} fit`,
+        status: main.target.fits ? 'pass' : 'fail',
+      }] : []),
       ...zoningChecks(main.settings, totals, main.warnings || { outside: [], overlaps: [] }, parkingParts),
       ...parts.filter((p) => p.garage).map((p) => ({
         label: 'Garage ramp',

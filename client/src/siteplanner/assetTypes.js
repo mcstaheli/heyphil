@@ -273,8 +273,23 @@ export function getAssetType(id) {
 
 // Every field a type shows: its program, the shared site/zoning/parking
 // fields, then its pro forma.
+// The target yield, labelled for the type (0 = the most that fits), and
+// a stall count to provide instead of the ratio, for types with one.
+const TARGET_LABELS = { units: 'Target units', keys: 'Target keys', sf: 'Target leasable sf', mw: 'Target IT load', stalls: 'Target stalls' };
+function targetFields(type) {
+  const label = type.mode === 'lots' ? 'Target homes' : type.mode === 'industrial' ? 'Target building sf' : TARGET_LABELS[type.yieldKind];
+  const out = [{
+    key: 'targetYield', label, unit: type.yieldKind === 'mw' ? 'MW' : '', default: 0, step: type.yieldKind === 'mw' ? 0.5 : 1,
+    hint: '0 = the most that fits; set a number to build exactly that', group: 'Program',
+  }];
+  if (type.fields.some((f) => f.key === 'parkingRatio')) {
+    out.push({ key: 'parkingFixed', label: 'Stalls to provide', unit: '', default: 0, hint: '0 = what the parking ratio requires', group: 'Program' });
+  }
+  return out;
+}
+
 export function fieldsFor(type) {
-  return [...type.fields, ...COMMON_FIELDS, ...(PROFORMA_FIELDS[type.id] || [])];
+  return [...type.fields, ...targetFields(type), ...COMMON_FIELDS, ...(PROFORMA_FIELDS[type.id] || [])];
 }
 
 export function defaultsFor(type) {

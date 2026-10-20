@@ -1100,7 +1100,7 @@ function SitePlanEditor() {
   const checkStep = (c) => (c.category === 'zoning' ? 'zoning' : isTruckCheck(c) ? 'trucks' : 'parking');
   const parkingFailsHere = parkingChecks.filter((c) => c.status === 'fail');
   const truckFails = truckChecks.filter((c) => c.status === 'fail');
-  const PARKING_PROGRAM = ['parkingRatio', 'garageStalls', 'sfPerStructuredStall'];
+  const PARKING_PROGRAM = ['parkingRatio', 'parkingFixed', 'garageStalls', 'sfPerStructuredStall'];
 
   function stepMeta(st) {
     const plural = (n, word) => `${fmtInt(n)} ${word}${n === 1 ? '' : 's'}`;
