@@ -12,6 +12,7 @@ const STEPS = [
   ['Park it', 'Set the parking ratio, then draw parking areas and drive aisles, or leave the bays automatic. Click a stall to make it compact, EV, accessible, van accessible or remove it; click the aisle for the bay. ✋ Edit this bay by hand turns a bay into a parking area you can drag, reshape and turn.'],
   ['Check it', 'The zoning check covers height, FAR, coverage, parking, setback, circulation, accessible stalls, one-way flow, truck access and garage ramps. ⛰ Check terrain samples the ground for slope and earthwork.'],
   ['Compare and explore', '+ Scheme copies the scheme so you can try a variation; Compare schemes puts them side by side. ✨ Generate options sweeps up to three settings and keeps the ones that meet your goals.'],
+  ['Undo anything', 'Ctrl+Z (⌘Z on a Mac) or ↶ undoes the last change - a moved building, a stall, a setting, the boundary; Ctrl+Shift+Z or ↷ redoes it. While you type in a box, Ctrl+Z undoes the typing instead.'],
   ['Share it', "◆ 3D shows the massing; ⬇ CSV exports every scheme; 🖨 Report prints the numbers, checks and a plan of each scheme. Save a scheme's settings as a preset to reuse on another site."],
 ];
 

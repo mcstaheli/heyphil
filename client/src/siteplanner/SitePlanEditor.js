@@ -11,6 +11,7 @@ import { OrientationField, SchemeSettings, fmtDec, fmtInt, fmtMoney, fmtPct, wit
 import { ChecksPanel, CompareView, ProformaPanel, QuantitiesPanel, Scoreboard, planMetrics, yieldOf } from './results';
 import { Step } from './Steps';
 import { modelSteps } from './stepPlan';
+import { changedKeys, createHistory } from './history';
 import {
   AisleEditor, AreaEditor, BayDetails, BuildingEditor, GeneratedBuilding, STALL_ANGLES, SelectionBar, SpaceEditor, StallEditor,
   findStall, parseSelection, selectionKey, stallPoint,
@@ -494,12 +495,18 @@ function SitePlanEditor() {
   const timerRef = useRef(null);
   const conflictRef = useRef(false); // after a 409, nothing more is sent
   const hadBoundaryRef = useRef(null); // whether the plan had a boundary last time we looked
+  // Undo / redo (history.js); canUndo / canRedo for the buttons.
+  const historyRef = useRef(createHistory());
+  const [undoState, setUndoState] = useState({ canUndo: false, canRedo: false });
+  const syncUndo = () => setUndoState({ canUndo: historyRef.current.canUndo(), canRedo: historyRef.current.canRedo() });
 
   useEffect(() => {
     // Another site: start its steps afresh.
     setDraft(null);
     draftRef.current = null;
     hadBoundaryRef.current = null;
+    historyRef.current.clear();
+    setUndoState({ canUndo: false, canRedo: false });
     setOpenStep(null);
     sitePlansApi('GET', `/${planId}`)
       .then(({ plan, canDelete: del }) => {
@@ -577,16 +584,56 @@ function SitePlanEditor() {
     if (dirtyRef.current.size) flush();
   }, [flush]);
 
-  const change = useCallback((key, value) => {
-    const next = { ...draftRef.current, [key]: value };
+  // Puts a plan in place and saves the fields that differ.
+  const applyDraft = useCallback((next, keys) => {
     draftRef.current = next;
     setDraft(next);
-    dirtyRef.current.add(key);
+    keys.forEach((k) => dirtyRef.current.add(k));
     if (conflictRef.current) return; // shown, but can't be saved over the newer copy
     setSaveState('pending');
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(flush, SAVE_DELAY_MS);
   }, [flush]);
+
+  // Every edit goes through here. Panning the map isn't an undo step; the
+  // step key folds a drag or a run of typing into one.
+  const change = useCallback((key, value, stepKey = key) => {
+    if (key !== 'mapView' && draftRef.current) {
+      historyRef.current.record(draftRef.current, stepKey);
+      syncUndo();
+    }
+    applyDraft({ ...draftRef.current, [key]: value }, [key]);
+  }, [applyDraft]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const undo = useCallback(() => {
+    const cur = draftRef.current;
+    const prev = cur && historyRef.current.undo(cur);
+    if (!prev) return;
+    applyDraft(prev, changedKeys(cur, prev).filter((k) => k !== 'mapView'));
+    syncUndo();
+  }, [applyDraft]); // eslint-disable-line react-hooks/exhaustive-deps
+  const redo = useCallback(() => {
+    const cur = draftRef.current;
+    const next = cur && historyRef.current.redo(cur);
+    if (!next) return;
+    applyDraft(next, changedKeys(cur, next).filter((k) => k !== 'mapView'));
+    syncUndo();
+  }, [applyDraft]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ctrl/⌘+Z undoes, Ctrl/⌘+Shift+Z or Ctrl+Y redoes - except while typing
+  // in a field, where the browser's own undo applies.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const t = e.target;
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
 
   // Only the boundary and schemes change a layout; renaming the site or
   // picking a project doesn't re-run the solver.
@@ -627,12 +674,23 @@ function SitePlanEditor() {
   }, [activeResult, active, activeType]);
 
   const updateScheme = useCallback((id, patch) => {
+    const before = draftRef.current.schemes.find((s) => s.id === id);
+    // One undo step per thing changed: a setting, a stall, a building...
+    const step = Object.keys(patch).map((k) => {
+      if (k === 'overrides') {
+        const a = before?.overrides || {};
+        const b = patch.overrides || {};
+        return `o:${changedKeys(a, b).join(',')}`;
+      }
+      if (k === 'stallEdits') return `st:${JSON.stringify((patch.stallEdits || []).slice(-1))}`;
+      return k;
+    }).join('|');
     change('schemes', draftRef.current.schemes.map((s) => {
       if (s.id !== id) return s;
       const next = { ...s, ...patch };
       Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
       return next;
-    }));
+    }), `${id}:${step}`);
   }, [change]);
 
   const currentScheme = () => draftRef.current.schemes.find((s) => s.id === active.id);
@@ -1557,6 +1615,8 @@ function SitePlanEditor() {
           </button>
         )}
         <span className="siteplan-header-spacer" />
+        <button className="siteplan-toggle" onClick={undo} disabled={!undoState.canUndo} title="Undo (Ctrl/⌘+Z)" aria-label="Undo">↶</button>
+        <button className="siteplan-toggle" onClick={redo} disabled={!undoState.canRedo} title="Redo (Ctrl/⌘+Shift+Z)" aria-label="Redo">↷</button>
         <button className="siteplan-toggle" onClick={() => setShowHelp(true)} title="How the Site Planner works">?</button>
         <button className="siteplan-toggle" onClick={() => setShow3d(true)} disabled={!draft.boundary || !activeResult?.geometry} title="See the scheme in 3D">◆ 3D</button>
         <button className="siteplan-toggle" onClick={downloadCsv} disabled={!draft.boundary} title="Every scheme's numbers as a spreadsheet">⬇ CSV</button>
