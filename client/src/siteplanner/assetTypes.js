@@ -12,11 +12,37 @@
 //   garage     - a parking structure filling its site
 //   datacenter - data halls with an equipment yard, sized by IT load
 
+import { SHAPES } from './buildings';
+
 export const DEFAULT_MIX = [
-  { name: 'Studio', size: 550, pct: 10 },
-  { name: '1 BR', size: 750, pct: 45 },
-  { name: '2 BR', size: 1050, pct: 35 },
-  { name: '3 BR', size: 1300, pct: 10 },
+  { name: 'Studio', size: 550, pct: 10, beds: 0, baths: 1 },
+  { name: '1 BR', size: 750, pct: 45, beds: 1, baths: 1 },
+  { name: '2 BR', size: 1050, pct: 35, beds: 2, baths: 2 },
+  { name: '3 BR', size: 1300, pct: 10, beds: 3, baths: 2 },
+];
+
+// Beds and baths for a unit type, for mixes saved before they were set:
+// the default type of the same name, else read from the name ("2 BR"),
+// else guessed from the size.
+export function bedsBaths(u) {
+  const known = DEFAULT_MIX.find((d) => d.name.toLowerCase() === String(u.name || '').trim().toLowerCase());
+  const named = /studio/i.test(u.name || '') ? 0 : Number((String(u.name || '').match(/(\d+)\s*(br|bd|bed)/i) || [])[1]);
+  const guess = Number.isFinite(named) ? named : u.size < 600 ? 0 : u.size < 900 ? 1 : u.size < 1200 ? 2 : 3;
+  const beds = Number.isFinite(u.beds) ? u.beds : known ? known.beds : guess;
+  const baths = Number.isFinite(u.baths) ? u.baths : known ? known.baths : (beds >= 2 ? 2 : 1);
+  return { beds, baths };
+}
+
+// Building shapes for multifamily (buildings.js). Bars is the original
+// layout; the rest are laid out as wings with units along corridors.
+const SHAPE_OPTIONS = SHAPES.map((x) => [x.id, x.label]);
+const mfLayoutFields = () => [
+  f('buildingShape', 'Building shape', '', 0, { options: SHAPE_OPTIONS, group: 'Building' }),
+  f('corridorWidth', 'Corridor width', 'ft', 6, { step: 0.5, group: 'Building' }),
+  f('courtyardMin', 'Smallest courtyard', 'ft', 60, { group: 'Building' }),
+  f('stairSpacing', 'Max stair spacing', 'ft', 200, { group: 'Building' }),
+  f('unitsPerElevator', 'Units per elevator', '', 80, { group: 'Building' }),
+  f('amenitySf', 'Ground-floor amenity', 'sf', 2500, { step: 100, group: 'Building' }),
 ];
 
 // Zoning limits and stall geometry every type shares. 0 means no limit.
@@ -57,8 +83,9 @@ export const ASSET_TYPES = [
       f('buildingDepth', 'Building depth', 'ft', 65),
       f('maxBuildingLength', 'Max building length', 'ft', 300),
       f('buildingGap', 'Gap between buildings', 'ft', 30),
-      f('efficiency', 'Efficiency (net / gross)', '%', 85),
+      f('efficiency', 'Efficiency (net / gross)', '%', 85, { hint: 'used for bars before units are laid out' }),
       f('parkingRatio', 'Parking required', 'per unit', 1.5, { step: 0.05 }),
+      ...mfLayoutFields(),
     ],
   },
   {
@@ -77,6 +104,7 @@ export const ASSET_TYPES = [
       f('efficiency', 'Efficiency (net / gross)', '%', 80),
       f('sfPerStructuredStall', 'Garage area per stall', 'sf', 350),
       f('parkingRatio', 'Parking required', 'per unit', 1.25, { step: 0.05 }),
+      ...mfLayoutFields(),
     ],
   },
   {

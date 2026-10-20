@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { DEFAULT_MIX, defaultsFor, fieldsFor } from './assetTypes';
+import { DEFAULT_MIX, bedsBaths, defaultsFor, fieldsFor } from './assetTypes';
 
 // The settings form for a scheme or a space: every field of its asset
 // type, starting from the type's defaults, with changed ones highlighted
@@ -76,13 +76,15 @@ function MixEditor({ mix, overridden, onChange, onReset }) {
         Unit mix
         {overridden && <button type="button" className="siteplan-reset" onClick={onReset} title="Back to the default mix">↺</button>}
       </div>
-      <div className="siteplan-mix-row siteplan-mix-head"><span>Type</span><span>Size sf</span><span>Mix %</span><span /></div>
+      <div className="siteplan-mix-row siteplan-mix-head"><span>Type</span><span>Size sf</span><span>Mix %</span><span title="Bedrooms">Bd</span><span title="Bathrooms">Ba</span><span /></div>
       {mix.map((u, i) => (
         // eslint-disable-next-line react/no-array-index-key
         <div className="siteplan-mix-row" key={i}>
           <input value={u.name} maxLength={40} onChange={(e) => update(i, 'name', e.target.value)} />
           <NumberInput value={u.size} min={1} max={100000} onChange={(n) => update(i, 'size', n)} />
           <NumberInput value={u.pct} max={100} onChange={(n) => update(i, 'pct', n)} />
+          <NumberInput value={bedsBaths(u).beds} max={10} onChange={(n) => update(i, 'beds', n)} />
+          <NumberInput value={bedsBaths(u).baths} max={10} onChange={(n) => update(i, 'baths', n)} />
           <button
             type="button"
             className="siteplan-mix-remove"
@@ -98,7 +100,7 @@ function MixEditor({ mix, overridden, onChange, onReset }) {
         <button
           type="button"
           className="siteplan-link-btn"
-          onClick={() => onChange([...mix, { name: 'New', size: 900, pct: 0 }])}
+          onClick={() => onChange([...mix, { name: 'New', size: 900, pct: 0, beds: 1, baths: 1 }])}
           disabled={mix.length >= 12}
         >
           + Unit type
@@ -151,14 +153,16 @@ export function OrientationField({ label, value, currentDeg, onChange }) {
 
 // idPrefix keeps inputs distinct between schemes and spaces.
 // currentOrientationDeg / currentParkingDeg are what "Fixed angle" starts from.
-// only: show just these groups, laid out flat (no open/close headings) -
-// how a step shows its share of the settings. noOrientation leaves the
+// only: show just these groups, laid out flat (no open/close headings).
+// keys: show just these settings ('mix' for the unit mix), flat - how a
+// step shows its share of the settings. noOrientation leaves the
 // orientation choices to the step that shows them on their own.
-export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOrientationDeg, currentParkingDeg, groupsOpen, only = null, noOrientation = false }) {
+export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOrientationDeg, currentParkingDeg, groupsOpen, only = null, keys = null, noOrientation = false }) {
   const settings = { ...defaultsFor(type), ...overrides };
-  const fields = fieldsFor(type);
+  const fields = fieldsFor(type).filter((f) => !keys || keys.includes(f.key));
   const groups = [...new Set(fields.map((f) => f.group))].filter((g) => !only || only.includes(g));
-  const flat = !!only;
+  const flat = !!only || !!keys;
+  const showMix = type.hasMix && (keys ? keys.includes('mix') : (!only || only.includes('Program')));
   const set = (key, value) => onChange(withOverride(type, overrides, key, value));
   const [open, setOpen] = useState(() => new Set(groupsOpen || groups.filter((g) => g !== 'Pro forma')));
   const toggle = (g) => setOpen((prev) => {
@@ -170,7 +174,7 @@ export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOri
 
   return (
     <div className="siteplan-settings">
-      {type.hasMix && (!only || only.includes('Program')) && (
+      {showMix && (
         <MixEditor
           mix={settings.mix || DEFAULT_MIX}
           overridden={'mix' in overrides}
@@ -183,7 +187,10 @@ export function SchemeSettings({ type, overrides, onChange, idPrefix, currentOri
         return (
           <div key={g} className="siteplan-group">
             {flat ? (
-              changed > 0 && <span className="siteplan-changed-count siteplan-changed-flat">{changed} changed from the defaults</span>
+              <>
+                {keys && groups.length > 1 && <div className="siteplan-group-title">{g}</div>}
+                {changed > 0 && <span className="siteplan-changed-count siteplan-changed-flat">{changed} changed from the defaults</span>}
+              </>
             ) : (
               <button type="button" className="siteplan-group-title siteplan-group-toggle" onClick={() => toggle(g)}>
                 {open.has(g) ? '▾' : '▸'} {g}

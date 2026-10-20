@@ -435,7 +435,7 @@
 
 .siteplan-mix-row {
   display: grid;
-  grid-template-columns: 1fr 80px 64px 20px;
+  grid-template-columns: 1fr 64px 52px 38px 38px 20px;
   gap: 6px;
   align-items: center;
 }
@@ -743,6 +743,9 @@
 
 .lg-drive { background: #4b5563; }
 .lg-ada { background: #3b82f6; }
+.lg-core { background: #475569; }
+.lg-courtyard { background: #4ade80; opacity: 0.7; }
+.lg-wrapgarage { background: #6b7280; border: 1px solid #7c3aed; }
 .lg-parkarea { border: 1.5px dashed #0284c7; background: rgba(14, 165, 233, 0.15); }
 .lg-trailer { background: #78716c; border: 1px solid #fde68a; }
 .siteplan-space-swatch.aisle { background: #4b5563; border: 2px dashed #fbbf24; }
@@ -896,3 +899,31 @@
 .siteplan-step-hint ol { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
 .siteplan-changed-flat { align-self: flex-start; }
 .siteplan-results-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* The panel's pinned top: scoreboard plus the selection bar. */
+.siteplan-pinned {
+  position: sticky;
+  top: -12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: white;
+  padding-top: 2px;
+  padding-bottom: 4px;
+}
+.siteplan-pinned .siteplan-scoreboard { position: static; }
+.siteplan-selection {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+  padding: 6px 8px;
+}
+.siteplan-selection.active { border-color: #facc15; background: #fffbeb; box-shadow: 0 2px 8px rgba(202, 138, 4, 0.12); }
+.siteplan-selection-head { display: flex; align-items: center; gap: 6px; }
+.siteplan-selection-head select { flex: 1; min-width: 0; font-size: 13px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 6px; background: white; }
+.siteplan-selection-close { border: none; background: none; font-size: 18px; line-height: 1; cursor: pointer; color: #6b7280; padding: 0 4px; }
+.siteplan-selection-close:hover { color: #111827; }
+.siteplan-selection-body { margin-top: 8px; max-height: 40vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.siteplan-selection-title { font-weight: 600; font-size: 13px; }
+.siteplan-selection-grid { display: flex; flex-direction: column; gap: 4px; }

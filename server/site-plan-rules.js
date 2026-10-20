@@ -111,7 +111,15 @@ function validateOverrides(value) {
           || !isFiniteNumber(u.pct) || u.pct < 0 || u.pct > 100) {
           throw new SitePlanValidationError('Each unit type needs a name, a size and a percentage.');
         }
-        return { name: u.name.trim(), size: u.size, pct: u.pct };
+        const row = { name: u.name.trim(), size: u.size, pct: u.pct };
+        // Beds and baths per unit type, for the tabulation.
+        for (const k of ['beds', 'baths']) {
+          if (u[k] !== undefined && u[k] !== null) {
+            if (!isFiniteNumber(u[k]) || u[k] < 0 || u[k] > 10) throw new SitePlanValidationError(`A unit type's ${k} must be 0 to 10.`);
+            row[k] = u[k];
+          }
+        }
+        return row;
       });
     } else if (key === 'rotation' || key === 'parkingRotation') {
       if (v !== 'auto' && !(isFiniteNumber(v) && v >= -360 && v <= 360)) {

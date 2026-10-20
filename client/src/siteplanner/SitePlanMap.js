@@ -94,6 +94,8 @@ const STYLES = {
   building: { color: '#4c3ce0', weight: 1.5, fillColor: '#7b6cf6', fillOpacity: 0.75, pmIgnore: true },
   placed: { color: '#4c3ce0', weight: 2, fillColor: '#7b6cf6', fillOpacity: 0.8, pmIgnore: true },
   placedSelected: { color: '#facc15', weight: 3, fillColor: '#8b5cf6', fillOpacity: 0.85, pmIgnore: true },
+  generatedSelected: { color: '#facc15', weight: 3, fillColor: '#8b5cf6', fillOpacity: 0.8, pmIgnore: true },
+  baySelected: { color: '#facc15', weight: 3, fillColor: '#374151', fillOpacity: 0.55, pmIgnore: true },
   placedBad: { color: '#ef4444', weight: 3, fillColor: '#f87171', fillOpacity: 0.75, pmIgnore: true },
   parking: { color: '#e5e7eb', weight: 1, fillColor: '#374151', fillOpacity: 0.55, pmIgnore: true, interactive: false },
   stall: { color: '#f9fafb', weight: 0.75, opacity: 0.9, pmIgnore: true, interactive: false },
@@ -113,10 +115,17 @@ const STYLES = {
   garage: { color: '#7c3aed', weight: 2, fillColor: '#a78bfa', fillOpacity: 0.12, pmIgnore: true, interactive: false },
   ramp: { color: '#c2410c', weight: 1, fillColor: '#fb923c', fillOpacity: 0.75, pmIgnore: true },
   core: { color: '#111827', weight: 1, fillColor: '#374151', fillOpacity: 0.9, pmIgnore: true, interactive: false },
+  courtyard: { color: '#15803d', weight: 1, fillColor: '#4ade80', fillOpacity: 0.35, pmIgnore: true, interactive: false },
+  wrapGarage: { color: '#7c3aed', weight: 1.5, fillColor: '#6b7280', fillOpacity: 0.55, pmIgnore: true, interactive: false },
+  unit: { color: '#1e1b4b', weight: 0.5, fillOpacity: 0.85, pmIgnore: true, interactive: false },
+  corridor: { color: '#1e1b4b', weight: 0.3, fillColor: '#e5e7eb', fillOpacity: 0.9, pmIgnore: true, interactive: false },
   arrow: { color: '#f97316', weight: 3, opacity: 0.9, pmIgnore: true, interactive: false },
   flow: { color: '#facc15', weight: 1.5, opacity: 0.9, pmIgnore: true, interactive: false },
   routed: { color: '#22d3ee', weight: 2, dashArray: '6 6', opacity: 0.9, pmIgnore: true, interactive: false },
 };
+
+// Unit types on the floor plan, in mix order (also the legend's colors).
+export const UNIT_COLORS = ['#fbbf24', '#60a5fa', '#a78bfa', '#f472b6', '#34d399', '#f97316', '#22d3ee', '#e879f9'];
 
 const geoToLatLngs = (geometry) => geometry.coordinates[0].slice(0, -1).map(([lng, lat]) => [lat, lng]);
 
@@ -183,6 +192,7 @@ function SitePlanMap({
   parkingAreas, areaInfo, selectedAreaId, onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
   driveAisles, selectedAisleId, onSelectAisle, onAisleChange, onAisleDrawn, truckMode,
   parcelPicking, onParcelPick, parcelHighlight, terrainPoints,
+  selectedGenerated, onSelectGenerated, onGeneratedDrag,
 }) {
   const elRef = useRef(null);
   const mapRef = useRef(null);
@@ -205,7 +215,7 @@ function SitePlanMap({
   cb.current = {
     onBoundaryChange, onSelectSpace, onSpaceChange, onSpaceDrawn, onSelectBuilding, onBuildingChange,
     onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
-    onSelectAisle, onAisleChange, onAisleDrawn, onParcelPick,
+    onSelectAisle, onAisleChange, onAisleDrawn, onParcelPick, onSelectGenerated, onGeneratedDrag,
   };
   const pickingRef = useRef(false);
   pickingRef.current = !!parcelPicking;
@@ -592,8 +602,20 @@ function SitePlanMap({
         if (g.garage.helix) L.polygon(g.garage.helix, STYLES.ramp).bindTooltip(g.garage.rampLabel, { sticky: true }).addTo(group);
         g.garage.cores.forEach((r) => L.polygon(r, STYLES.core).addTo(group));
       }
-      (g.parking || []).forEach((p) => {
-        L.polygon(p.outline, p.connected === false ? STYLES.parkingBad : STYLES.parking).addTo(group);
+      (g.parking || []).forEach((p, i) => {
+        if (g === layout) {
+          // The main layout's bays can be clicked to select them.
+          const style = selected.kind === 'bay' && selected.index === i ? STYLES.baySelected
+            : { ...(p.connected === false ? STYLES.parkingBad : STYLES.parking), interactive: true };
+          L.polygon(p.outline, style)
+            .on('click', (e) => {
+              L.DomEvent.stopPropagation(e);
+              if (!pickingRef.current) cb.current.onSelectGenerated?.('bay', i);
+            })
+            .addTo(group);
+        } else {
+          L.polygon(p.outline, p.connected === false ? STYLES.parkingBad : STYLES.parking).addTo(group);
+        }
         p.stalls.forEach((line) => L.polyline(line, STYLES.stall).addTo(group));
         (p.islands || []).forEach((r) => L.polygon(r, STYLES.island).addTo(group));
         (p.ada || []).forEach((r) => L.polygon(r, STYLES.ada).addTo(group));
@@ -617,19 +639,69 @@ function SitePlanMap({
           .addTo(group);
       });
       (g.lots || []).forEach((r) => L.polygon(r, STYLES.lot).addTo(group));
+      (g.courtyards || []).forEach((r) => L.polygon(r, STYLES.courtyard).addTo(group));
+      (g.wrapGarages || []).forEach((r) => L.polygon(r, STYLES.wrapGarage).addTo(group));
       if (withBuildings) {
         (g.buildings || []).forEach((r, i) => {
-          const poly = L.polygon(r, STYLES.building).addTo(group);
-          if (buildingLabel && g === layout) poly.bindTooltip(buildingLabel(i), { sticky: true });
+          if (g !== layout) {
+            L.polygon(r, STYLES.building).addTo(group);
+            return;
+          }
+          // The main layout's buildings: click to select; drag to move,
+          // which takes the layout over by hand (when it can be).
+          const isSel = selected.kind === 'auto' && selected.index === i;
+          const poly = L.polygon(r, { ...(isSel ? STYLES.generatedSelected : STYLES.building), renderer: svgRef.current }).addTo(group);
+          if (buildingLabel) poly.bindTooltip(buildingLabel(i), { sticky: true });
+          poly.on('mousedown', (e) => {
+            L.DomEvent.stopPropagation(e);
+            if (pickingRef.current) {
+              cb.current.onParcelPick?.(e.latlng.lat, e.latlng.lng);
+              return;
+            }
+            const map = mapRef.current;
+            const canDrag = !!cb.current.onGeneratedDrag;
+            if (canDrag) map.dragging.disable();
+            const start = e.latlng;
+            const startPx = map.latLngToContainerPoint(start);
+            let delta = null;
+            const onMove = (ev) => {
+              if (!delta && map.latLngToContainerPoint(ev.latlng).distanceTo(startPx) < 5) return;
+              delta = [ev.latlng.lat - start.lat, ev.latlng.lng - start.lng];
+              poly.setLatLngs(r.map(([la, ln]) => [la + delta[0], ln + delta[1]]));
+            };
+            const onUp = () => {
+              map.off('mousemove', onMove);
+              L.DomEvent.off(document, 'mouseup', onUp);
+              if (canDrag) map.dragging.enable();
+              if (delta) {
+                const lat = r.reduce((t, p) => t + p[0], 0) / r.length + delta[0];
+                const lng = r.reduce((t, p) => t + p[1], 0) / r.length + delta[1];
+                cb.current.onGeneratedDrag(i, [lng, lat]);
+              } else {
+                cb.current.onSelectGenerated?.('auto', i);
+              }
+            };
+            if (canDrag) map.on('mousemove', onMove);
+            L.DomEvent.on(document, 'mouseup', onUp);
+          });
+          poly.on('click', (e) => L.DomEvent.stopPropagation(e));
         });
       }
+      // The typical floor, unit by unit, on top of the footprints.
+      (g.unitPlans || []).forEach((plan) => {
+        plan.corridors.forEach((r) => L.polygon(r, STYLES.corridor).addTo(group));
+        plan.units.forEach((u) => L.polygon(u.ring, { ...STYLES.unit, fillColor: UNIT_COLORS[u.t % UNIT_COLORS.length] }).addTo(group));
+        plan.cores.forEach((c) => L.polygon(c.ring, { ...STYLES.core, fillColor: c.kind === 'elevator' ? '#0f172a' : '#475569' }).addTo(group));
+      });
     };
+    const [selKind, selIndex] = (selectedGenerated || ':').split(':');
+    const selected = { kind: selKind, index: Number(selIndex) };
     if (layout?.setback) layout.setback.forEach((ring) => L.polygon(ring, STYLES.setback).addTo(group));
     draw(layout, !placed);
     (spaceLayouts || []).forEach((g) => draw(g, true));
     // The boundary stays on top so it can still be grabbed and edited.
     if (boundaryLayerRef.current) boundaryLayerRef.current.bringToFront();
-  }, [layout, spaceLayouts, buildingLabel, placed]);
+  }, [layout, spaceLayouts, buildingLabel, placed, selectedGenerated]);
 
   // Hand-placed buildings: click to select; drag the body or the ✥
   // handle to move, ↔ / ↕ to stretch, ⟳ to rotate. Changes show live and

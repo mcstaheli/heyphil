@@ -5,8 +5,10 @@ import React from 'react';
 
 const STEPS = [
   ['Find the site', 'Search an address, or turn on Parcels in the layer menu (top right) and use ▦ Pick a parcel to grab a parcel as the site. You can also trace the site with the polygon or rectangle tool on the left.'],
-  ['Pick an asset type', 'Each type starts from standard defaults - multifamily, townhomes, single-family, hotel, industrial, retail, data center, surface parking or a parking garage. Change any number in Settings; changed fields turn amber and ↺ puts one back.'],
-  ['Shape the layout', 'Leave it automatic, or use ✋ Edit by hand to drag, stretch and rotate buildings. Draw spaces (no-build areas, or areas with their own use), parking areas, and drive aisles. Buildings re-plan around whatever you draw.'],
+  ['Pick an asset type', 'Each type starts from standard defaults - multifamily, townhomes, single-family, hotel, industrial, retail, data center, surface parking or a parking garage. Use sets what it is (unit mix with beds and baths, efficiency); changed fields turn amber and ↺ puts one back.'],
+  ['Set aside ground', 'In Spaces, draw no-build areas (easements, ponds, open space) or areas with their own use. Buildings and parking are planned around them.'],
+  ['Shape the buildings', 'The steps follow the asset type: multifamily picks a building shape (bars, garden walk-ups, L, U, courtyard, double courtyard or a wrap around a garage) and lays out units, stairs and elevators floor by floor; industrial adds a truck court step; a garage has decks and ramps. Click any building or parking bay on the map - its details and controls are pinned at the top of the panel. Drag a generated building to move it, which switches to placing by hand.'],
+  ['Park it', 'Set the parking ratio, then draw parking areas and drive aisles, or leave the bays automatic. Click a bay to change stall angle and orientation.'],
   ['Check it', 'The zoning check covers height, FAR, coverage, parking, setback, circulation, accessible stalls, one-way flow, truck access and garage ramps. ⛰ Check terrain samples the ground for slope and earthwork.'],
   ['Compare and explore', '+ Scheme copies the scheme so you can try a variation; Compare schemes puts them side by side. ✨ Generate options sweeps up to three settings and keeps the ones that meet your goals.'],
   ['Share it', "◆ 3D shows the massing; ⬇ CSV exports every scheme; 🖨 Report prints the numbers, checks and a plan of each scheme. Save a scheme's settings as a preset to reuse on another site."],

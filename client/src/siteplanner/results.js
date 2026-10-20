@@ -39,6 +39,15 @@ export function metricRows(type, m) {
     );
     if (m.nsf && type.mode !== 'lots') rows.push(['Net / leasable', `${fmtInt(m.nsf)} sf`]);
     if (m.units) rows.push(['Units', fmtInt(m.units)]);
+    if (m.unitLayout && m.units) {
+      const u = m.unitLayout;
+      rows.push(
+        ['Beds / baths', `${fmtInt(u.beds)} / ${fmtInt(u.baths)}`],
+        ['Average unit', `${fmtInt(u.avgUnitSf)} sf`],
+        ['Efficiency (net / gross)', fmtPct(u.efficiency)],
+        ['Stairs / elevators', `${fmtInt(u.stairs)} / ${fmtInt(u.elevators)}`],
+      );
+    }
     if (m.keys) rows.push(['Keys', fmtInt(m.keys)]);
     if (m.units || m.keys) rows.push(['Density', `${fmtDec(m.density, 1)} per acre`]);
     rows.push(['FAR', fmtDec(m.far)], ['Lot coverage', fmtPct(m.coverage)]);
@@ -145,7 +154,7 @@ export function QuantitiesPanel({ type, result }) {
     <div className="siteplan-results">
       {m.unitsByType && m.unitsByType.length > 0 && (
         <div className="siteplan-mix-result">
-          {m.unitsByType.map((u) => <span key={u.name}><b>{fmtInt(u.count)}</b> {u.name}</span>)}
+          {m.unitsByType.map((u) => <span key={u.name}><b>{fmtInt(u.count)}</b> {u.name}{m.units > 0 && ` (${fmtPct(u.count / m.units)})`}</span>)}
         </div>
       )}
       <dl className="siteplan-metrics">

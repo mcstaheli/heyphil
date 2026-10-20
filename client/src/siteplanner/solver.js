@@ -9,7 +9,7 @@ import turfArea from '@turf/area';
 import buffer from '@turf/buffer';
 import difference from '@turf/difference';
 import { featureCollection, polygon as turfPolygon } from '@turf/helpers';
-import { effectiveSettings, getAssetType } from './assetTypes';
+import { bedsBaths, effectiveSettings, getAssetType } from './assetTypes';
 import {
   asRings,
   bandIntervals,
@@ -25,6 +25,7 @@ import {
 } from './geometry';
 import { combineProformas, proformaFor } from './proforma';
 import { routeAisles } from './routing';
+import { FALLBACK, buildingProgram, largestRect, shapeKey, shapeMinimum, shapeWings } from './buildings';
 import {
   analyzeAisle,
   distanceToRings,
@@ -78,7 +79,9 @@ export const LIMIT_LABELS = {
 // whatever an override says.
 function sanitize(s) {
   const pos = (v, min) => Math.max(min, Number.isFinite(v) ? v : min);
-  const mix = Array.isArray(s.mix) ? s.mix.filter((u) => u.size > 0 && u.pct > 0) : null;
+  const mix = Array.isArray(s.mix)
+    ? s.mix.filter((u) => u.size > 0 && u.pct > 0).map((u) => ({ ...u, ...bedsBaths(u) }))
+    : null;
   return {
     ...s,
     setback: pos(s.setback, 0),
@@ -140,6 +143,12 @@ function sanitize(s) {
     cores: Math.min(6, Math.max(0, Math.round(s.cores || 0))),
     coreSize: pos(s.coreSize, 5),
     parkingRotation: s.parkingRotation === 'auto' || !Number.isFinite(s.parkingRotation) ? 'auto' : s.parkingRotation,
+    buildingShape: Math.min(6, Math.max(0, Math.round(s.buildingShape || 0))),
+    corridorWidth: pos(s.corridorWidth, 3),
+    courtyardMin: pos(s.courtyardMin, 20),
+    stairSpacing: pos(s.stairSpacing, 60),
+    unitsPerElevator: pos(s.unitsPerElevator, 10),
+    amenitySf: pos(s.amenitySf, 0),
     mix: mix && mix.length ? mix : null,
   };
 }
@@ -568,6 +577,127 @@ function industrialLayouts(pts, s, type, siteSf, extraRaw = 0) {
   return candidates;
 }
 
+// ---- Shaped multifamily: L, U, courtyard, double courtyard, wrap ----
+
+const MAX_SHAPED_BUILDINGS = 4;
+const GARDEN_MAX_LENGTH = 160; // ft, a walk-up with breezeway stairs
+const GARDEN_GAP = 40;
+
+// Multifamily types get units laid out floor by floor.
+export function isUnitLayout(type) {
+  return type.yieldKind === 'units' && type.mode === 'bars';
+}
+const WRAP_RAMP_SHARE = 0.9; // of a wrapped garage level's stalls, after its ramps
+
+// The largest of the chosen shape that fits, then more (each at least 40%
+// of the first) in what's left, a building gap apart; a shape that won't
+// fit steps down to a simpler one. Units come from laying out each
+// building's floors (buildings.js). cutRects(rects) gives the ground left
+// once those rectangles (rotated frame) are taken out.
+function shapedLayouts(pts, s, type, siteSf, extraRaw = 0, helpers = {}) {
+  const wanted = shapeKey(s.buildingShape);
+  const D = s.buildingDepth;
+  const mod = parkingModule(s);
+  const podiumHeight = type.id === 'mf-podium' ? s.podiumLevels * PODIUM_LEVEL_HEIGHT : 0;
+  let floorsMax = Math.max(1, s.floors);
+  const limits = [];
+  if (s.maxHeight > 0) {
+    const allowed = Math.floor((s.maxHeight - podiumHeight) / s.floorToFloor + 1e-9);
+    if (allowed < floorsMax) {
+      floorsMax = Math.max(0, allowed);
+      limits.push('height');
+    }
+  }
+  if (!s.mix || floorsMax < 1) return [];
+
+  // Place buildings one at a time.
+  const placed = [];
+  let rings = asRings(pts);
+  for (let k = 0; k < MAX_SHAPED_BUILDINGS && rings.length; k++) {
+    let shape = wanted;
+    let rect = null;
+    while (shape && shape !== 'bars') {
+      const [minW, minH] = shapeMinimum(shape, D, s.courtyardMin);
+      const cap = Math.max(s.maxBuildingLength, minW, minH);
+      // Shapes are laid out along u; the other way round is the
+      // perpendicular candidate angle's turn.
+      rect = largestRect(rings, { minW, minH, maxW: cap, maxH: cap });
+      if (rect) break;
+      shape = FALLBACK[shape];
+    }
+    if (!rect || (placed.length && rect.area < 0.4 * placed[0].rect.area)) break;
+    const { wings, middle } = shapeWings(shape, rect, D);
+    placed.push({ shape, rect, wings, middle });
+    const g = s.buildingGap;
+    rings = helpers.cutRects ? helpers.cutRects(placed.map((b) => ({ u0: b.rect.u0 - g, u1: b.rect.u1 + g, v0: b.rect.v0 - g, v1: b.rect.v1 + g }))) : [];
+  }
+  if (!placed.length) return [];
+
+  const candidates = [];
+  for (let n = placed.length; n >= 1; n--) {
+    const use = placed.slice(0, n);
+    const g = s.buildingGap;
+    const left = helpers.cutRects ? helpers.cutRects(use.map((b) => ({ u0: b.rect.u0 - g, u1: b.rect.u1 + g, v0: b.rect.v0 - g, v1: b.rect.v1 + g }))) : [];
+    const bays = left.length ? fillBays(left, s, mod) : { rows: [], stalls: 0 };
+    // A wrapped garage fills the middle of a wrap, one level per floor.
+    const garageLevel = use.map((b) => (b.shape === 'wrap' && b.middle ? fillBays([[[b.middle.u0, b.middle.v0], [b.middle.u1, b.middle.v0], [b.middle.u1, b.middle.v1], [b.middle.u0, b.middle.v1]]], s, mod).stalls : 0));
+    const footprint = use.reduce((t, b) => t + b.wings.reduce((x, w) => x + (w.u1 - w.u0) * (w.v1 - w.v0), 0), 0);
+    // A wrapped garage is a structure too: it counts toward lot coverage.
+    const garageSf = use.reduce((t, b) => t + (b.shape === 'wrap' && b.middle ? (b.middle.u1 - b.middle.u0) * (b.middle.v1 - b.middle.v0) : 0), 0);
+    for (let floors = floorsMax; floors >= 1; floors--) {
+      const programs = use.map((b) => buildingProgram(b.wings, s, s.mix, floors));
+      if (programs.some((p) => !p)) continue;
+      const units = programs.reduce((t, p) => t + p.units, 0);
+      const nsf = programs.reduce((t, p) => t + p.nrsf, 0);
+      const gsf = footprint * floors;
+      const structured = garageLevel.reduce((t, st) => t + Math.floor(st * floors * WRAP_RAMP_SHARE), 0)
+        + (type.id === 'mf-podium' ? Math.floor((footprint * s.podiumLevels) / s.sfPerStructuredStall) : 0);
+      const required = Math.ceil(units * s.parkingRatio - 1e-9);
+      const provided = netStalls(bays.stalls + extraRaw) + structured;
+      const fails = zoningFails(s, siteSf, gsf, footprint + garageSf);
+      if (provided < required) fails.push('parking');
+      if (fails.length) {
+        if (n === placed.length && floors === floorsMax) limits.push(...fails);
+        continue;
+      }
+      const byType = s.mix.map((u, i) => programs.reduce((t, p) => t + p.byType[i], 0));
+      candidates.push({
+        score: units,
+        surplus: provided - required,
+        shapes: {
+          buildings: use.flatMap((b) => b.wings.map((w) => ({ u0: w.u0, u1: w.u1, v0: w.v0, v1: w.v1 }))),
+          parking: bays.rows,
+          courtyards: use.filter((b) => b.middle).map((b) => b.middle),
+          garages: use.filter((b) => b.shape === 'wrap' && b.middle).map((b) => b.middle),
+        },
+        unitPlans: use.map((b, i) => ({ shape: b.shape, wings: b.wings, plan: programs[i].plan, elevators: programs[i].elevators })),
+        shapesUsed: use.map((b) => b.shape),
+        metrics: {
+          footprintSf: footprint + garageSf,
+          buildingCount: use.length,
+          floors,
+          heightFt: podiumHeight + floors * s.floorToFloor,
+          gsf,
+          nsf,
+          units,
+          unitsByType: s.mix.map((u, i) => ({ name: u.name, size: u.size, count: byType[i] })),
+          keys: 0,
+          parkingRequired: required,
+          parkingSurface: netStalls(bays.stalls),
+          parkingStructured: structured,
+          parkingGarage: 0,
+          parkingProvided: provided,
+        },
+        limits: [],
+      });
+      break; // the most floors that work for this many buildings
+    }
+  }
+  const why = [...new Set(limits)];
+  candidates.forEach((c) => { c.limits = why.length ? why : ['site']; });
+  return candidates;
+}
+
 // ---- Data center: a deep data hall, its equipment yard, and parking ----
 
 // IT load (MW) and generators for a gross floor area.
@@ -784,6 +914,12 @@ function rowGeometry(row, proj) {
     ada: (row.adaSlots || []).map(({ i, side }) => slot(i, side)),
     connected: row.connected !== false,
     flow,
+    // For the selection bar: stalls (both sides, less islands), the stall
+    // angle and which way the bay runs.
+    stallCount: 2 * row.n - 2 * row.islands.length,
+    stallAngle: mod.angle,
+    angleDeg: Math.round(((row.angle * 180) / Math.PI) * 10) / 10,
+    oneWay: !!row.dir,
   };
 }
 
@@ -1322,11 +1458,25 @@ function solvePart(boundary, scheme, cutouts = []) {
     const angles = s.rotation === 'auto' || !Number.isFinite(s.rotation)
       ? candidateAngles(layoutRings)
       : [(s.rotation * Math.PI) / 180];
-    for (const angle of angles) {
-      for (const c of LAYOUTS[type.mode](rotateRings(layoutRings, angle), s, type, siteSf, areaRaw)) {
-        if (better(c, best)) best = { ...c, angle };
+    // Multifamily shapes other than bars lay out shaped buildings; garden
+    // walk-ups are short bars. If no shape fits at any angle, bars it is.
+    const shaped = isUnitLayout(type) && s.buildingShape >= 2;
+    const sLayout = isUnitLayout(type) && s.buildingShape === 1
+      ? { ...s, maxBuildingLength: Math.min(s.maxBuildingLength, GARDEN_MAX_LENGTH), buildingGap: Math.max(s.buildingGap, GARDEN_GAP) }
+      : s;
+    const run = (fn) => {
+      for (const angle of angles) {
+        const cutRects = (rects) => {
+          const f = safeSubtract(layout, rects.map((r) => rectToGeo(r, angle, proj)), null);
+          return f ? rotateRings(feetRings(f), angle) : [];
+        };
+        for (const c of fn(rotateRings(layoutRings, angle), sLayout, type, siteSf, areaRaw, { cutRects })) {
+          if (better(c, best)) best = { ...c, angle };
+        }
       }
-    }
+    };
+    if (shaped) run(shapedLayouts);
+    if (!best) run(LAYOUTS[type.mode]);
   }
   if (!best) return empty('There\'s no room left to build once the parking areas are taken out.');
 
@@ -1344,6 +1494,7 @@ function solvePart(boundary, scheme, cutouts = []) {
       ...(shapes.truckCourts || []),
       ...(shapes.trailers || []),
       ...(shapes.yards || []),
+      ...(shapes.courtyards || []),
     ].map((r) => rectToGeo(r, angle, proj));
     try {
       const leftover = obstacles.length ? subtract(layout, obstacles) : layout;
@@ -1527,8 +1678,87 @@ function solvePart(boundary, scheme, cutouts = []) {
     }
   }
 
-  const surface = netStalls(rawStalls);
   const m = { ...EMPTY_METRICS, ...best.metrics };
+
+  // ---- Units laid out floor by floor (multifamily) ----
+  // Shaped buildings come with their plans; bars and hand-placed buildings
+  // are laid out here, each as one wing. Counts, rentable area,
+  // efficiency, beds and baths then come from the plans, not a ratio.
+  const unitDrawings = [];
+  let unitStats = null;
+  if (isUnitLayout(type) && s.mix && m.floors > 0) {
+    const walkUp = s.buildingShape === 1;
+    const plans = [];
+    if (best.unitPlans) {
+      best.unitPlans.forEach((p) => plans.push({ plan: p.plan, toLL: (pt) => proj.toLatLng(unrotate(pt, angle)), floors: m.floors, elevators: p.elevators, shape: p.shape }));
+    } else if (placed.length) {
+      for (const b of placed) {
+        const floors = Math.min(MAX_FLOORS, Math.max(1, Math.round(b.floors || s.floors || 1)));
+        // The corridor runs down the longer side.
+        const wing = { u0: -b.length / 2, u1: b.length / 2, v0: -b.depth / 2, v1: b.depth / 2, axis: b.length >= b.depth ? 'u' : 'v' };
+        const prog = buildingProgram([wing], s, s.mix, floors, { walkUp });
+        if (!prog) { plans.failed = true; continue; }
+        const [cx, cy] = proj.toFeet(b.center);
+        const a = (b.angle * Math.PI) / 180;
+        plans.push({ ...prog, toLL: ([x, y]) => proj.toLatLng([cx + x * Math.cos(a) - y * Math.sin(a), cy + x * Math.sin(a) + y * Math.cos(a)]), floors, shape: 'bars' });
+      }
+    } else {
+      for (const r of shapes.buildings || []) {
+        const prog = buildingProgram([{ ...r, axis: r.u1 - r.u0 >= r.v1 - r.v0 ? 'u' : 'v' }], s, s.mix, m.floors, { walkUp });
+        if (prog) plans.push({ ...prog, toLL: (pt) => proj.toLatLng(unrotate(pt, angle)), floors: m.floors, shape: walkUp ? 'garden' : 'bars' });
+        else plans.failed = true;
+      }
+    }
+    // A building too shallow for units on both sides of a corridor keeps
+    // the efficiency-ratio estimate, for every building, so totals agree.
+    if (plans.length && !plans.failed) {
+      const byType = s.mix.map((_, i) => plans.reduce((t, p) => t + (p.byType ? p.byType[i] : 0), 0));
+      let nsfLaid = plans.reduce((t, p) => t + (p.nrsf || 0), 0);
+      // Automatic bars were sized for parking on the ratio estimate; when
+      // the plan holds more units than its stalls can serve, the extra
+      // units come off (left as amenity), so the parking still works.
+      if (!best.unitPlans && !placed.length && s.parkingRatio > 0) {
+        const cap = Math.floor((best.metrics.parkingProvided || 0) / s.parkingRatio + 1e-9);
+        let total = byType.reduce((t, c) => t + c, 0);
+        const avg = total ? nsfLaid / total : 0;
+        while (total > cap) {
+          const i = byType.reduce((bi, c, k) => (c > byType[bi] ? k : bi), 0);
+          byType[i]--;
+          total--;
+          nsfLaid -= avg;
+        }
+      }
+      // Shaped plans carry per-floor counts; their totals are already in m.
+      const units = best.unitPlans ? m.units : byType.reduce((t, c) => t + c, 0);
+      const nsf = best.unitPlans ? m.nsf : nsfLaid;
+      const typeCounts = best.unitPlans ? m.unitsByType.map((u) => u.count) : byType;
+      if (!best.unitPlans) {
+        m.units = units;
+        m.nsf = nsf;
+        m.unitsByType = s.mix.map((u, i) => ({ name: u.name, size: u.size, count: byType[i] }));
+        m.parkingRequired = Math.ceil(units * s.parkingRatio - 1e-9);
+      }
+      unitStats = {
+        efficiency: m.gsf > 0 ? nsf / m.gsf : 0,
+        beds: s.mix.reduce((t, u, i) => t + typeCounts[i] * u.beds, 0),
+        baths: s.mix.reduce((t, u, i) => t + typeCounts[i] * u.baths, 0),
+        avgUnitSf: units ? nsf / units : 0,
+        elevators: plans.reduce((t, p) => t + (p.elevators || 0), 0),
+        stairs: plans.reduce((t, p) => t + p.plan.pieces.cores.filter((c) => c.kind === 'stair').length, 0),
+        shapes: [...new Set(plans.map((p) => p.shape))],
+      };
+      for (const p of plans) {
+        const ll = (ring) => ring.map(p.toLL);
+        unitDrawings.push({
+          units: p.plan.pieces.units.map((u) => ({ t: u.t, ring: ll(u.ring) })),
+          cores: p.plan.pieces.cores.map((c) => ({ kind: c.kind, ring: ll(c.ring) })),
+          corridors: p.plan.pieces.corridors.map(ll),
+        });
+      }
+    }
+  }
+
+  const surface = netStalls(rawStalls);
   if (surfaceParking) {
     m.parkingSurface = surface;
     m.parkingProvided = surface + (m.parkingStructured || 0) + (m.parkingGarage || 0);
@@ -1554,6 +1784,7 @@ function solvePart(boundary, scheme, cutouts = []) {
     orientationDeg: Math.round(((type.mode === 'parking' ? mainParkingAngle : angle) * 180) / Math.PI * 10) / 10,
     parkingOrientationDeg: Math.round(((mainParkingAngle * 180) / Math.PI) * 10) / 10,
     parkingPavedSf: pavedSf,
+    ...(unitStats ? { unitLayout: unitStats } : {}),
   };
 
   const autoBuildings = shapes.buildings || [];
@@ -1567,6 +1798,10 @@ function solvePart(boundary, scheme, cutouts = []) {
     truckCourts: (shapes.truckCourts || []).map((r) => rectToLatLngs(r, angle, proj)),
     trailers: (shapes.trailers || []).map((r) => trailerGeometry(r, angle, proj)),
     yards: (shapes.yards || []).map((r) => rectToLatLngs(r, angle, proj)),
+    courtyards: (shapes.courtyards || []).filter((r) => !(shapes.garages || []).includes(r)).map((r) => rectToLatLngs(r, angle, proj)),
+    wrapGarages: (shapes.garages || []).map((r) => rectToLatLngs(r, angle, proj)),
+    unitPlans: unitDrawings,
+    unitTypes: isUnitLayout(type) && s.mix ? s.mix.map((u) => u.name) : [],
     drives: [
       ...(driveFeature ? piecesOf(driveFeature) : []),
       ...aisles.flatMap((x) => piecesOf(x.f)),
@@ -1839,6 +2074,24 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
   totals.far = totals.siteSf > 0 ? totals.gsf / totals.siteSf : 0;
   totals.coverage = totals.siteSf > 0 ? totals.footprintSf / totals.siteSf : 0;
   totals.density = totals.siteAcres > 0 ? (totals.units + totals.keys) / totals.siteAcres : 0;
+
+  // Unit-by-unit tabulation, over the uses that laid units out.
+  // Only when every part with units laid them out, so the tabulation
+  // covers the same units as the unit count beside it.
+  const laidOut = parts.filter((p) => p.metrics.unitLayout);
+  if (laidOut.length && laidOut.length < parts.filter((p) => p.metrics.units > 0).length) totals.unitLayout = null;
+  else if (laidOut.length) {
+    const sum = (k) => laidOut.reduce((t, p) => t + p.metrics.unitLayout[k], 0);
+    const units = laidOut.reduce((t, p) => t + p.metrics.units, 0);
+    const nsf = laidOut.reduce((t, p) => t + p.metrics.nsf, 0);
+    const gsf = laidOut.reduce((t, p) => t + p.metrics.gsf, 0);
+    totals.unitLayout = {
+      beds: sum('beds'), baths: sum('baths'), elevators: sum('elevators'), stairs: sum('stairs'),
+      efficiency: gsf > 0 ? nsf / gsf : 0,
+      avgUnitSf: units ? nsf / units : 0,
+      shapes: [...new Set(laidOut.flatMap((p) => p.metrics.unitLayout.shapes))],
+    };
+  }
 
   // Mixed uses can share stalls by time of day.
   const req = parts.map((p) => ({ typeId: p.type.id, required: p.metrics.parkingRequired || 0 }));
