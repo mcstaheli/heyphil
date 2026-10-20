@@ -30,6 +30,7 @@ export const COMMON_FIELDS = [
   { key: 'aisleWidth', label: 'Drive aisle (90°)', unit: 'ft', default: 24, group: 'Parking' },
   { key: 'aisle60', label: 'One-way aisle (60°)', unit: 'ft', default: 18, group: 'Parking' },
   { key: 'aisle45', label: 'One-way aisle (45°)', unit: 'ft', default: 13, group: 'Parking' },
+  { key: 'turnRadius', label: 'Min turning radius', unit: 'ft', default: 25, hint: 'inside radius a drawn aisle\'s turns must allow', group: 'Parking' },
   { key: 'perimeterDrive', label: 'Perimeter drive', unit: '', default: 1, group: 'Parking', options: [[1, 'On - a loop road inside the setback'], [0, 'Off']] },
   { key: 'islandEvery', label: 'Landscape island every', unit: 'stalls', default: 0, hint: '0 = none', group: 'Parking' },
   { key: 'endIslands', label: 'End islands', unit: '', default: 0, group: 'Parking', options: [[0, 'Off'], [1, 'At both ends of each row']] },
@@ -167,7 +168,11 @@ export const ASSET_TYPES = [
     fields: [
       f('levels', 'Levels', '', 4, { max: 20 }),
       f('floorToFloor', 'Floor-to-floor', 'ft', 10.5, { step: 0.5 }),
-      f('sfPerGarageStall', 'Garage area per stall', 'sf', 330),
+      f('rampType', 'Ramp', '', 0, { options: [[0, 'Sloped floors - parking on the ramp'], [1, 'Express ramp - flat floors']] }),
+      f('rampSlope', 'Ramp slope', '%', 5, { step: 0.5, hint: 'parking ramps 6.67% max; express ramps up to 12-15%' }),
+      f('rampWidth', 'Express ramp width', 'ft', 24),
+      f('cores', 'Stair / elevator cores', '', 2, { max: 6 }),
+      f('coreSize', 'Core size', 'ft', 20),
     ],
   },
 ];

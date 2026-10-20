@@ -131,3 +131,14 @@ test('schemes keep parking areas and entries, checked', () => {
   assert.throws(() => one({ overrides: { parkingRotation: 'north' } }), SitePlanValidationError);
   assert.equal(one({ assetType: 'garage' }).assetType, 'garage');
 });
+
+test('schemes keep drawn drive aisles, checked', () => {
+  const line = { type: 'LineString', coordinates: [[-111.9, 40.7], [-111.899, 40.7], [-111.899, 40.701]] };
+  const out = one({ driveAisles: [{ id: 'a1', line, width: 26 }, { id: 'a2', line, twoWay: false }] });
+  assert.equal(out.driveAisles[0].width, 26);
+  assert.equal(out.driveAisles[0].twoWay, true);
+  assert.equal(out.driveAisles[1].twoWay, false);
+  assert.throws(() => one({ driveAisles: [{ id: 'a', line: { type: 'LineString', coordinates: [[0, 0]] } }] }), SitePlanValidationError);
+  assert.throws(() => one({ driveAisles: [{ id: 'a', line, width: 4 }] }), SitePlanValidationError);
+  assert.throws(() => one({ driveAisles: [{ id: 'a', line: square }] }), SitePlanValidationError);
+});

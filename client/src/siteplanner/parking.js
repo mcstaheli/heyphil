@@ -205,3 +205,53 @@ export function sharedRequirement(parts) {
   }
   return { required: Math.ceil(peak - 1e-9) + fixed, raw, shared: true };
 }
+
+// ---- Drive aisles drawn by hand ------------------------------------------
+
+export const MIN_TWO_WAY_WIDTH = 20;
+export const MIN_ONE_WAY_WIDTH = 12;
+
+// Problems with one drawn aisle (points in local feet):
+//   turn  - a corner too sharp for the turning radius: the largest curve
+//           that fits between the neighbouring straights is too small
+//   width - narrower than two-way (or one-way) traffic needs
+//   dead  - an end that meets no other drive, no perimeter drive and no
+//           street (the boundary)
+// connectsTo: rings (feet) an end may meet - other aisles, the perimeter
+// drive's edge, the site boundary.
+export function analyzeAisle(pts, { width, twoWay, turnRadius, connectsTo }) {
+  const issues = [];
+  for (let i = 1; i + 1 < pts.length; i++) {
+    const [ax, ay] = pts[i - 1];
+    const [bx, by] = pts[i];
+    const [cx, cy] = pts[i + 1];
+    const l1 = Math.hypot(bx - ax, by - ay);
+    const l2 = Math.hypot(cx - bx, cy - by);
+    if (l1 < 1e-6 || l2 < 1e-6) continue;
+    const cos = ((bx - ax) * (cx - bx) + (by - ay) * (cy - by)) / (l1 * l2);
+    const turn = Math.acos(Math.max(-1, Math.min(1, cos)));
+    if (turn < (5 * Math.PI) / 180) continue;
+    // The curve's tangents take r·tan(turn/2) from each straight; each
+    // straight can give half its length to this corner. That's the curve
+    // along the centre line; the inside edge is half the width tighter.
+    const centre = Math.min(l1, l2) / 2 / Math.tan(turn / 2);
+    const inside = centre - width / 2;
+    if (inside + 1e-6 < turnRadius) {
+      issues.push({
+        kind: 'turn',
+        at: [bx, by],
+        text: `Turn too tight: inside radius ${Math.max(0, Math.round(inside))} ft, needs ${Math.round(turnRadius)} ft`,
+      });
+    }
+  }
+  const minWidth = twoWay ? MIN_TWO_WAY_WIDTH : MIN_ONE_WAY_WIDTH;
+  if (width < minWidth) {
+    issues.push({ kind: 'width', at: pts[Math.floor(pts.length / 2)], text: `${Math.round(width)} ft is narrow for ${twoWay ? 'two-way' : 'one-way'} traffic (${minWidth} ft min)` });
+  }
+  for (const end of [pts[0], pts[pts.length - 1]]) {
+    if (!connectsTo.length || distanceToRings(connectsTo, end) > width) {
+      issues.push({ kind: 'dead', at: end, text: 'Dead end: connect it to another drive or the street, or add a turnaround' });
+    }
+  }
+  return issues;
+}

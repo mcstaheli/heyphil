@@ -25,7 +25,10 @@ import {
 } from './geometry';
 import { combineProformas, proformaFor } from './proforma';
 import {
+  analyzeAisle,
+  distanceToRings,
   bestOrientation,
+  fillBays,
   layBay,
   netStalls,
   parkingModule,
@@ -47,6 +50,13 @@ const HOME_FLOOR_HEIGHT = 10;
 const INDUSTRIAL_ROOF_ALLOWANCE = 8; // clear height to roof
 const INDUSTRIAL_DEPTH_STEP = 20;
 const TRAILER_WIDTH = 12;
+const ONE_WAY_AISLE_DEFAULT = 16;
+
+// A drawn aisle's width: its own, else the scheme's two-way aisle, else
+// a one-way default.
+export function aisleWidthOf(a, s) {
+  return a.width || (a.twoWay === false ? ONE_WAY_AISLE_DEFAULT : s.aisleWidth);
+}
 // Floors are tried one count at a time, so the count is capped.
 export const MAX_FLOORS = 100;
 
@@ -107,7 +117,12 @@ function sanitize(s) {
     trailerStallsPerDock: pos(s.trailerStallsPerDock, 0),
     trailerDepth: pos(s.trailerDepth, 10),
     levels: Math.min(20, Math.max(1, Math.round(s.levels || 1))),
-    sfPerGarageStall: pos(s.sfPerGarageStall, 100),
+    turnRadius: pos(s.turnRadius, 0),
+    rampType: s.rampType ? 1 : 0,
+    rampSlope: Math.min(30, pos(s.rampSlope, 1)),
+    rampWidth: pos(s.rampWidth, 10),
+    cores: Math.min(6, Math.max(0, Math.round(s.cores || 0))),
+    coreSize: pos(s.coreSize, 5),
     parkingRotation: s.parkingRotation === 'auto' || !Number.isFinite(s.parkingRotation) ? 'auto' : s.parkingRotation,
     mix: mix && mix.length ? mix : null,
   };
@@ -765,6 +780,122 @@ function nearestPointOnRings(rings, [x, y]) {
 
 const MIN_PARKING_PIECE_SF = 1500;
 
+// A parking garage's typical level, laid out along its long side: two
+// stair/elevator cores (or as many as set) in the corners, a cross aisle
+// at each end, and either sloped floors (parking on the ramp: each bay
+// climbs half a level over the length) or a separate express ramp along
+// one long edge. Returns the bays, how many stalls a level holds, the
+// drawing, and whether the ramp fits.
+function garagePlan(region, regionRings, s, proj, levels = s.levels) {
+  const angle = candidateAngles(regionRings)[0] || 0;
+  const rotated = rotateRings(regionRings, angle);
+  const us = rotated.flat().map((p) => p[0]);
+  const vs = rotated.flat().map((p) => p[1]);
+  const [umin, umax, vmin, vmax] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
+  const longSide = umax - umin;
+  const shortSide = vmax - vmin;
+  const mod = parkingModule(s);
+  const aisle = s.aisleWidth;
+  const slope = s.rampSlope / 100;
+  // Tested half a foot in, so a core or ramp flush with the garage's
+  // edge still counts as inside.
+  const inside = (r) => ringInsideShape(
+    [[r.u0 + 0.5, r.v0 + 0.5], [r.u1 - 0.5, r.v0 + 0.5], [r.u1 - 0.5, r.v1 - 0.5], [r.u0 + 0.5, r.v1 - 0.5]],
+    rotated
+  );
+
+  const cuts = [];
+  const info = { rampType: s.rampType ? 'express' : 'sloped', slopePct: s.rampSlope, longSide, shortSide };
+  let ramp = null;
+  const arrows = [];
+  if (levels <= 1) {
+    // A single deck needs no ramp.
+    info.rampType = 'none';
+    info.required = 0;
+    info.fits = true;
+    info.note = null;
+  } else if (s.rampType) {
+    // Express ramp: one level's rise at the slope, plus a 12 ft
+    // transition at each end, along a long edge.
+    const run = s.floorToFloor / slope + 24;
+    info.required = run + 2 * aisle;
+    for (const v0 of [vmin, vmax - s.rampWidth]) {
+      const r = { u0: umax - aisle - run, u1: umax - aisle, v0, v1: v0 + s.rampWidth };
+      if (r.u0 >= umin + aisle && inside(r)) {
+        ramp = r;
+        break;
+      }
+    }
+    info.fits = !!ramp;
+    info.note = ramp ? null : `needs ${Math.round(run + 2 * aisle)} ft of length for the ramp and end aisles`;
+    if (ramp) {
+      cuts.push(ramp);
+      const vm = (ramp.v0 + ramp.v1) / 2;
+      arrows.push([[ramp.u0 + 4, vm], [ramp.u1 - 4, vm]]);
+    }
+  } else {
+    // Sloped floors: a two-bay loop climbs a level per lap, so each bay
+    // rises half a level along its length.
+    const run = s.floorToFloor / 2 / slope;
+    info.required = run + 2 * aisle;
+    info.fits = longSide >= info.required && shortSide >= 2 * mod.depth;
+    info.note = info.fits ? null
+      : longSide < info.required ? `needs ${Math.round(info.required)} ft of length at ${s.rampSlope}%`
+        : `needs ${Math.round(2 * mod.depth)} ft of width for two bays`;
+    if (s.rampSlope > 6.67) {
+      info.fits = false;
+      info.note = 'parked-on ramps are limited to about 6.67%';
+    }
+    const mid = (vmin + vmax) / 2;
+    arrows.push([[umin + aisle + 6, (vmin + mid) / 2], [umax - aisle - 6, (vmin + mid) / 2]]);
+    arrows.push([[umax - aisle - 6, (mid + vmax) / 2], [umin + aisle + 6, (mid + vmax) / 2]]);
+  }
+
+  // Cores in the corners not taken by the ramp, then along the long sides.
+  const c = s.coreSize;
+  const spots = [
+    { u0: umin, v0: vmax - c }, { u0: umax - c, v0: vmax - c }, { u0: umin, v0: vmin }, { u0: umax - c, v0: vmin },
+    { u0: (umin + umax - c) / 2, v0: vmax - c }, { u0: (umin + umax - c) / 2, v0: vmin },
+  ].map((p) => ({ ...p, u1: p.u0 + c, v1: p.v0 + c }));
+  const overlapsRamp = (r) => ramp && r.u0 < ramp.u1 && r.u1 > ramp.u0 && r.v0 < ramp.v1 && r.v1 > ramp.v0;
+  const cores = spots.filter((r) => !overlapsRamp(r) && inside(r)).slice(0, s.cores);
+  cuts.push(...cores);
+
+  // Cross aisles at both ends connect the bays.
+  const endAisles = [
+    { u0: umin, u1: umin + aisle, v0: vmin, v1: vmax },
+    { u0: umax - aisle, u1: umax, v0: vmin, v1: vmax },
+  ];
+  cuts.push(...endAisles);
+
+  let level = region;
+  try {
+    level = subtract(region, cuts.map((r) => rectToGeo(r, angle, proj)));
+  } catch {
+    level = null;
+  }
+  const levelRings = level ? ringsOf(level.geometry).map((r) => openRing(r).map(proj.toFeet)).filter((r) => r.length >= 3) : [];
+  const { rows } = levelRings.length ? fillBays(rotateRings(levelRings, angle), s, mod) : { rows: [] };
+  rows.forEach((r) => { r.angle = angle; });
+  const perLevel = rows.reduce((sum, r) => sum + 2 * r.perSide, 0);
+
+  const toLL = (p) => proj.toLatLng(unrotate(p, angle));
+  return {
+    angle,
+    rows,
+    perLevel,
+    info,
+    geometry: {
+      outline: ringsOf(region.geometry).map((r) => openRing(r).map(([lng, lat]) => [lat, lng])),
+      ramp: ramp ? rectToLatLngs(ramp, angle, proj) : null,
+      cores: cores.map((r) => rectToLatLngs(r, angle, proj)),
+      endAisles: endAisles.map((r) => rectToLatLngs(r, angle, proj)),
+      arrows: arrows.map((line) => line.map(toLL)),
+      rampLabel: levels <= 1 ? 'Single deck' : s.rampType ? `Express ramp · ${s.rampSlope}%` : `Sloped floors · ${s.rampSlope}% up`,
+    },
+  };
+}
+
 const noBoundary = { error: 'Draw the site boundary on the map to see a layout.', metrics: null, geometry: null, limits: [] };
 
 // One part of a plan - the main scheme, or one space - on its own
@@ -808,7 +939,8 @@ function solvePart(boundary, scheme, cutouts = []) {
 
   const setbackGeom = s.setback > 0 ? latLngRings(inset) : null;
 
-  // ---- A parking garage fills its site ----
+  // ---- A parking garage fills its site: a typical level's bays, cores,
+  // end aisles and ramp, stacked ----
   if (type.mode === 'garage') {
     const footprint = buildableSf;
     // Levels come down to fit the height and FAR limits.
@@ -822,7 +954,10 @@ function solvePart(boundary, scheme, cutouts = []) {
       levels = Math.max(0, Math.floor((s.maxFar * siteSf) / footprint + 1e-9));
       limits.push('far');
     }
-    const structured = Math.floor((footprint * levels) / s.sfPerGarageStall);
+    const plan = garagePlan(region, regionRings, s, proj, levels);
+    const raw = plan.perLevel * levels;
+    const types = stallTypes(raw, s);
+    const structured = types.total;
     const metrics = {
       ...base,
       ...EMPTY_METRICS,
@@ -837,15 +972,22 @@ function solvePart(boundary, scheme, cutouts = []) {
       far: siteSf > 0 ? (footprint * levels) / siteSf : 0,
       coverage: siteSf > 0 && levels > 0 ? footprint / siteSf : 0,
       density: 0,
-      orientationDeg: 0,
+      orientationDeg: Math.round(((plan.angle * 180) / Math.PI) * 10) / 10,
     };
     return {
       metrics,
-      geometry: { setback: setbackGeom, buildings: piecesOf(region).map((poly) => openRing(poly[0]).map(([lng, lat]) => [lat, lng])), parking: [], lots: [], streets: [], truckCourts: [], trailers: [], drives: [], entryDrives: [], entries: [] },
+      geometry: {
+        setback: setbackGeom,
+        buildings: [],
+        garage: plan.geometry,
+        parking: plan.rows.map((r) => rowGeometry(r, proj)),
+        lots: [], streets: [], truckCourts: [], trailers: [], drives: plan.geometry.endAisles.map((r) => [r]), entryDrives: [], entries: [], aisleIssues: [],
+      },
       limits: limits.length ? limits : ['site'],
       warnings: { outside: [], overlaps: [] },
       buildingRects: [],
       parking: null,
+      garage: { ...plan.info, levels, perLevel: plan.perLevel, types, gsfPerStall: raw > 0 ? (footprint * levels) / raw : 0 },
       proforma: proformaFor(type, s, metrics),
       error: null,
       type,
@@ -871,7 +1013,36 @@ function solvePart(boundary, scheme, cutouts = []) {
       inner = region;
     }
   }
-  const driveEdge = driveFeature ? feetRings(inner) : null;
+  // ---- Drive aisles drawn by hand: paved lines buildings and stalls stay
+  // clear of, and rows can reach ----
+  const aisleDefs = surfaceParking ? (scheme.driveAisles || []).filter((a) => a.line && a.line.coordinates && a.line.coordinates.length >= 2) : [];
+  const aisles = [];
+  for (const a of aisleDefs) {
+    try {
+      // Only the part inside the buildable ground counts (not across the
+      // setback, off the site, or through a space).
+      const buffered = buffer(toFeature(a.line), aisleWidthOf(a, s) / 2, { units: 'feet' });
+      const f = buffered && buffered.geometry ? intersect(buffered.geometry, region) : null;
+      if (f && f.geometry) aisles.push({ a, f, rings: feetRings(f) });
+    } catch {
+      // A line turf can't buffer is skipped.
+    }
+  }
+  const aisleGeoms = aisles.map((x) => x.f.geometry);
+  const perimeterEdge = driveFeature ? feetRings(inner) : [];
+  const driveEdgeAll = [...perimeterEdge, ...aisles.flatMap((x) => x.rings)];
+  const driveEdge = driveEdgeAll.length ? driveEdgeAll : null;
+  const boundaryRings = [openRing(boundary.coordinates[0]).map(proj.toFeet)];
+  // Reaching the setback line counts as reaching the street; ends inside
+  // a space don't. Spaces are solved with the site's aisles but leave the
+  // checking to the main plan.
+  const setbackRings = s.setback > 0 ? feetRings(inset) : boundaryRings;
+  const aisleIssues = !scheme.skipAisleChecks ? aisles.flatMap((x, i) => analyzeAisle(x.a.line.coordinates.map(proj.toFeet), {
+    width: aisleWidthOf(x.a, s),
+    twoWay: x.a.twoWay !== false,
+    turnRadius: s.turnRadius,
+    connectsTo: [...aisles.filter((_, j) => j !== i).flatMap((y) => y.rings), ...perimeterEdge, ...setbackRings, ...boundaryRings],
+  }).map((issue) => ({ ...issue, aisleId: x.a.id }))) : [];
   const rotatedDrive = new Map();
   const reaches = (row, angle) => {
     if (!driveEdge) return true;
@@ -902,7 +1073,7 @@ function solvePart(boundary, scheme, cutouts = []) {
   for (const area of areas) {
     try {
       let f = intersect(area.polygon, inner);
-      if (f && buildingCutouts.length) f = subtract(f, buildingCutouts);
+      if (f && (buildingCutouts.length || aisleGeoms.length)) f = subtract(f, [...buildingCutouts, ...aisleGeoms]);
       if (!f) continue;
       const areaMod = parkingModule(s, area.stallAngle || s.stallAngle);
       const fixedDeg = Number.isFinite(area.angle) ? area.angle : fixedParkingDeg;
@@ -926,13 +1097,14 @@ function solvePart(boundary, scheme, cutouts = []) {
     }
   };
   let layout = inner;
-  if (areas.length) layout = safeSubtract(inner, areas.map((a) => a.polygon), inner);
+  if (areas.length || aisleGeoms.length) layout = safeSubtract(inner, [...areas.map((a) => a.polygon), ...aisleGeoms], inner);
   const layoutRings = layout ? feetRings(layout) : [];
 
   let best = null;
   let otherRows = [];
   if (placed.length) {
-    const checkRegion = areas.length ? safeSubtract(region, areas.map((a) => a.polygon), region) : region;
+    const checkCuts = [...areas.map((a) => a.polygon), ...aisleGeoms];
+    const checkRegion = checkCuts.length ? safeSubtract(region, checkCuts, region) : region;
     best = solveManual(checkRegion ? feetRings(checkRegion) : [], s, type, proj, placed);
     const parkRegion = layout ? safeSubtract(layout, buildingCutouts, null) : null;
     otherRows = parkRegion ? parkPieces(parkRegion, mod, fixedParkingDeg, false) : [];
@@ -986,7 +1158,9 @@ function solvePart(boundary, scheme, cutouts = []) {
   const entryInfo = entries.map((e) => {
     const ef = proj.toFeet(e.point);
     const near = nearestPointOnRings(regionRings, ef);
-    const reach = !driveFeature || (near && near.d <= s.setback + 30);
+    const reach = !driveEdge
+      || (driveFeature && near && near.d <= s.setback + 30)
+      || aisles.some((x) => distanceToRings(x.rings, ef) <= 30);
     let drive = null;
     if (driveFeature && near && near.d > 0.5) {
       const dx = (near.p[0] - ef[0]) / near.d;
@@ -1030,7 +1204,8 @@ function solvePart(boundary, scheme, cutouts = []) {
     m.parkingProvided = surface + (m.parkingStructured || 0) + (m.parkingGarage || 0);
   }
   const pavedRows = allRows.reduce((sum, r) => sum + (r.u1 - r.u0) * (r.v1 - r.v0), 0);
-  const driveSf = driveFeature ? turfArea(driveFeature) * SF_PER_SQM : 0;
+  const driveSf = (driveFeature ? turfArea(driveFeature) * SF_PER_SQM : 0)
+    + aisles.reduce((sum, x) => sum + turfArea(x.f) * SF_PER_SQM, 0);
   const pavedSf = pavedRows + driveSf;
   const disconnected = allRows.filter((r) => r.connected === false).length;
 
@@ -1060,7 +1235,11 @@ function solvePart(boundary, scheme, cutouts = []) {
     streets: (shapes.streets || []).map((r) => rectToLatLngs(r, angle, proj)),
     truckCourts: (shapes.truckCourts || []).map((r) => rectToLatLngs(r, angle, proj)),
     trailers: (shapes.trailers || []).map((r) => trailerGeometry(r, angle, proj)),
-    drives: driveFeature ? piecesOf(driveFeature).map((poly) => poly.map((ring) => openRing(ring).map(([lng, lat]) => [lat, lng]))) : [],
+    drives: [
+      ...(driveFeature ? piecesOf(driveFeature) : []),
+      ...aisles.flatMap((x) => piecesOf(x.f)),
+    ].map((poly) => poly.map((ring) => openRing(ring).map(([lng, lat]) => [lat, lng]))),
+    aisleIssues: aisleIssues.map((issue) => ({ latlng: proj.toLatLng(issue.at), text: issue.text, kind: issue.kind, aisleId: issue.aisleId })),
     entryDrives: entryInfo.map((e) => e.drive).filter(Boolean),
     entries: entryInfo.map((e) => ({ id: e.id, auto: e.auto, point: e.point, reaches: e.reaches })),
   };
@@ -1081,6 +1260,9 @@ function solvePart(boundary, scheme, cutouts = []) {
     stallsPerAcre: pavedSf > 0 ? surface / (pavedSf / SF_PER_ACRE) : 0,
     disconnected,
     perimeterDrive: !!driveFeature,
+    hasDrive: !!driveEdge,
+    aisleCount: aisles.length,
+    aisleIssues: aisleIssues.map((issue) => ({ aisleId: issue.aisleId, kind: issue.kind, text: issue.text })),
     entries: entryInfo.map((e) => ({ id: e.id, auto: e.auto, reaches: e.reaches })),
     areas: areas.map((a) => {
       const rows = areaRows.filter((r) => r.areaId === a.id);
@@ -1140,18 +1322,30 @@ function zoningChecks(s, totals, warnings, parkingParts) {
   }
   const withSurface = parkingParts.filter((p) => p && p.rawStalls > 0);
   if (withSurface.length) {
-    const drive = withSurface.some((p) => p.perimeterDrive);
+    const drive = withSurface.some((p) => p.hasDrive);
     const disconnected = withSurface.reduce((sum, p) => sum + p.disconnected, 0);
     const badEntries = withSurface.flatMap((p) => p.entries.filter((e) => !e.reaches));
+    const aisleProblems = withSurface.flatMap((p) => p.aisleIssues || []);
     rows.push({
       label: 'Circulation',
-      limit: drive ? 'Every bay reaches the drive' : 'Perimeter drive off',
+      limit: drive ? 'Every bay reaches a drive' : 'No drive (perimeter off, none drawn)',
       actual: !drive ? 'Not checked'
-        : disconnected ? `${disconnected} bay${disconnected === 1 ? '' : 's'} can't reach it`
-          : badEntries.length ? `${badEntries.length} entr${badEntries.length === 1 ? 'y doesn\'t' : 'ies don\'t'} reach the drive`
+        : disconnected ? `${disconnected} bay${disconnected === 1 ? '' : 's'} can't reach one`
+          : badEntries.length ? `${badEntries.length} entr${badEntries.length === 1 ? 'y doesn\'t' : 'ies don\'t'} reach a drive`
             : 'Connected',
       status: !drive ? 'none' : (disconnected || badEntries.length ? 'fail' : 'pass'),
     });
+    if (aisleProblems.length) {
+      const count = (k) => aisleProblems.filter((x) => x.kind === k).length;
+      const parts = [
+        count('turn') && `${count('turn')} tight turn${count('turn') === 1 ? '' : 's'}`,
+        count('width') && `${count('width')} too narrow`,
+        count('dead') && `${count('dead')} dead end${count('dead') === 1 ? '' : 's'}`,
+      ].filter(Boolean);
+      rows.push({ label: 'Drawn aisles', limit: `Turns ≥ ${fmt(s.turnRadius, 0)} ft radius, no dead ends`, actual: parts.join(', '), status: 'fail' });
+    } else if (withSurface.some((p) => p.aisleCount > 0)) {
+      rows.push({ label: 'Drawn aisles', limit: `Turns ≥ ${fmt(s.turnRadius, 0)} ft radius, no dead ends`, actual: 'Clear', status: 'pass' });
+    }
     const ada = withSurface.reduce((sum, p) => sum + p.types.ada, 0);
     const van = withSurface.reduce((sum, p) => sum + p.types.van, 0);
     const placedAda = withSurface.reduce((sum, p) => sum + p.adaPlaced, 0);
@@ -1230,7 +1424,14 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
       // The site's own loop road already runs around a space (its cutout
       // is ringed too), so a space has no perimeter drive of its own unless
       // its settings ask for one.
-      result: polygon ? solvePart(polygon, { assetType: sp.assetType, overrides: { perimeterDrive: 0, ...(sp.overrides || {}) } }) : null,
+      result: polygon
+        ? solvePart(polygon, {
+          assetType: sp.assetType,
+          overrides: { perimeterDrive: 0, ...(sp.overrides || {}) },
+          driveAisles: scheme.driveAisles,
+          skipAisleChecks: true,
+        })
+        : null,
     };
   });
   const parts = [main, ...spaceResults.map((sp) => sp.result).filter((r) => r && r.metrics)];
@@ -1262,6 +1463,14 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
     spaces: spaceResults,
     totals,
     proforma: combineProformas(parts.map((p) => p.proforma).filter(Boolean)),
-    checks: zoningChecks(main.settings, totals, main.warnings || { outside: [], overlaps: [] }, parkingParts),
+    checks: [
+      ...zoningChecks(main.settings, totals, main.warnings || { outside: [], overlaps: [] }, parkingParts),
+      ...parts.filter((p) => p.garage).map((p) => ({
+        label: 'Garage ramp',
+        limit: p.garage.rampType === 'none' ? 'Single deck - no ramp' : `${p.garage.rampType === 'express' ? 'Express ramp' : 'Sloped floors'} at ${p.garage.slopePct}%`,
+        actual: p.garage.fits ? `Fits (${Math.round(p.garage.longSide)} ft long)` : `Doesn't fit: ${p.garage.note}`,
+        status: p.garage.fits ? 'pass' : 'fail',
+      })),
+    ],
   };
 }

@@ -5,7 +5,7 @@ import GeneratorModal from './GeneratorModal';
 import { loadProjects, searchAddress, sitePlansApi } from './api';
 import { ASSET_TYPES, COMMON_FIELDS, effectiveSettings, getAssetType } from './assetTypes';
 import { makeProjection } from './geometry';
-import { hasSurfaceParking, solveScheme, supportsManualLayout } from './solver';
+import { aisleWidthOf, hasSurfaceParking, solveScheme, supportsManualLayout } from './solver';
 import { NumberInput, OrientationField, SchemeSettings, fmtDec, fmtInt, withOverride } from './settingsFields';
 import { CompareView, ResultsCard, planMetrics, yieldOf } from './results';
 import './SitePlanner.css';
@@ -19,6 +19,7 @@ import './SitePlanner.css';
 // refused (409) rather than undoing someone else's work.
 
 const SAVE_DELAY_MS = 800;
+const NONE = []; // a stable empty list, so the map doesn't redraw for nothing
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 
@@ -261,7 +262,10 @@ const STALL_ANGLES = COMMON_FIELDS.find((f) => f.key === 'stallAngle').options;
 
 // Parking: what the lot holds by stall type, how it's laid out, the areas
 // drawn by hand, and the driveway entries.
-function ParkingSection({ scheme, type, result, selectedAreaId, onSelectArea, onDraw, onUpdateArea, onRemoveArea, onSetOverride, onRemoveEntry, onAddEntry }) {
+function ParkingSection({
+  scheme, type, result, selectedAreaId, onSelectArea, onDraw, onUpdateArea, onRemoveArea, onSetOverride, onRemoveEntry, onAddEntry,
+  selectedAisleId, onSelectAisle, onDrawAisle, onUpdateAisle, onRemoveAisle,
+}) {
   if (!hasSurfaceParking(type)) return null;
   const settings = effectiveSettings(scheme);
   const p = result?.parking;
@@ -359,6 +363,59 @@ function ParkingSection({ scheme, type, result, selectedAreaId, onSelectArea, on
       )}
 
       <div className="siteplan-section-head">
+        <span className="siteplan-small"><b>Drive aisles</b></span>
+        <button type="button" className="siteplan-small-btn" onClick={onDrawAisle} title="Click points on the map; finish on the last point">+ Drive aisle</button>
+      </div>
+      {(scheme.driveAisles || []).length === 0 && (
+        <p className="siteplan-muted siteplan-small">
+          Draw a drive where you want one. Stalls and buildings keep clear of it, rows can open onto it, and its turns are
+          checked against a {fmtDec(settings.turnRadius, 0)} ft turning radius.
+        </p>
+      )}
+      {(scheme.driveAisles || []).map((a, i) => {
+        const issues = (p?.aisleIssues || []).filter((x) => x.aisleId === a.id);
+        return (
+          <button type="button" key={a.id} className={`siteplan-space-row ${a.id === selectedAisleId ? 'active' : ''}`} onClick={() => onSelectAisle(a.id)}>
+            <span className="siteplan-space-swatch aisle" />
+            <span className="siteplan-space-name">Aisle {i + 1}</span>
+            <span className={`siteplan-small ${issues.length ? 'siteplan-neg' : 'siteplan-muted'}`}>
+              {aisleWidthOf(a, settings)} ft · {a.twoWay === false ? 'one-way' : 'two-way'}
+              {issues.length ? ` · ${issues.length} issue${issues.length === 1 ? '' : 's'}` : ''}
+            </span>
+          </button>
+        );
+      })}
+      {(() => {
+        const a = (scheme.driveAisles || []).find((x) => x.id === selectedAisleId);
+        if (!a) return null;
+        const issues = (p?.aisleIssues || []).filter((x) => x.aisleId === a.id);
+        return (
+          <div className="siteplan-space-edit">
+            <label className="siteplan-field">
+              <span className="siteplan-field-label">Traffic</span>
+              <span className="siteplan-field-input">
+                <select value={a.twoWay === false ? 'one' : 'two'} onChange={(e) => onUpdateAisle(a.id, { twoWay: e.target.value === 'two' })}>
+                  <option value="two">Two-way</option>
+                  <option value="one">One-way</option>
+                </select>
+                <span className="siteplan-reset-spacer" />
+              </span>
+            </label>
+            <label className="siteplan-field">
+              <span className="siteplan-field-label">Width<span className="siteplan-field-unit"> ft</span></span>
+              <span className="siteplan-field-input">
+                <NumberInput value={aisleWidthOf(a, settings)} min={8} max={80} onChange={(n) => onUpdateAisle(a.id, { width: n })} />
+                <span className="siteplan-reset-spacer" />
+              </span>
+            </label>
+            {issues.map((x) => <p key={`${x.kind}-${x.text}`} className="siteplan-neg siteplan-small">⚠ {x.text}</p>)}
+            <p className="siteplan-muted siteplan-small">Drag its points with the map&apos;s edit tool to reshape it.</p>
+            <button type="button" className="siteplan-link-btn siteplan-danger-link" onClick={() => onRemoveAisle(a.id)}>Remove aisle</button>
+          </div>
+        );
+      })()}
+
+      <div className="siteplan-section-head">
         <span className="siteplan-small"><b>Entries</b></span>
         <button type="button" className="siteplan-small-btn" onClick={onAddEntry} disabled={!result?.metrics}>+ Entry</button>
       </div>
@@ -371,6 +428,28 @@ function ParkingSection({ scheme, type, result, selectedAreaId, onSelectArea, on
         </div>
       ))}
       <p className="siteplan-muted siteplan-small">Drag an IN marker along the boundary to move an entry.</p>
+    </div>
+  );
+}
+
+// A parking garage's floor plan: stalls per level, the ramp, and how
+// efficient it is.
+function GarageSection({ result }) {
+  const g = result?.garage;
+  if (!g) return null;
+  return (
+    <div className="siteplan-section">
+      <div className="siteplan-group-title">Garage</div>
+      <dl className="siteplan-metrics">
+        <dt>Stalls per level</dt><dd>{fmtInt(g.perLevel)}</dd>
+        <dt>Levels</dt><dd>{fmtInt(g.levels)}</dd>
+        <dt>Stalls</dt><dd>{fmtInt(g.types.total)} ({fmtInt(g.types.ada)} accessible, {fmtInt(g.types.van)} van)</dd>
+        <dt>Area per stall</dt><dd>{fmtInt(g.gsfPerStall)} sf</dd>
+        <dt>Ramp</dt><dd>{g.rampType === 'none' ? 'None (single deck)' : `${g.rampType === 'express' ? 'Express ramp' : 'Sloped floors'} at ${fmtDec(g.slopePct, 1)}%`}</dd>
+        <dt>Length needed</dt><dd className={g.fits ? '' : 'siteplan-neg'}>{fmtInt(g.required)} ft of {fmtInt(g.longSide)} ft</dd>
+      </dl>
+      {!g.fits && <p className="siteplan-neg siteplan-small">The ramp doesn&apos;t fit: {g.note}. Lengthen the garage, raise the slope or switch ramp type.</p>}
+      <p className="siteplan-muted siteplan-small">The map shows a typical level: bays, cores (dark), end aisles and the ramp (orange; the dot is uphill).</p>
     </div>
   );
 }
@@ -415,6 +494,7 @@ function SitePlanEditor() {
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
   const [selectedSpaceId, setSelectedSpaceId] = useState(null);
   const [selectedAreaId, setSelectedAreaId] = useState(null);
+  const [selectedAisleId, setSelectedAisleId] = useState(null);
   const [saveState, setSaveState] = useState('saved'); // saved | pending | saving | error | conflict
   const [saveError, setSaveError] = useState(null);
 
@@ -532,6 +612,7 @@ function SitePlanEditor() {
     setSelectedBuildingId(null);
     setSelectedSpaceId(null);
     setSelectedAreaId(null);
+    setSelectedAisleId(null);
   }, [activeId]);
 
   const buildingLabel = useCallback((i, b) => {
@@ -739,6 +820,31 @@ function SitePlanEditor() {
     updateScheme(active.id, { entries: rest.length ? rest : undefined });
   };
 
+  // ---- Drive aisles ----
+  const onAisleDrawn = useCallback((line) => {
+    if (!line || line.type !== 'LineString' || line.coordinates.length < 2) return;
+    const scheme = schemeById();
+    const existing = scheme.driveAisles || [];
+    if (existing.length >= 30) {
+      window.alert('A scheme can hold 30 drive aisles - remove one first.');
+      return;
+    }
+    const aisle = { id: newId(), line, twoWay: true };
+    updateScheme(scheme.id, { driveAisles: [...existing, aisle] });
+    setSelectedAisleId(aisle.id);
+  }, [activeId, updateScheme]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateAisle = useCallback((id, patch) => {
+    const scheme = schemeById();
+    updateScheme(scheme.id, { driveAisles: (scheme.driveAisles || []).map((a) => (a.id === id ? { ...a, ...patch } : a)) });
+  }, [activeId, updateScheme]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const removeAisle = (id) => {
+    const rest = (currentScheme().driveAisles || []).filter((a) => a.id !== id);
+    updateScheme(active.id, { driveAisles: rest.length ? rest : undefined });
+    setSelectedAisleId(null);
+  };
+
   const areaInfo = useMemo(
     () => Object.fromEntries((activeResult?.parking?.areas || []).map((a) => [a.id, a.orientationDeg])),
     [activeResult]
@@ -911,7 +1017,7 @@ function SitePlanEditor() {
               flyTo={flyTo}
               onBoundaryChange={(geometry) => change('boundary', geometry)}
               buildingLabel={buildingLabel}
-              spaces={active.spaces || []}
+              spaces={active.spaces || NONE}
               selectedSpaceId={selectedSpaceId}
               onSelectSpace={setSelectedSpaceId}
               onSpaceChange={(id, polygon) => updateSpace(id, { polygon })}
@@ -922,7 +1028,7 @@ function SitePlanEditor() {
               selectedBuildingId={selectedBuildingId}
               onSelectBuilding={setSelectedBuildingId}
               onBuildingChange={updateBuilding}
-              parkingAreas={hasSurfaceParking(activeType) ? (active.parkingAreas || []) : []}
+              parkingAreas={hasSurfaceParking(activeType) ? (active.parkingAreas || NONE) : NONE}
               areaInfo={areaInfo}
               selectedAreaId={selectedAreaId}
               onSelectArea={setSelectedAreaId}
@@ -930,6 +1036,11 @@ function SitePlanEditor() {
               onAreaDrawn={onAreaDrawn}
               onAreaAngle={(id, angle) => updateArea(id, { angle })}
               onEntryMove={onEntryMove}
+              driveAisles={hasSurfaceParking(activeType) ? (active.driveAisles || NONE) : NONE}
+              selectedAisleId={selectedAisleId}
+              onSelectAisle={setSelectedAisleId}
+              onAisleChange={(id, line) => updateAisle(id, { line })}
+              onAisleDrawn={onAisleDrawn}
             />
             {!draft.boundary && (
               <div className="siteplan-map-hint">
@@ -942,9 +1053,9 @@ function SitePlanEditor() {
               <span><i className="lg-building" />Building</span>
               <span><i className="lg-parking" />Parking</span>
               {hasSurfaceParking(activeType) && <><span><i className="lg-drive" />Drive</span><span><i className="lg-ada" />Accessible</span></>}
-              {(active.parkingAreas || []).length > 0 && <span><i className="lg-parkarea" />Parking area</span>}
-              {(active.spaces || []).some((sp) => sp.kind === 'no-build') && <span><i className="lg-nobuild" />No-build</span>}
-              {(active.spaces || []).some((sp) => sp.kind === 'asset') && <span><i className="lg-space" />Space</span>}
+              {(active.parkingAreas || NONE).length > 0 && <span><i className="lg-parkarea" />Parking area</span>}
+              {(active.spaces || NONE).some((sp) => sp.kind === 'no-build') && <span><i className="lg-nobuild" />No-build</span>}
+              {(active.spaces || NONE).some((sp) => sp.kind === 'asset') && <span><i className="lg-space" />Space</span>}
               {activeType.mode === 'lots' && <><span><i className="lg-lot" />Lots</span><span><i className="lg-street" />Streets</span></>}
               {activeType.mode === 'industrial' && <><span><i className="lg-truck" />Truck court</span><span><i className="lg-trailer" />Trailers</span></>}
             </div>
@@ -1030,7 +1141,14 @@ function SitePlanEditor() {
               onSetOverride={setOverrideKey}
               onAddEntry={addEntry}
               onRemoveEntry={removeEntry}
+              selectedAisleId={selectedAisleId}
+              onSelectAisle={setSelectedAisleId}
+              onDrawAisle={() => setDrawRequest({ target: 'aisle', shape: 'Line', at: Date.now() })}
+              onUpdateAisle={updateAisle}
+              onRemoveAisle={removeAisle}
             />
+
+            <GarageSection result={activeResult} />
 
             <PresetsSection presets={presets} scheme={active} onApply={applyPreset} onSave={savePreset} onDelete={deletePreset} />
 

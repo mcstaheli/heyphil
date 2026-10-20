@@ -131,7 +131,8 @@ test('industrial adds trailer stalls; a garage counts structured stalls', () => 
   expect(ind.totals.trailerStalls).toBeGreaterThanOrEqual(ind.totals.trailerRequired);
   expect(ind.geometry.trailers.length).toBeGreaterThan(0);
   const g = solveScheme(rectSite(300, 200), scheme('garage'));
-  expect(g.metrics.parkingStructured).toBe(Math.floor((g.metrics.buildableSf * 4) / 330));
+  expect(g.metrics.parkingStructured).toBe(g.garage.types.total);
+  expect(g.garage.perLevel * g.garage.levels).toBeGreaterThanOrEqual(g.metrics.parkingStructured);
   expect(g.proforma.hardCost).toBeCloseTo(g.metrics.parkingStructured * 30000, 0);
 });
 
@@ -173,4 +174,98 @@ test('shared parking lets the main layout build more', () => {
   const off = withRetail(0);
   expect(on.totals.units).toBeGreaterThanOrEqual(off.totals.units);
   expect(on.totals.parkingProvided).toBeGreaterThanOrEqual(on.totals.parkingRequired);
+});
+
+// ---- Drawn aisles and garage ramps ----------------------------------------
+
+import { analyzeAisle } from './parking';
+
+test('aisle analysis: tight turns, narrow widths and dead ends', () => {
+  const box = [[[-100, -100], [500, -100], [500, 500], [-100, 500]]];
+  // A right angle with 30 ft legs only fits a 15 ft radius.
+  const tight = analyzeAisle([[0, 0], [30, 0], [30, 30]], { width: 24, twoWay: true, turnRadius: 25, connectsTo: box });
+  expect(tight.some((x) => x.kind === 'turn')).toBe(true);
+  // Long legs are fine.
+  const ok = analyzeAisle([[0, 0], [200, 0], [200, 200]], { width: 24, twoWay: true, turnRadius: 25, connectsTo: [[[-5, -50], [5, -50], [5, 50], [-5, 50]], [[150, 195], [250, 195], [250, 205], [150, 205]]] });
+  expect(ok).toEqual([]);
+  // Narrow two-way.
+  expect(analyzeAisle([[0, 0], [200, 0]], { width: 14, twoWay: true, turnRadius: 25, connectsTo: [] }).some((x) => x.kind === 'width')).toBe(true);
+  // Both ends dead.
+  expect(analyzeAisle([[100, 100], [300, 100]], { width: 24, twoWay: true, turnRadius: 25, connectsTo: box }).filter((x) => x.kind === 'dead')).toHaveLength(2);
+});
+
+test('a drawn aisle splits parking, rows open onto it, and its issues are checked', () => {
+  const site = rectSite(600, 400);
+  const [[lng, lat]] = site.coordinates[0];
+  const at = (x, y) => [lng + x / (364000 * Math.cos((lat * Math.PI) / 180)), lat + y / 364000];
+  // A straight aisle from the south boundary to the north boundary, no
+  // perimeter drive: the only drive on the site.
+  const r = solveScheme(site, scheme('parking', { perimeterDrive: 0 }, {
+    driveAisles: [{ id: 'a', line: { type: 'LineString', coordinates: [at(300, 0), at(300, 400)] }, twoWay: true }],
+  }));
+  expect(r.parking.hasDrive).toBe(true);
+  expect(r.parking.aisleIssues).toEqual([]);
+  expect(r.geometry.drives.length).toBeGreaterThan(0);
+  expect(r.metrics.parkingSurface).toBeGreaterThan(200);
+  // A dog-leg with a tight corner, ending in the middle of the lot.
+  const bad = solveScheme(site, scheme('parking', { perimeterDrive: 0 }, {
+    driveAisles: [{ id: 'a', line: { type: 'LineString', coordinates: [at(300, 0), at(300, 200), at(330, 200)] } }],
+  }));
+  const kinds = bad.parking.aisleIssues.map((x) => x.kind);
+  expect(kinds).toContain('turn');
+  expect(kinds).toContain('dead');
+  expect(bad.checks.find((c) => c.label === 'Drawn aisles').status).toBe('fail');
+  expect(bad.geometry.aisleIssues.length).toBe(bad.parking.aisleIssues.length);
+});
+
+test('garage floor plans: stalls per level, cores, and whether the ramp fits', () => {
+  const long = solveScheme(rectSite(300, 160), scheme('garage', { setback: 0 }));
+  expect(long.garage.perLevel).toBeGreaterThan(60);
+  expect(long.garage.fits).toBe(true);
+  expect(long.metrics.parkingStructured).toBe(long.garage.types.total);
+  expect(long.geometry.garage.cores).toHaveLength(2);
+  expect(long.checks.find((c) => c.label === 'Garage ramp').status).toBe('pass');
+  // Too short for sloped floors at 5%: needs 105 ft of ramp plus end aisles.
+  const short = solveScheme(rectSite(150, 120), scheme('garage', { setback: 0 }));
+  expect(short.garage.fits).toBe(false);
+  expect(short.checks.find((c) => c.label === 'Garage ramp').status).toBe('fail');
+  // An express ramp at 12% fits a shorter garage and is drawn.
+  const express = solveScheme(rectSite(200, 160), scheme('garage', { setback: 0, rampType: 1, rampSlope: 12 }));
+  expect(express.garage.fits).toBe(true);
+  expect(express.geometry.garage.ramp).not.toBeNull();
+  // Parking on a ramp steeper than 6.67% isn't allowed.
+  expect(solveScheme(rectSite(300, 160), scheme('garage', { setback: 0, rampSlope: 8 })).garage.fits).toBe(false);
+});
+
+test('review fixes: inside turn radius, single-deck garage, aisle paving, express length', () => {
+  // 60 ft legs at a right angle: 30 ft at the centre line, 18 ft inside a 24 ft aisle.
+  const t = analyzeAisle([[0, 0], [60, 0], [60, 60]], { width: 24, twoWay: true, turnRadius: 25, connectsTo: [[[-10, -10], [10, -10], [10, 10], [-10, 10]], [[50, 50], [70, 50], [70, 70], [50, 70]]] });
+  expect(t.filter((x) => x.kind === 'turn')).toHaveLength(1);
+  // One level: no ramp needed.
+  const deck = solveScheme(rectSite(100, 130), scheme('garage', { setback: 0, levels: 1 }));
+  expect(deck.garage.fits).toBe(true);
+  expect(deck.garage.rampType).toBe('none');
+  // A drawn aisle's pavement counts toward paving per stall.
+  const site = rectSite(600, 400);
+  const [[lng, lat]] = site.coordinates[0];
+  const at = (x, y) => [lng + x / (364000 * Math.cos((lat * Math.PI) / 180)), lat + y / 364000];
+  const r = solveScheme(site, scheme('parking', { perimeterDrive: 0 }, {
+    driveAisles: [{ id: 'a', line: { type: 'LineString', coordinates: [at(300, 0), at(300, 400)] } }],
+  }));
+  const rowsSf = r.geometry.parking.length; // rows exist
+  expect(rowsSf).toBeGreaterThan(0);
+  expect(r.metrics.parkingPavedSf).toBeGreaterThan(24 * 360 * 0.9);
+  // Express ramp length includes the end aisles.
+  const ex = solveScheme(rectSite(200, 160), scheme('garage', { setback: 0, rampType: 1, rampSlope: 12 }));
+  expect(ex.garage.required).toBeCloseTo(10.5 / 0.12 + 24 + 48, 3);
+});
+
+test('an aisle ending at the setback line is not a dead end', () => {
+  const site = rectSite(600, 400);
+  const [[lng, lat]] = site.coordinates[0];
+  const at = (x, y) => [lng + x / (364000 * Math.cos((lat * Math.PI) / 180)), lat + y / 364000];
+  const r = solveScheme(site, scheme('parking', { perimeterDrive: 0, setback: 30 }, {
+    driveAisles: [{ id: 'a', line: { type: 'LineString', coordinates: [at(300, 30), at(300, 370)] } }],
+  }));
+  expect(r.parking.aisleIssues.filter((x) => x.kind === 'dead')).toEqual([]);
 });

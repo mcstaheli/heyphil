@@ -22,6 +22,8 @@ export const SPACE_KINDS = ['no-build', 'asset'];
 export const MAX_PARKING_AREAS = 30;
 export const MAX_ENTRIES = 10;
 export const STALL_ANGLES = [90, 60, 45];
+export const MAX_DRIVE_AISLES = 30;
+export const MAX_AISLE_POINTS = 200;
 
 export class SitePlanValidationError extends Error {}
 
@@ -242,6 +244,36 @@ function validateEntries(value) {
   });
 }
 
+// Drive aisles drawn by hand: a line each, with an optional width (ft)
+// and whether it's two-way.
+function validateDriveAisles(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new SitePlanValidationError('Drive aisles must be a list.');
+  if (value.length > MAX_DRIVE_AISLES) throw new SitePlanValidationError(`Keep it to ${MAX_DRIVE_AISLES} drive aisles.`);
+  const ids = new Set();
+  return value.map((a) => {
+    if (!a || typeof a.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(a.id) || ids.has(a.id)) {
+      throw new SitePlanValidationError('Each drive aisle needs its own id.');
+    }
+    ids.add(a.id);
+    const coords = a.line && a.line.type === 'LineString' && Array.isArray(a.line.coordinates) ? a.line.coordinates : null;
+    if (!coords || coords.length < 2 || coords.length > MAX_AISLE_POINTS) {
+      throw new SitePlanValidationError(`A drive aisle must be a line of 2 to ${MAX_AISLE_POINTS} points.`);
+    }
+    for (const p of coords) {
+      if (!Array.isArray(p) || !isFiniteNumber(p[0]) || !isFiniteNumber(p[1]) || Math.abs(p[0]) > 180 || Math.abs(p[1]) > 90) {
+        throw new SitePlanValidationError('A drive aisle has a point that isn\'t a valid location.');
+      }
+    }
+    const out = { id: a.id, line: { type: 'LineString', coordinates: coords.map((p) => [p[0], p[1]]) }, twoWay: a.twoWay !== false };
+    if (a.width !== undefined && a.width !== null) {
+      if (!isFiniteNumber(a.width) || a.width < 8 || a.width > 80) throw new SitePlanValidationError('A drive aisle\'s width must be 8 to 80 ft.');
+      out.width = a.width;
+    }
+    return out;
+  });
+}
+
 export function validateSchemes(value) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new SitePlanValidationError('A site needs at least one scheme.');
@@ -268,6 +300,8 @@ export function validateSchemes(value) {
     if (parkingAreas.length) out.parkingAreas = parkingAreas;
     const entries = validateEntries(s.entries);
     if (entries.length) out.entries = entries;
+    const driveAisles = validateDriveAisles(s.driveAisles);
+    if (driveAisles.length) out.driveAisles = driveAisles;
     return out;
   });
 }

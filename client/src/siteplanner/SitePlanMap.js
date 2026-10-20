@@ -78,6 +78,11 @@ const STYLES = {
   drive: { color: '#9ca3af', weight: 0.5, fillColor: '#4b5563', fillOpacity: 0.55, pmIgnore: true, interactive: false },
   trailer: { color: '#fde68a', weight: 1, fillColor: '#78716c', fillOpacity: 0.55, pmIgnore: true, interactive: false },
   trailerStripe: { color: '#fde68a', weight: 0.75, opacity: 0.9, pmIgnore: true, interactive: false },
+  aisleLine: { color: '#fbbf24', weight: 3, dashArray: '10 6', opacity: 0.95 },
+  garage: { color: '#7c3aed', weight: 2, fillColor: '#a78bfa', fillOpacity: 0.12, pmIgnore: true, interactive: false },
+  ramp: { color: '#c2410c', weight: 1, fillColor: '#fb923c', fillOpacity: 0.75, pmIgnore: true },
+  core: { color: '#111827', weight: 1, fillColor: '#374151', fillOpacity: 0.9, pmIgnore: true, interactive: false },
+  arrow: { color: '#f97316', weight: 3, opacity: 0.9, pmIgnore: true, interactive: false },
 };
 
 const geoToLatLngs = (geometry) => geometry.coordinates[0].slice(0, -1).map(([lng, lat]) => [lat, lng]);
@@ -143,6 +148,7 @@ function SitePlanMap({
   spaces, selectedSpaceId, onSelectSpace, onSpaceChange, onSpaceDrawn, drawRequest,
   placed, badBuildingIds, selectedBuildingId, onSelectBuilding, onBuildingChange,
   parkingAreas, areaInfo, selectedAreaId, onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
+  driveAisles, selectedAisleId, onSelectAisle, onAisleChange, onAisleDrawn,
 }) {
   const elRef = useRef(null);
   const mapRef = useRef(null);
@@ -155,6 +161,8 @@ function SitePlanMap({
   const areaLayersRef = useRef(new Map()); // id -> { layer, json }
   const areaHandleGroupRef = useRef(null);
   const entryGroupRef = useRef(null);
+  const aisleGroupRef = useRef(null);
+  const aisleLayersRef = useRef(new Map()); // id -> { layer, json }
   const placedGroupRef = useRef(null);
   const lastEmittedRef = useRef(null);
   const drawTargetRef = useRef(null);
@@ -163,6 +171,7 @@ function SitePlanMap({
   cb.current = {
     onBoundaryChange, onSelectSpace, onSpaceChange, onSpaceDrawn, onSelectBuilding, onBuildingChange,
     onSelectArea, onAreaChange, onAreaDrawn, onAreaAngle, onEntryMove,
+    onSelectAisle, onAisleChange, onAisleDrawn,
   };
   const boundaryRef = useRef(boundary);
   boundaryRef.current = boundary;
@@ -204,6 +213,7 @@ function SitePlanMap({
     areaGroupRef.current = L.featureGroup().addTo(map);
     areaHandleGroupRef.current = L.layerGroup().addTo(map);
     entryGroupRef.current = L.layerGroup().addTo(map);
+    aisleGroupRef.current = L.featureGroup().addTo(map);
     placedGroupRef.current = L.layerGroup().addTo(map);
 
     map.pm.addControls({
@@ -224,12 +234,17 @@ function SitePlanMap({
     map.pm.setGlobalOptions({ allowSelfIntersection: false, snappable: true });
     map.on('pm:create', (e) => {
       const target = drawTargetRef.current;
-      if (target === 'space' || target === 'parking') {
+      if (target === 'space' || target === 'parking' || target === 'aisle') {
         drawTargetRef.current = null;
         const geometry = e.layer.toGeoJSON().geometry;
-        map.removeLayer(e.layer); // it comes back as a space or parking area once saved
+        map.removeLayer(e.layer); // it comes back as a space, parking area or aisle once saved
         if (target === 'space') cb.current.onSpaceDrawn(geometry);
-        else cb.current.onAreaDrawn(geometry);
+        else if (target === 'parking') cb.current.onAreaDrawn(geometry);
+        else cb.current.onAisleDrawn(geometry);
+        return;
+      }
+      if (e.shape === 'Line') {
+        map.removeLayer(e.layer); // lines are only ever drive aisles
         return;
       }
       adoptBoundary(e.layer)();
@@ -239,6 +254,7 @@ function SitePlanMap({
       cb.current.onSelectBuilding?.(null);
       cb.current.onSelectSpace?.(null);
       cb.current.onSelectArea?.(null);
+      cb.current.onSelectAisle?.(null);
     });
 
     if (boundary) {
@@ -399,6 +415,48 @@ function SitePlanMap({
     }
   }, [parkingAreas, selectedAreaId, areaInfo]);
 
+  // Drive aisles drawn by hand: Geoman-editable lines (add or drag points,
+  // drag the whole line). The paved width comes from the solver's layout.
+  useEffect(() => {
+    const group = aisleGroupRef.current;
+    if (!group) return;
+    const layers = aisleLayersRef.current;
+    const wanted = new Map((driveAisles || []).map((a) => [a.id, a]));
+    for (const [id, entry] of layers) {
+      if (!wanted.has(id)) {
+        group.removeLayer(entry.layer);
+        layers.delete(id);
+      }
+    }
+    for (const a of wanted.values()) {
+      const json = JSON.stringify(a.line);
+      let entry = layers.get(a.id);
+      if (entry && entry.json !== json) {
+        group.removeLayer(entry.layer);
+        entry = null;
+      }
+      if (!entry) {
+        const layer = L.polyline(a.line.coordinates.map(([lng, lat]) => [lat, lng]), STYLES.aisleLine);
+        const emit = () => {
+          const geometry = layer.toGeoJSON().geometry;
+          layers.get(a.id).json = JSON.stringify(geometry);
+          cb.current.onAisleChange(a.id, geometry);
+        };
+        layer.on('pm:edit', emit);
+        layer.on('pm:dragend', emit);
+        layer.on('pm:rotateend', emit);
+        layer.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          cb.current.onSelectAisle(a.id);
+        });
+        group.addLayer(layer);
+        entry = { layer, json };
+        layers.set(a.id, entry);
+      }
+      entry.layer.setStyle({ ...STYLES.aisleLine, weight: a.id === selectedAisleId ? 6 : STYLES.aisleLine.weight });
+    }
+  }, [driveAisles, selectedAisleId]);
+
   // Driveway entries: drag along the boundary; they snap to it.
   useEffect(() => {
     const group = entryGroupRef.current;
@@ -431,11 +489,28 @@ function SitePlanMap({
         L.polygon(t.outline, STYLES.trailer).addTo(group);
         t.stalls.forEach((line) => L.polyline(line, STYLES.trailerStripe).addTo(group));
       });
+      if (g.garage) {
+        L.polygon(g.garage.outline, STYLES.garage).addTo(group);
+        if (g.garage.ramp) L.polygon(g.garage.ramp, STYLES.ramp).bindTooltip(g.garage.rampLabel, { sticky: true }).addTo(group);
+        g.garage.cores.forEach((r) => L.polygon(r, STYLES.core).addTo(group));
+      }
       (g.parking || []).forEach((p) => {
         L.polygon(p.outline, p.connected === false ? STYLES.parkingBad : STYLES.parking).addTo(group);
         p.stalls.forEach((line) => L.polyline(line, STYLES.stall).addTo(group));
         (p.islands || []).forEach((r) => L.polygon(r, STYLES.island).addTo(group));
         (p.ada || []).forEach((r) => L.polygon(r, STYLES.ada).addTo(group));
+      });
+      if (g.garage) {
+        g.garage.arrows.forEach((line) => {
+          // The dot marks the uphill end.
+          L.polyline(line, STYLES.arrow).bindTooltip(g.garage.rampLabel, { sticky: true }).addTo(group);
+          L.circleMarker(line[line.length - 1], { radius: 4, color: STYLES.arrow.color, fillColor: STYLES.arrow.color, fillOpacity: 1, pmIgnore: true, interactive: false }).addTo(group);
+        });
+      }
+      (g.aisleIssues || []).forEach((issue) => {
+        L.circleMarker(issue.latlng, { radius: 9, color: '#ef4444', weight: 3, fillColor: '#fecaca', fillOpacity: 0.6, pmIgnore: true })
+          .bindTooltip(issue.text, { direction: 'top' })
+          .addTo(group);
       });
       (g.lots || []).forEach((r) => L.polygon(r, STYLES.lot).addTo(group));
       if (withBuildings) {
