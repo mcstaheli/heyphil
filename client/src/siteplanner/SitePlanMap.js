@@ -603,14 +603,13 @@ function SitePlanMap({
   }, [layout]);
 
   // Trees (parks, islands and end caps, the setback strip): canopies
-  // about 26 ft across, with a light crown so they read as trees.
+  // about 26 ft across, one canvas circle each.
   useEffect(() => {
     const group = treeGroupRef.current;
     if (!group) return;
     group.clearLayers();
     for (const t of trees || []) {
       L.circle(t, { ...STYLES.tree, radius: 4 }).addTo(group);
-      L.circle([t[0] + 0.000008, t[1] - 0.00001], { radius: 1.6, stroke: false, fillColor: '#4ade80', fillOpacity: 0.7, pmIgnore: true, interactive: false }).addTo(group);
     }
   }, [trees]);
 

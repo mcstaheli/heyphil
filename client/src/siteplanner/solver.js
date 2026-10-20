@@ -2217,7 +2217,14 @@ function zoningChecks(s, totals, warnings, parkingParts) {
 // buildingRects, parking, proforma, error }, plus spaces (each space's
 // own result), totals (main + spaces, with shared parking), combined
 // proforma, and zoning checks. geometry is ready for Leaflet.
-export function solveScheme(boundary, scheme) {
+// trees: false skips planting (the generator's candidates are never drawn).
+export function solveScheme(boundary, scheme, { trees = true } = {}) {
+  const r = solveLayout(boundary, scheme);
+  if (trees && r.metrics && r.geometry) r.trees = plantTrees(boundary, r, scheme);
+  return r;
+}
+
+function solveLayout(boundary, scheme) {
   const first = solveOnce(boundary, scheme);
   // With shared parking, the main layout can be planned against its share
   // of the stalls instead of its standalone need: solve it once more with
@@ -2237,56 +2244,82 @@ export function solveScheme(boundary, scheme) {
 }
 
 // Trees for the plan drawing ([lat, lng] each): a grid across each park,
-// a row along the setback strip inside each edge, and one in every
-// landscape island (bay ends and islands within rows). Capped, so a big
-// site stays quick to draw.
+// a row along the setback strip inside each edge (clear of driveways,
+// drawn aisles and spaces), and one in every landscape island (bay ends
+// and islands within rows). Each kind has its own share of the cap, so a
+// big lot's islands can't crowd out the parks.
 const TREE_SPACING = 35; // ft, in a park
 const STREET_TREE_SPACING = 40; // ft, along the setback
-const MAX_TREES = 1500;
-function plantTrees(boundary, main, spaceResults, greens) {
-  const out = [];
-  const proj = makeProjection(boundary.coordinates[0]);
-  // Landscape islands, the main layout's and each space's.
-  for (const g of [main.geometry, ...spaceResults.map((sp) => sp.result?.geometry)]) {
-    for (const bay of g?.parking || []) {
-      for (const ring of bay.islands || []) {
-        out.push([ring.reduce((t, p) => t + p[0], 0) / ring.length, ring.reduce((t, p) => t + p[1], 0) / ring.length]);
-      }
-    }
+const TREE_CAP = { park: 600, street: 400, island: 800 };
+// Shortest distance from a point to an open polyline.
+function distanceToLine(line, [x, y]) {
+  let best = Infinity;
+  for (let i = 0; i + 1 < line.length; i++) {
+    const [ax, ay] = line[i];
+    const [bx, by] = line[i + 1];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+    best = Math.min(best, Math.hypot(x - ax - t * dx, y - ay - t * dy));
   }
-  // Parks: a grid, kept inside.
-  for (const g of greens) {
+  return best;
+}
+function plantTrees(boundary, result, scheme) {
+  const proj = makeProjection(boundary.coordinates[0]);
+  const parks = [];
+  for (const g of result.greens || []) {
     const rings = ringsOf(g).map((r) => openRing(r).map(proj.toFeet));
     const xs = rings.flat().map((p) => p[0]);
     const ys = rings.flat().map((p) => p[1]);
-    for (let x = Math.min(...xs) + TREE_SPACING / 2; x < Math.max(...xs); x += TREE_SPACING) {
-      for (let y = Math.min(...ys) + TREE_SPACING / 2; y < Math.max(...ys); y += TREE_SPACING) {
-        // Every other row offset, so it reads as planting, not a grid.
-        const pt = [x + ((Math.round((y - Math.min(...ys)) / TREE_SPACING) % 2) * TREE_SPACING) / 2, y];
-        if (pointInShape(rings, pt)) out.push(proj.toLatLng(pt));
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    for (let y = y0 + TREE_SPACING / 2; y < y1; y += TREE_SPACING) {
+      // Every other row offset, so it reads as planting, not a grid.
+      const shift = (Math.round((y - y0) / TREE_SPACING) % 2) * (TREE_SPACING / 2);
+      for (let x = x0 + TREE_SPACING / 2 + shift; x < x1; x += TREE_SPACING) {
+        if (pointInShape(rings, [x, y])) parks.push(proj.toLatLng([x, y]));
       }
     }
   }
-  // The setback strip: halfway between the line and the edge.
-  for (const e of main.edges || []) {
-    if (!(e.setback >= 8)) continue;
+
+  // The setback strip, halfway between the line and the edge, kept off
+  // entry drives, drawn aisles and spaces.
+  const toFeetLL = ([lat, lng]) => proj.toFeet([lng, lat]);
+  const blockers = [
+    ...(result.geometry.entryDrives || []).map((r) => [r.map(toFeetLL)]),
+    ...(scheme.spaces || []).filter((sp) => sp.polygon).map((sp) => sp.polygon.coordinates.map((r) => openRing(r).map(proj.toFeet))),
+  ];
+  const aisleLines = (scheme.driveAisles || []).map((a) => a.line.coordinates.map(proj.toFeet));
+  const site = [openRing(boundary.coordinates[0]).map(proj.toFeet)];
+  const street = [];
+  for (const e of result.edges || []) {
+    if (!(e.setback >= 8) || !e.a || !e.b) continue;
     const a = proj.toFeet(e.a);
     const b = proj.toFeet(e.b);
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     if (len < STREET_TREE_SPACING) continue;
-    // Inward: away from the outward normal the edge carries (lat/lng frame
-    // is close enough to the feet frame's directions at site scale).
-    const [nx, ny] = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
+    let [nx, ny] = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
     const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    const inside = pointInShape([openRing(boundary.coordinates[0]).map(proj.toFeet)], [mid[0] + nx, mid[1] + ny]);
-    const sgn = inside ? 1 : -1;
+    if (!pointInShape(site, [mid[0] + nx, mid[1] + ny])) [nx, ny] = [-nx, -ny];
     const n = Math.floor(len / STREET_TREE_SPACING);
     for (let k = 0; k < n; k++) {
       const t = (k + 0.5) / n;
-      out.push(proj.toLatLng([a[0] + (b[0] - a[0]) * t + sgn * nx * (e.setback / 2), a[1] + (b[1] - a[1]) * t + sgn * ny * (e.setback / 2)]));
+      const pt = [a[0] + (b[0] - a[0]) * t + (nx * e.setback) / 2, a[1] + (b[1] - a[1]) * t + (ny * e.setback) / 2];
+      if (blockers.some((rings) => pointInShape(rings, pt))) continue;
+      if (aisleLines.some((line) => distanceToLine(line, pt) < 20)) continue;
+      street.push(proj.toLatLng(pt));
     }
   }
-  return out.slice(0, MAX_TREES);
+
+  // Landscape islands, the main layout's and each space's.
+  const islands = [];
+  for (const g of [result.geometry, ...(result.spaces || []).map((sp) => sp.result?.geometry)]) {
+    for (const bay of g?.parking || []) {
+      for (const ring of bay.islands || []) {
+        islands.push([ring.reduce((t, p) => t + p[0], 0) / ring.length, ring.reduce((t, p) => t + p[1], 0) / ring.length]);
+      }
+    }
+  }
+  return [...parks.slice(0, TREE_CAP.park), ...street.slice(0, TREE_CAP.street), ...islands.slice(0, TREE_CAP.island)];
 }
 
 // A target yield (targetYield: units, keys, sf, MW or stalls): the most
@@ -2452,11 +2485,10 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
   // Parks and open space: their area (inside the site) and the trees.
   const greens = spaces.filter((sp) => sp.kind === 'green').map((sp) => clipToSite(sp.polygon)).filter(Boolean);
   totals.openSpaceSf = greens.reduce((t, g) => t + turfArea(toFeature(g)) * SF_PER_SQM, 0);
-  const trees = plantTrees(boundary, main, spaceResults, greens);
 
   return {
     ...main,
-    trees,
+    greens, // the parks inside the site, for planting (solveScheme)
     spaces: spaceResults,
     totals,
     proforma: combineProformas(parts.map((p) => p.proforma).filter(Boolean)),
@@ -2468,6 +2500,14 @@ function solveOnce(boundary, scheme, { mainRequiredScale = 1, baseOverrides = nu
         actual: main.target.fits ? `Met (room for ${fmtTarget(main.type, main.target.most)})` : `Only ${fmtTarget(main.type, main.target.most)} fit`,
         status: main.target.fits ? 'pass' : 'fail',
       }] : []),
+      // A space's own target, when it falls short.
+      ...spaceResults.filter((sp) => sp.result?.target && !sp.result.target.fits).map((sp) => ({
+        label: `Target (${sp.name})`,
+        category: 'zoning',
+        limit: fmtTarget(sp.result.type, sp.result.target.target),
+        actual: `Only ${fmtTarget(sp.result.type, sp.result.target.most)} fit`,
+        status: 'fail',
+      })),
       ...zoningChecks(main.settings, totals, main.warnings || { outside: [], overlaps: [] }, parkingParts),
       ...parts.filter((p) => p.garage).map((p) => ({
         label: 'Garage ramp',

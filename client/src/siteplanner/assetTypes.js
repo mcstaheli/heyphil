@@ -67,7 +67,7 @@ export const COMMON_FIELDS = [
   { key: 'perimeterDrive', label: 'Perimeter drive', unit: '', default: 1, group: 'Parking', options: [[1, 'On - a loop road inside the setback'], [0, 'Off']] },
   { key: 'autoAisles', label: 'Route aisles automatically', unit: '', default: 1, group: 'Parking', options: [[1, 'On - connect every bay to a drive'], [0, 'Off - flag bays that can\'t reach one']] },
   { key: 'islandEvery', label: 'Landscape island every', unit: 'stalls', default: 0, hint: '0 = none', group: 'Parking' },
-  { key: 'endIslands', label: 'Landscaped end caps', unit: '', default: 1, group: 'Parking', options: [[1, 'At both ends of each row'], [0, 'Off - stalls run to the end']] },
+  { key: 'endIslands', label: 'Landscaped end caps', unit: '', default: 0, group: 'Parking', options: [[0, 'Off - stalls run to the end'], [1, 'At both ends of each row (planted)']] },
   { key: 'compactPct', label: 'Compact stalls', unit: '%', default: 0, group: 'Parking' },
   { key: 'compactWidth', label: 'Compact stall width', unit: 'ft', default: 8, step: 0.5, group: 'Parking' },
   { key: 'evPct', label: 'EV-ready stalls', unit: '%', default: 0, group: 'Parking' },

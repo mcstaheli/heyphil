@@ -601,6 +601,8 @@ function SitePlanEditor() {
   // Every edit goes through here. Panning the map isn't an undo step; the
   // step key folds a drag or a run of typing into one.
   const change = useCallback((key, value, stepKey = key) => {
+    // Nothing changed: no save, and no undo step that would undo nothing.
+    if (draftRef.current && JSON.stringify(draftRef.current[key]) === JSON.stringify(value)) return;
     if (key !== 'mapView' && draftRef.current) {
       historyRef.current.record(draftRef.current, stepKey);
       syncUndo();
@@ -610,43 +612,42 @@ function SitePlanEditor() {
 
   const undo = useCallback(() => {
     const cur = draftRef.current;
-    const prev = cur && historyRef.current.undo(cur);
-    if (!prev) return;
-    applyDraft(prev, changedKeys(cur, prev).filter((k) => k !== 'mapView'));
+    const found = cur && historyRef.current.undo(cur);
+    if (!found) return;
+    // The map stays where it is (panning isn't undone).
+    const prev = { ...found, mapView: cur.mapView };
+    applyDraft(prev, changedKeys(cur, prev));
     syncUndo();
   }, [applyDraft]); // eslint-disable-line react-hooks/exhaustive-deps
   const redo = useCallback(() => {
     const cur = draftRef.current;
-    const next = cur && historyRef.current.redo(cur);
-    if (!next) return;
-    applyDraft(next, changedKeys(cur, next).filter((k) => k !== 'mapView'));
+    const found = cur && historyRef.current.redo(cur);
+    if (!found) return;
+    const next = { ...found, mapView: cur.mapView };
+    applyDraft(next, changedKeys(cur, next));
     syncUndo();
   }, [applyDraft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl/⌘+Z undoes, Ctrl/⌘+Shift+Z or Ctrl+Y redoes - except while typing
   // in a field, where the browser's own undo applies.
+  // Delete / Backspace removes what's selected. Neither while a dialog
+  // (3D, help, generator) is open over the plan.
+  const modalOpenRef = useRef(false);
   useEffect(() => {
     const onKey = (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const t = e.target;
+      if (modalOpenRef.current || e.altKey) return;
       if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
       const k = e.key.toLowerCase();
-      if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
-      else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+      if (e.ctrlKey || e.metaKey) {
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+        else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && deleteSelectedRef.current?.()) {
+        e.preventDefault();
+      }
     };
-    // Delete / Backspace removes what's selected (not while typing).
-    const onDelete = (e) => {
-      if ((e.key !== 'Delete' && e.key !== 'Backspace') || e.ctrlKey || e.metaKey || e.altKey) return;
-      const t = e.target;
-      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
-      if (deleteSelectedRef.current?.()) e.preventDefault();
-    };
-    window.addEventListener('keydown', onDelete);
     window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('keydown', onDelete);
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [undo, redo]);
 
   // Only the boundary and schemes change a layout; renaming the site or
@@ -1198,7 +1199,6 @@ function SitePlanEditor() {
   const checkStep = (c) => (c.category === 'zoning' ? 'zoning' : isTruckCheck(c) ? 'trucks' : 'parking');
   const parkingFailsHere = parkingChecks.filter((c) => c.status === 'fail');
   const truckFails = truckChecks.filter((c) => c.status === 'fail');
-  const PARKING_PROGRAM = PARKING_PROGRAM_KEYS;
 
   function stepMeta(st) {
     const plural = (n, word) => `${fmtInt(n)} ${word}${n === 1 ? '' : 's'}`;
@@ -1391,8 +1391,8 @@ function SitePlanEditor() {
           </>
         );
       case 'parking': {
-        const program = st.keys.filter((k) => PARKING_PROGRAM.includes(k));
-        const rest = st.keys.filter((k) => !PARKING_PROGRAM.includes(k));
+        const program = st.keys.filter((k) => PARKING_PROGRAM_KEYS.includes(k));
+        const rest = st.keys.filter((k) => !PARKING_PROGRAM_KEYS.includes(k));
         return (
           <>
             {settingsFor(`${st.id}-need`, program)}
@@ -1539,6 +1539,7 @@ function SitePlanEditor() {
   // A selection that's gone (a bay re-laid out, a building removed) shows as none.
   const selectedKey = selectionItems.some((x) => x.key === selection) ? selection : null;
 
+  modalOpenRef.current = show3d || showHelp || generating;
   // Delete / Backspace: the selected building, space, parking area or
   // aisle goes; a stall is removed (landscaped); a generated building goes
   // too, the layout switching to placed by hand without it. Returns

@@ -79,3 +79,17 @@ test('a park is planted, counted as open space, and kept free of buildings and p
   expect(r.geometry.buildings.every((ring) => !ring.some(inPark))).toBe(true);
   expect(r.trees.filter(inPark).length).toBeGreaterThan(5);
 });
+
+test('a big lot full of islands still plants its park', () => {
+  const site = rectSite(2000, 1500);
+  const [lng0, lat0] = site.coordinates[0][0];
+  const ft = (x, y) => [lng0 + x / (364000 * Math.cos((40.76 * Math.PI) / 180)), lat0 + y / 364000];
+  const park = { type: 'Polygon', coordinates: [[ft(100, 100), ft(300, 100), ft(300, 250), ft(100, 250), ft(100, 100)]] };
+  const r = solveScheme(site, {
+    id: 'a', name: 'A', assetType: 'parking', overrides: { islandEvery: 4, endIslands: 1 },
+    spaces: [{ id: 'p', name: 'Park', kind: 'green', polygon: park }],
+  });
+  const [x0, y0] = ft(100, 100);
+  const [x1, y1] = ft(300, 250);
+  expect(r.trees.filter(([lat, lng]) => lng > x0 && lng < x1 && lat > y0 && lat < y1).length).toBeGreaterThan(10);
+});

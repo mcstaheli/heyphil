@@ -107,7 +107,7 @@ export function asType(scheme, assetType) {
 export function evaluateOption(boundary, scheme, combo, assetType = scheme.assetType) {
   const base = asType(scheme, assetType);
   const variant = { ...base, edits: undefined, overrides: { ...base.overrides, ...combo } };
-  const r = solveScheme(boundary, variant);
+  const r = solveScheme(boundary, variant, { trees: false });
   const type = getAssetType(assetType);
   const m = planMetrics(r) || {};
   const pf = r.proforma || {};
