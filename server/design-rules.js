@@ -59,6 +59,22 @@ export function validateText(value, label, max) {
   return text || null;
 }
 
+// Who a request is for. The form's "Your name" is free text (#46, #52), not
+// a pick from People:
+//   - matches someone in People (any case) -> that person, with their email
+//   - any other name on a NEW request -> that name, with the submitter's
+//     sign-in email ("Your name" - they're the one asking)
+//   - any other name on an EDIT -> that name with NO email: keeping the
+//     stored one would send the new requester's emails to the old one
+//   - blank on a new request -> the submitter; blank on an edit -> nobody
+// person = the People row matched by name (or null); actor = { name, email }.
+export function requesterFor(value, person, actor = {}, { isNew, existingEmail = null } = {}) {
+  const name = validateText(value, 'Your name', 255);
+  if (!name) return isNew ? { name: actor.name || null, email: actor.email || null } : { name: null, email: null };
+  if (person) return { name: person.name, email: person.email || null };
+  return { name, email: isNew ? (actor.email || null) : null };
+}
+
 export function isUuid(value) {
   return typeof value === 'string' && UUID_RE.test(value);
 }

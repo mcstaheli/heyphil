@@ -466,3 +466,55 @@
   .design-modal-columns > .design-form, .design-modal-side { overflow: visible; flex: none; }
   .design-modal-side { border-left: none; border-top: 1px solid #e5e7eb; }
 }
+
+/* Reference files/links: the link field with a 📎 to attach files (#47) */
+.design-reference-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.design-reference-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.design-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 34px;
+  flex-shrink: 0;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.design-attach-btn:hover {
+  background: #f5f7fa;
+}
+
+.design-pending-files {
+  margin: -4px 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.design-pending-files li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.design-pending-files button {
+  border: none;
+  background: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 15px;
+}

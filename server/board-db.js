@@ -555,7 +555,9 @@ export async function addTask(projectId, text, assignee = null) {
         'completedOn', null,
         'completedBy', null,
         'starred', false,
-        'assignee', $3::text
+        'assignee', $3::text,
+        -- when it was added, for the board's task-age chip (#55)
+        'createdAt', to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
       )
     )
     WHERE id = $1

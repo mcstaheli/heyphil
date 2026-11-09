@@ -21,6 +21,7 @@ import {
   validatePriority,
   validateProjectId,
   validateStatus,
+  requesterFor,
   validateText,
 } from './design-rules.js';
 
@@ -74,6 +75,13 @@ export async function createTables() {
       ADD COLUMN IF NOT EXISTS output_type VARCHAR(100),
       ADD COLUMN IF NOT EXISTS dimensions VARCHAR(100),
       ADD COLUMN IF NOT EXISTS priority VARCHAR(10) NOT NULL DEFAULT 'normal'
+  `));
+
+  // Department and lead stakeholders (#52), free text on the request form.
+  await step('design_requests department/lead_stakeholders columns', () => pool.query(`
+    ALTER TABLE design_requests
+      ADD COLUMN IF NOT EXISTS department VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS lead_stakeholders VARCHAR(500)
   `));
 
   // The option lists the board's settings gear edits; a list that has
@@ -133,6 +141,7 @@ const SELECT = `
          d.requester_email, d.requester_name, d.designer, d.due_date::text AS due_date,
          d.notes, d.link, d.delivered_at, d.created_at, d.updated_at,
          d.deliverable_type, d.output_type, d.dimensions, d.priority,
+         d.department, d.lead_stakeholders,
          p.title AS project_title,
          (SELECT COUNT(*)::int FROM design_journal j
            WHERE j.request_id = d.id AND j.deleted_at IS NULL AND j.kind IN ('comment', 'draft', 'final')) AS journal_count,
@@ -158,6 +167,8 @@ function mapRow(row) {
     requestedAt: row.requested_at,
     requesterEmail: row.requester_email,
     requesterName: row.requester_name,
+    department: row.department || null,
+    leadStakeholders: row.lead_stakeholders || null,
     designer: row.designer,
     dueDate: row.due_date,
     notes: row.notes,
@@ -179,12 +190,16 @@ async function assertProjectExists(client, projectId) {
 // The requester is picked from People (#39); their email comes from
 // there too, never from the browser. Returns { name, email }, or nulls
 // to clear it.
-async function resolveRequester(client, value) {
-  const name = validateText(value, 'Requester', 255);
-  if (!name) return { name: null, email: null };
-  const { rows } = await client.query('SELECT name, email FROM people WHERE LOWER(name) = LOWER($1) LIMIT 1', [name]);
-  if (rows.length === 0) throw new DesignValidationError(`"${name}" isn't in People.`);
-  return { name: rows[0].name, email: rows[0].email || null };
+// "Your name" is free text (#46/#52) - matched to People when it can be,
+// so draft-ready emails still find the right address (requesterFor).
+async function resolveRequester(client, value, actor, options) {
+  const typed = validateText(value, 'Your name', 255);
+  let person = null;
+  if (typed) {
+    const { rows } = await client.query('SELECT name, email FROM people WHERE LOWER(name) = LOWER($1) LIMIT 1', [typed]);
+    person = rows[0] || null;
+  }
+  return requesterFor(typed, person, actor, options);
 }
 
 export async function getAllRequests() {
@@ -215,19 +230,20 @@ export async function createRequest(fields, actor = {}) {
     dueDate: validateDate(fields.dueDate, 'Due date'),
     notes: validateText(fields.notes, 'Notes', 5000),
     link: validateLink(fields.link),
+    department: validateText(fields.department, 'Department', 255),
+    leadStakeholders: validateText(fields.leadStakeholders, 'Lead stakeholders', 500),
   };
   await assertProjectExists(pool, values.projectId);
-  const requester = fields.requesterName
-    ? await resolveRequester(pool, fields.requesterName)
-    : { name: actor.name || null, email: actor.email || null };
+  const requester = await resolveRequester(pool, fields.requesterName, actor, { isNew: true });
   const id = randomUUID();
   await pool.query(
     `INSERT INTO design_requests
        (id, deliverable, deliverable_type, output_type, dimensions, priority, project_id, designer,
-        due_date, notes, link, requester_email, requester_name)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        due_date, notes, link, requester_email, requester_name, department, lead_stakeholders)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
     [id, values.deliverable, values.deliverableType, values.outputType, values.dimensions, values.priority,
-      values.projectId, values.designer, values.dueDate, values.notes, values.link, requester.email, requester.name]
+      values.projectId, values.designer, values.dueDate, values.notes, values.link, requester.email, requester.name,
+      values.department, values.leadStakeholders]
   );
   return getRequestById(id);
 }
@@ -245,6 +261,8 @@ const PATCHABLE = {
   dueDate: ['due_date', (v) => validateDate(v, 'Due date')],
   notes: ['notes', (v) => validateText(v, 'Notes', 5000)],
   link: ['link', validateLink],
+  department: ['department', (v) => validateText(v, 'Department', 255)],
+  leadStakeholders: ['lead_stakeholders', (v) => validateText(v, 'Lead stakeholders', 500)],
 };
 
 const COLUMN_TITLES = {
@@ -285,7 +303,7 @@ export async function updateRequest(id, updates, actor = {}) {
   try {
     await client.query('BEGIN');
     const current = await client.query(
-      'SELECT status FROM design_requests WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+      'SELECT status, requester_email FROM design_requests WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
       [id]
     );
     const row = current.rows[0];
@@ -313,7 +331,10 @@ export async function updateRequest(id, updates, actor = {}) {
       add(column, value);
     }
     if (updates.requesterName !== undefined) {
-      const requester = await resolveRequester(client, updates.requesterName);
+      const requester = await resolveRequester(client, updates.requesterName, actor, {
+        isNew: false,
+        existingEmail: row.requester_email,
+      });
       add('requester_name', requester.name);
       add('requester_email', requester.email);
     }

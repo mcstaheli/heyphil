@@ -2307,3 +2307,29 @@ body {
 .card-action-item .task-edit-input .assignee-chip {
   order: 1;
 }
+
+/* Under a task: its @assignee pill and how long it's been open (#55) */
+.task-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-meta-line:empty {
+  display: none;
+}
+
+.task-age-chip {
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.task-age-chip.age-1 { background: #fff7d6; color: #8a6d00; }  /* 1 week */
+.task-age-chip.age-2 { background: #ffe8cc; color: #a34700; }  /* 2-3 weeks */
+.task-age-chip.age-3 { background: #ffe0e0; color: #b42318; }  /* 4+ weeks */

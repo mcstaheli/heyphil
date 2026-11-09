@@ -20,6 +20,8 @@ import { getCardMetricChips } from './cardMetricChips';
 import { isNoteEntry, canModifyNote, noteAuthorName } from './activityLog';
 import { deriveGridInputs } from './strategyGridMath';
 import AssigneeInput from './AssigneeInput';
+import { matchesPersonFilter, tasksShownFor } from './boardFilters';
+import { taskAge } from './taskAge';
 import { ResourceIcon } from './ProjectResources';
 import { detectSource, kindLabel, quickOpenLinks } from './resources';
 
@@ -156,6 +158,22 @@ const mapProjectToCard = (project) => ({
 // each one's blur then saved the typed text onto its own card.
 function taskKey(cardId, actionId) {
   return `${cardId}:${actionId}`;
+}
+
+// How long a task has been open, colored by weeks (#55) - nothing for
+// tasks under a week old. "+" = added before task dates were recorded, so
+// the real age is at least this.
+function TaskAgeChip({ task }) {
+  const age = taskAge(task);
+  if (!age || age.weeks < 1) return null;
+  const title = age.known
+    ? `Added ${new Date(task.createdAt).toLocaleDateString()} - open ${age.weeks} week${age.weeks === 1 ? '' : 's'}`
+    : `Open at least ${age.weeks} week${age.weeks === 1 ? '' : 's'} (added before task dates were recorded)`;
+  return (
+    <span className={`task-age-chip age-${age.level}`} title={title}>
+      {age.weeks}w{age.known ? '' : '+'}
+    </span>
+  );
 }
 
 // Wrapper component for project detail route
@@ -644,7 +662,7 @@ function OriginationBoard({ user, studioMode = false }) {
     });
 
     // Listen for action changes
-    socketRef.current.on('action:created', ({ actionId, cardId, text, assignee }) => {
+    socketRef.current.on('action:created', ({ actionId, cardId, text, assignee, createdAt }) => {
       console.log('📨 Action created:', actionId, 'for card:', cardId);
       setCards(prevCards => prevCards.map(c => {
         if (c.id === cardId) {
@@ -657,7 +675,8 @@ function OriginationBoard({ user, studioMode = false }) {
               completedOn: null,
               completedBy: null,
               starred: false,
-              assignee: assignee || null
+              assignee: assignee || null,
+              createdAt: createdAt || null
             }]
           };
         }
@@ -1452,7 +1471,8 @@ function OriginationBoard({ user, studioMode = false }) {
         {columns.map(column => {
           let filteredCards = cards.filter(c => {
             if (c.column !== column.id) return false;
-            if (filterOwner && c.owner !== filterOwner) return false;
+            // Owner, or someone with an open @-assigned task on it (#54)
+            if (!matchesPersonFilter(c, filterOwner)) return false;
             if (filterProjectType && c.projectType !== filterProjectType) return false;
             if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
             return true;
@@ -1631,9 +1651,9 @@ function OriginationBoard({ user, studioMode = false }) {
                         />
                       </div>
                     )}
-                    {!isPrePost && card.actions && card.actions.filter(a => !a.completedOn || pendingCompleteIds.has(taskKey(card.id, a.id))).length > 0 && (
+                    {!isPrePost && card.actions && tasksShownFor(card, filterOwner).filter(a => !a.completedOn || pendingCompleteIds.has(taskKey(card.id, a.id))).length > 0 && (
                       <div className="card-actions-section">
-                        {sortByStarred(card.actions.filter(a => !a.completedOn || pendingCompleteIds.has(taskKey(card.id, a.id)))).slice(0, 3).map((action) => (
+                        {sortByStarred(tasksShownFor(card, filterOwner).filter(a => !a.completedOn || pendingCompleteIds.has(taskKey(card.id, a.id)))).slice(0, 3).map((action) => (
                           <div key={action.id} className={`card-action-item ${action.starred ? 'starred' : ''}`} onClick={(e) => {
                             e.stopPropagation();
                             const key = taskKey(card.id, action.id);
@@ -1703,11 +1723,14 @@ function OriginationBoard({ user, studioMode = false }) {
                                     setEditingCardActionAssignee(action.assignee || null);
                                   }}
                                 >{action.text}</span>
-                                {action.assignee && (
-                                  <span className="task-assignee-line" title={`Assigned to ${action.assignee}`}>
-                                    @{action.assignee}
-                                  </span>
-                                )}
+                                <span className="task-meta-line">
+                                  {action.assignee && (
+                                    <span className="task-assignee-line" title={`Assigned to ${action.assignee}`}>
+                                      @{action.assignee}
+                                    </span>
+                                  )}
+                                  <TaskAgeChip task={action} />
+                                </span>
                               </span>
                             )}
                           </div>
@@ -2561,7 +2584,10 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                         >
                           {action.text}
                         </span>
-                        {onSetActionAssignee && action.assignee && renderAssignControl(action)}
+                        <span className="task-meta-line">
+                          {onSetActionAssignee && action.assignee && renderAssignControl(action)}
+                          <TaskAgeChip task={action} />
+                        </span>
                       </span>
                     )}
                     {onSetActionAssignee && !action.assignee && editingActionId !== action.id && renderAssignControl(action)}

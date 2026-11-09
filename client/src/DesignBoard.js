@@ -199,14 +199,17 @@ function DesignBoard({ user }) {
     return projects.filter((p) => ids.has(p.id));
   }, [requests, projects]);
 
+  // Returns the saved request - a new one's id is needed to upload files
+  // picked on the form (DesignRequestModal).
   async function save(form) {
     if (editing === 'new') {
       const { request } = await send('POST', '', form);
       upsert(request);
-    } else {
-      const { request } = await send('PUT', `/${editing.id}`, form);
-      upsert(request);
+      return request;
     }
+    const { request } = await send('PUT', `/${editing.id}`, form);
+    upsert(request);
+    return request;
   }
 
   async function remove(request) {

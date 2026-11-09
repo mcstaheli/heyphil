@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   MAX_ATTACHMENT_BYTES,
   PRIORITIES,
-  defaultDesigner,
   defaultRequester,
   formatBytes,
   stageAfterPosting,
@@ -43,6 +42,27 @@ async function uploadFile(requestId, file) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Couldn't add ${file.name}`);
   return data.attachment;
+}
+
+// Uploads files one by one; returns ["name: reason", ...] for any that
+// failed (the rest still go up). Used by the form's 📎 and the Files list.
+async function uploadFiles(requestId, files) {
+  const failed = [];
+  for (const file of files) {
+    try {
+      await uploadFile(requestId, file); // eslint-disable-line no-await-in-loop
+    } catch (err) {
+      failed.push(`${file.name}: ${err.message}`);
+    }
+  }
+  return failed;
+}
+
+// Too big to upload - checked when files are picked, so a new request
+// isn't created only to have its files refused afterwards.
+function oversized(files) {
+  return files.filter((f) => f.size > MAX_ATTACHMENT_BYTES)
+    .map((f) => `${f.name} is over the ${formatBytes(MAX_ATTACHMENT_BYTES)} limit`);
 }
 
 // Files need the sign-in token, so they're fetched and handed to the
@@ -93,13 +113,15 @@ function FilesSection({ request, attachments, user, isAdmin, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  async function handleFiles(files) {
+  async function handleFiles(fileList) {
+    const picked = Array.from(fileList || []);
+    const tooBig = oversized(picked);
     setBusy(true);
     setError(null);
     try {
-      for (const file of files) await uploadFile(request.id, file);
-    } catch (err) {
-      setError(err.message);
+      const failed = await uploadFiles(request.id, picked.filter((f) => f.size <= MAX_ATTACHMENT_BYTES));
+      const problems = [...tooBig, ...failed];
+      if (problems.length) setError(`Not added: ${problems.join('; ')}`);
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -333,7 +355,8 @@ function RequestModal({ request, projects, people, options, user, canDelete, det
       priority: request.priority || 'normal',
       projectId: request.projectId || '',
       requesterName: request.requesterName || '',
-      designer: request.designer || '',
+      department: request.department || '',
+      leadStakeholders: request.leadStakeholders || '',
       dueDate: request.dueDate || '',
       link: request.link || '',
       notes: request.notes || '',
@@ -347,7 +370,8 @@ function RequestModal({ request, projects, people, options, user, canDelete, det
       priority: 'normal',
       projectId: '',
       requesterName: defaultRequester(people, user),
-      designer: defaultDesigner(people),
+      department: '',
+      leadStakeholders: '',
       dueDate: '',
       link: '',
       notes: '',
@@ -357,17 +381,17 @@ function RequestModal({ request, projects, people, options, user, canDelete, det
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [details, setDetails] = useState({ journal: [], attachments: [], isAdmin: false, loaded: false });
+  // Files picked with the 📎 on the form (#47). A new request uploads them
+  // right after it's created; an existing one uploads straight away.
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
-  // People may load after the modal opens; fill the new-request defaults
-  // once they arrive, unless they've already been changed.
+  // People may load after the modal opens; fill "Your name" once they
+  // arrive, unless it's already been typed.
   useEffect(() => {
     if (!isNew || !people.length) return;
-    setForm((f) => ({
-      ...f,
-      requesterName: f.requesterName || defaultRequester(people, user),
-      designer: f.designer && f.designer !== defaultDesigner([]) ? f.designer : defaultDesigner(people),
-    }));
+    setForm((f) => ({ ...f, requesterName: f.requesterName || defaultRequester(people, user) }));
   }, [isNew, people, user]);
 
   const loadDetails = useCallback(() => {
@@ -382,7 +406,7 @@ function RequestModal({ request, projects, people, options, user, canDelete, det
   async function handleSave(e) {
     e.preventDefault();
     if (!form.deliverable.trim()) {
-      setError('Add the deliverable description.');
+      setError('Add the project name.');
       return;
     }
     setSaving(true);
@@ -393,7 +417,16 @@ function RequestModal({ request, projects, people, options, user, canDelete, det
       ? form
       : Object.fromEntries(Object.entries(form).filter(([key, value]) => value !== initial[key]));
     try {
-      if (Object.keys(changes).length > 0) await onSave(changes);
+      const saved = Object.keys(changes).length > 0 ? await onSave(changes) : request;
+      // Files picked on a new request go up once it exists.
+      if (isNew && pendingFiles.length) {
+        const failed = saved && saved.id
+          ? await uploadFiles(saved.id, pendingFiles)
+          : pendingFiles.map((f) => f.name);
+        if (failed.length) {
+          window.alert(`The request was created, but some files didn't upload:\n\n${failed.join('\n')}\n\nOpen the request to add them again.`);
+        }
+      }
       onClose();
     } catch (err) {
       setError(err.message);
@@ -401,27 +434,57 @@ function RequestModal({ request, projects, people, options, user, canDelete, det
     }
   }
 
+  // 📎 on an existing request uploads straight away (the Files list on the
+  // right refreshes); on a new request the files wait for "Add request".
+  async function addFiles(fileList) {
+    const picked = Array.from(fileList || []);
+    if (!picked.length) return;
+    const tooBig = oversized(picked);
+    const files = picked.filter((f) => f.size <= MAX_ATTACHMENT_BYTES);
+    setError(tooBig.length ? `Not added: ${tooBig.join('; ')}` : null);
+    if (!files.length) return;
+    if (isNew) {
+      setPendingFiles((prev) => [...prev, ...files]);
+      return;
+    }
+    setUploading(true);
+    const failed = await uploadFiles(request.id, files);
+    setUploading(false);
+    loadDetails();
+    if (failed.length) setError(`Couldn't add: ${failed.join('; ')}`);
+  }
+
   const COLUMNS = [
     ['requested', 'Requested'], ['scoping', 'Scoping'], ['in-design', 'In Design'], ['in-review', 'In Review'],
     ['revisions', 'Revisions'], ['delivered', 'Delivered'], ['on-hold', 'On Hold'],
   ];
-  const peopleNames = people.map((p) => p.name);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={() => { if (!saving && !uploading) onClose(); }}>
       <div className={`modal-content design-modal ${isNew ? '' : 'design-modal-wide'}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{isNew ? 'New design request' : `Design #${request.seqNum}`}</h2>
         </div>
         <div className="design-modal-columns">
           <form id="design-request-form" className="modal-body design-form" onSubmit={handleSave}>
+            {/* Field names and order per the form's own users (Improvements
+                #46-#52): Project name first, its description right below. */}
             <label>
-              Deliverable description
+              Project name
               <input value={form.deliverable} onChange={set('deliverable')} placeholder="e.g. Lobby signage package for the grand opening" maxLength={300} autoFocus={isNew} />
+            </label>
+            <label>
+              Project description
+              <textarea
+                rows={4}
+                value={form.notes}
+                onChange={set('notes')}
+                placeholder="What is this project about? What are the goals? How many individual creative assets do you estimate will be needed?"
+              />
             </label>
             <div className="design-form-row">
               <label>
-                Deliverable type
+                Project type
                 <select value={form.deliverableType} onChange={set('deliverableType')}>
                   <option value="">Choose…</option>
                   {withCurrent(options.deliverableTypes, form.deliverableType).map((t) => <option key={t} value={t}>{t}</option>)}
@@ -448,29 +511,28 @@ function RequestModal({ request, projects, people, options, user, canDelete, det
               </label>
             </div>
             <label>
-              Project
+              Linked HeyPhil project
               <select value={form.projectId} onChange={set('projectId')}>
-                <option value="">No project</option>
+                <option value="">None</option>
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
               </select>
             </label>
             <div className="design-form-row">
               <label>
-                Requester
-                <select value={form.requesterName} onChange={set('requesterName')}>
-                  {isNew && <option value="">Me</option>}
-                  {!isNew && !form.requesterName && <option value="">Nobody</option>}
-                  {withCurrent(peopleNames, form.requesterName).map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
+                {/* "Your name" when asking; when editing someone's request
+                    it's theirs, not the editor's */}
+                {isNew ? 'Your name' : 'Requester'}
+                <input value={form.requesterName} onChange={set('requesterName')} placeholder="First and last name" maxLength={255} />
               </label>
               <label>
-                Designer
-                <select value={form.designer} onChange={set('designer')}>
-                  <option value="">Unassigned</option>
-                  {withCurrent(peopleNames, form.designer).map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
+                Department
+                <input value={form.department} onChange={set('department')} placeholder="e.g. Marketing" maxLength={255} />
               </label>
             </div>
+            <label>
+              Lead stakeholders
+              <input value={form.leadStakeholders} onChange={set('leadStakeholders')} placeholder="Who signs off on this?" maxLength={500} />
+            </label>
             <div className="design-form-row">
               <label>
                 Due
@@ -486,14 +548,34 @@ function RequestModal({ request, projects, people, options, user, canDelete, det
               ) : <span />}
             </div>
             <label>
-              Files link
-              <input value={form.link} onChange={set('link')} placeholder="https://drive.google.com/..." />
+              Reference files/links
+              <div className="design-reference-row">
+                <input value={form.link} onChange={set('link')} placeholder="https://drive.google.com/..." />
+                <label className="design-attach-btn" title="Attach files">
+                  📎
+                  <input
+                    type="file"
+                    multiple
+                    hidden
+                    disabled={uploading}
+                    onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
+                  />
+                </label>
+              </div>
             </label>
-            <label>
-              Notes
-              <textarea rows={4} value={form.notes} onChange={set('notes')} placeholder="Brief, sizes, references, feedback..." />
-            </label>
-            {isNew && <p className="design-muted">Files and comments can be added once the request is created.</p>}
+            {uploading && <p className="design-muted">Uploading…</p>}
+            {isNew && pendingFiles.length > 0 && (
+              <ul className="design-pending-files">
+                {pendingFiles.map((f, i) => (
+                  // eslint-disable-next-line react/no-array-index-key
+                  <li key={`${f.name}-${i}`}>
+                    📎 {f.name} <span className="design-muted">({formatBytes(f.size)})</span>
+                    <button type="button" onClick={() => setPendingFiles((prev) => prev.filter((_, j) => j !== i))} title="Remove">×</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {isNew && <p className="design-muted">Comments can be added once the request is created.</p>}
             {!isNew && (
               <p className="design-meta">
                 Requested {request.requesterName ? `by ${request.requesterName} ` : ''}on {formatDate(request.requestedAt)}
@@ -517,7 +599,7 @@ function RequestModal({ request, projects, people, options, user, canDelete, det
           <div className="modal-actions">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>{isNew ? 'Cancel' : 'Close'}</button>
             <button type="submit" form="design-request-form" className="btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : isNew ? 'Add request' : 'Save'}
+              {saving ? (pendingFiles.length ? 'Saving and uploading…' : 'Saving…') : isNew ? 'Add request' : 'Save'}
             </button>
           </div>
         </div>

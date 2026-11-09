@@ -1536,7 +1536,8 @@ app.post('/api/origination/action', requireAuth, async (req, res) => {
       actionId: newTask.id,
       cardId,
       text,
-      assignee
+      assignee,
+      createdAt: newTask.createdAt || null
     });
     
     res.json({ success: true, action: newTask });
