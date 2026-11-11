@@ -560,6 +560,36 @@ export async function setStarred(modelId, starred, actor) {
   }
 }
 
+// Snapshots of a model's inputs/outputs (taken when it's locked).
+export async function insertSnapshot(modelId, kind, data, email) {
+  await pool.query(`INSERT INTO modeling_model_snapshots (model_id, kind, data, captured_by_email) VALUES ($1, $2, $3, $4)`,
+    [modelId, kind, JSON.stringify(data), email || null]);
+}
+
+export async function insertSnapshots(modelId, entries, email) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const [kind, data] of entries) {
+      // eslint-disable-next-line no-await-in-loop
+      await client.query('INSERT INTO modeling_model_snapshots (model_id, kind, data, captured_by_email) VALUES ($1, $2, $3, $4)',
+        [modelId, kind, JSON.stringify(data), email || null]);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function latestSnapshot(modelId, kind) {
+  const { rows } = await pool.query(`SELECT data, captured_at, captured_by_email FROM modeling_model_snapshots
+    WHERE model_id = $1 AND kind = $2 ORDER BY captured_at DESC, id DESC LIMIT 1`, [modelId, kind]);
+  return rows[0] ? { data: rows[0].data, capturedAt: rows[0].captured_at, capturedByEmail: rows[0].captured_by_email } : null;
+}
+
 export async function insertExport(e) {
   const { rows } = await pool.query(`
     INSERT INTO modeling_exports (model_id, file_id, file_name, folder_id, exported_by_email, exported_by_name, operation_id)

@@ -62,7 +62,7 @@ async function ownerFolders(owner, opId) {
 }
 
 // The template a model's family started from (walks up the tree).
-async function rootTemplate(model) {
+export async function rootTemplate(model) {
   let m = model;
   for (let i = 0; i < 50 && m; i += 1) {
     if (m.templateId) return db.getTemplate(m.templateId);
@@ -249,6 +249,7 @@ export const KINDS = {
     steps: [
       { key: 'stamp', label: 'Stamp it LOCKED in the sheet' },
       { key: 'lock', label: 'Lock it in Drive (view-only)' },
+      { key: 'snapshot', label: 'Save a snapshot of its inputs and results' },
       { key: 'activate', label: 'Make it the Active model' },
     ],
     run: {
@@ -278,6 +279,21 @@ export const KINDS = {
         const meta = await g.getFile(m.fileId);
         if (!isLockedRestriction(meta.contentRestrictions)) await g.lockFile(m.fileId);
         await db.markLocked(m.id, ctx.actor);
+      },
+      // a record of what this locked version says - never stops the lock
+      async snapshot(ctx) {
+        const m = await db.getModel(ctx.params.modelId);
+        // one snapshot per lock: a model locked before this action (e.g.
+        // Make Active on a locked model) keeps the snapshot it already has
+        const existing = await db.latestSnapshot(m.id, 'outputs');
+        if (existing && m.lockedAt && new Date(m.lockedAt) < new Date(ctx.op.startedAt)) return 'Already has its snapshot';
+        try {
+          const { captureSnapshot } = await import('./results.js');
+          return await captureSnapshot(m, ctx.actor.email);
+        } catch (error) {
+          // never stops the lock; the results panel reads the locked file live instead
+          return `Snapshot not saved (${error instanceof ModelingError ? error.message : g.describeGoogleError(error)}) - results will be read live`;
+        }
       },
       async activate(ctx) {
         if (!ctx.params.activate) return 'Not requested';

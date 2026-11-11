@@ -12,6 +12,7 @@ import { broadcastChange } from '../realtime.js';
 import * as db from '../modeling/db.js';
 import * as ops from '../modeling/operations.js';
 import * as importer from '../modeling/import.js';
+import * as results from '../modeling/results.js';
 import * as g from '../modeling/drive-guard.js';
 import { ModelingError, cleanName, cleanNote, nextVersion, nextRootVersion, versionTitle } from '../modeling/rules.js';
 
@@ -76,6 +77,30 @@ router.get('/models/:id/next-version', handle('work out the version', async (req
 // The version a Use Template into this project would get.
 router.get('/projects/:id/next-version', handle('work out the version', async (req, res) => {
   res.json({ version: nextRootVersion(await db.takenVersions({ projectId: intParam(req.params.id) })) });
+}));
+
+// A model's results (outputs) as display groups + headline numbers.
+router.get('/models/:id/results', handle('read the results', async (req, res) => {
+  const m = await modelOr404(req.params.id);
+  res.json({ results: await results.resultsFor(m.id, { refresh: req.query.refresh === '1' }) });
+}));
+
+// Results for several models of one project at once (the comparison):
+// ?models=1,2,3 (default: the Active model and every starred one).
+router.get('/projects/:id/results', handle('read the results', async (req, res) => {
+  const project = await db.getProjectDetail(intParam(req.params.id));
+  if (!project) throw new ModelingError('Not found', 404);
+  const wanted = req.query.models
+    ? String(req.query.models).split(',').map(Number).filter((n) => project.models.some((m) => m.id === n)).slice(0, 8)
+    : project.models.filter((m) => m.isActive || (m.starredAt && !m.hiddenAt)).map((m) => m.id);
+  const list = await Promise.all(wanted.map(async (id) => {
+    try {
+      return await results.resultsFor(id, { refresh: req.query.refresh === '1' });
+    } catch (error) {
+      return { modelId: id, error: g.describeGoogleError(error), groups: [], headline: [] };
+    }
+  }));
+  res.json({ results: list });
 }));
 
 router.get('/operations', handle('load activity', async (req, res) => {

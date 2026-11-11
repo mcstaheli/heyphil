@@ -267,10 +267,47 @@ export async function addTemplateStructure(spreadsheetId, { ensureSheets = [], n
   return { addedSheets: add.length, grew: grow.length, addedNames: requests.length, skipped };
 }
 
-export async function readCells(spreadsheetId, ranges) {
+export async function readCells(spreadsheetId, ranges, { render = 'FORMATTED_VALUE' } = {}) {
   await assertInside(spreadsheetId);
-  const { data } = await google_().sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges });
+  const { data } = await google_().sheets.spreadsheets.values.batchGet({
+    spreadsheetId, ranges, valueRenderOption: render, dateTimeRenderOption: 'FORMATTED_STRING',
+  });
   return data.valueRanges.map((r) => r.values || []);
+}
+
+// The named ranges a file has, and its tab names (an older version may lack
+// some names, or the HeyPhil Map tab).
+export async function readStructure(spreadsheetId) {
+  await assertInside(spreadsheetId);
+  const { data } = await google_().sheets.spreadsheets.get({ spreadsheetId, fields: 'namedRanges(name),sheets(properties(title))' });
+  return { names: new Set((data.namedRanges || []).map((n) => n.name)), tabs: new Set(data.sheets.map((t) => t.properties.title)) };
+}
+
+// Values of named ranges as { name: { display, raw } } - display as the
+// sheet formats it, raw unformatted (numbers stay numbers). Single cells
+// give scalars; multi-cell ranges give arrays of rows.
+export async function readNamedValues(spreadsheetId, names) {
+  if (!names.length) return {};
+  await assertInside(spreadsheetId);
+  const get = (render) => google_().sheets.spreadsheets.values.batchGet({
+    spreadsheetId, ranges: names, valueRenderOption: render, dateTimeRenderOption: 'FORMATTED_STRING',
+  }).then((r) => r.data.valueRanges);
+  const [shown, raw] = await Promise.all([get('FORMATTED_VALUE'), get('UNFORMATTED_VALUE')]);
+  // The shape comes from the range itself (the API trims empty trailing
+  // rows/cells): one cell -> a value; more -> a full rows x cols grid.
+  const shape = (a1) => {
+    const m = /!\$?([A-Z]+)\$?(\d+)(?::\$?([A-Z]+)\$?(\d+))?$/.exec(a1 || '');
+    if (!m || !m[3]) return null;
+    const col = (L) => [...L].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+    return { rows: +m[4] - +m[2] + 1, cols: col(m[3]) - col(m[1]) + 1 };
+  };
+  const shaped = (vr) => {
+    const dims = shape(vr.range);
+    const v = vr.values || [];
+    if (!dims || (dims.rows === 1 && dims.cols === 1)) return (v[0] || [])[0] ?? null;
+    return Array.from({ length: dims.rows }, (_, r) => Array.from({ length: dims.cols }, (_, c) => (v[r] || [])[c] ?? null));
+  };
+  return Object.fromEntries(names.map((n, i) => [n, { display: shaped(shown[i]), raw: shaped(raw[i]) }]));
 }
 
 // ---- export ----

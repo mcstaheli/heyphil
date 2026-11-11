@@ -24,12 +24,13 @@ test('only drive-guard.js can reach Google', () => {
 });
 
 test('every exported drive-guard call checks the HeyPhil boundary first', () => {
+  // (readCells itself starts with assertInside - checked below)
   const guard = src('drive-guard.js');
   const fns = [...guard.matchAll(/export async function (\w+)\(([^)]*)\)\s*\{\n([\s\S]*?)\n\}/g)];
   assert.ok(fns.length >= 10);
   for (const [, name, , body] of fns) {
     if (name === 'assertInside') continue;
-    assert.match(body, /assertInside\(|getFile\(|assertHeyPhilCopy\(|listChildren\(|findChildFolder\(|createFolder\(/, `${name} has no boundary check`);
+    assert.match(body, /assertInside\(|getFile\(|assertHeyPhilCopy\(|listChildren\(|findChildFolder\(|createFolder\(|readCells\(/, `${name} has no boundary check`);
   }
   // nothing is trusted from an earlier check (a folder can be moved out)
   assert.doesNotMatch(guard, /known:|verified\./);

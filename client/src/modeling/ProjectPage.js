@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { modelingApi, folderUrl, fileUrl, when, who, downloadExport } from './api';
 import ModelTree from './ModelTree';
+import ResultsPanel from './ResultsPanel';
 import { StartedAction, UseTemplateModal, useOverview } from './Modeling';
 import './Modeling.css';
 
@@ -44,6 +45,11 @@ export default function ProjectPage() {
       </div>
 
       <div className="mdl-panel">
+        <section className="mdl-card">
+          <div className="mdl-toolbar"><h3>Results</h3></div>
+          <ResultsPanel project={project} />
+        </section>
+
         <section className="mdl-card">
           <div className="mdl-toolbar">
             <h3>Models</h3>
