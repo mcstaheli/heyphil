@@ -2333,3 +2333,7 @@ body {
 .task-age-chip.age-1 { background: #fff7d6; color: #8a6d00; }  /* 1 week */
 .task-age-chip.age-2 { background: #ffe8cc; color: #a34700; }  /* 2-3 weeks */
 .task-age-chip.age-3 { background: #ffe0e0; color: #b42318; }  /* 4+ weeks */
+
+/* A page this person hasn't been given (access.js Gate) */
+.no-access { padding: 48px 32px; color: #5b6275; }
+.no-access h2 { color: #222; margin: 0 0 8px; }

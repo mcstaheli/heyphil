@@ -25,7 +25,8 @@ import { canModifyNote, noteAuthorName } from './note-permissions.js';
 import { deriveGridInputs } from './grid-inputs.js';
 import { RESOURCE_KIND_IDS, SINGLE_RESOURCE_KINDS, validateResourceUrl } from './resource-rules.js';
 import { listProjectFolders, latestLockedModel, DriveSetupError } from './drive.js';
-import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin, isAdmin, setAdmin, AccessRuleError } from './permissions.js';
+import { hasAppAccess, isEmailAllowedToLogin, listAllowedEmails, allowEmailLogin, revokeEmailLogin, isAdmin, setAdmin, AccessRuleError, myAppAccess, listAppAccess, setAppAccess } from './permissions.js';
+import { APP_GROUPS, SEED_APPS } from './app-catalog.js';
 import { sendStandupReminders, previewStandupReminders } from './reminders.js';
 import cashflowRouter from './routes/cashflow.js';
 import improvementsRouter from './routes/improvements.js';
@@ -123,10 +124,15 @@ async function autoMigrate() {
     )
   `));
 
-  await runMigrationStep('app_access seed (chad -> cashflow)', () => pool.query(
-    `INSERT INTO app_access (email, app_key) VALUES ($1, $2) ON CONFLICT (email, app_key) DO NOTHING`,
-    ['chad@philo.ventures', 'cashflow']
-  ));
+  // Once only (marker row), so removing it in Settings -> App access sticks.
+  await runMigrationStep('app_access seed (chad -> cashflow)', async () => {
+    await pool.query('CREATE TABLE IF NOT EXISTS app_access_seeds (seed VARCHAR(100) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
+    const { rowCount } = await pool.query("INSERT INTO app_access_seeds (seed) VALUES ('chad-cashflow') ON CONFLICT DO NOTHING");
+    if (rowCount) {
+      await pool.query(`INSERT INTO app_access (email, app_key) VALUES ($1, $2) ON CONFLICT (email, app_key) DO NOTHING`,
+        ['chad@philo.ventures', 'cashflow']);
+    }
+  });
 
   await runMigrationStep('cashflow tables', () => cashflowDb.createTables());
   await runMigrationStep('cashflow divisions seed', () => cashflowDb.seedDivisions());
@@ -249,6 +255,33 @@ async function autoMigrate() {
   await runMigrationStep('allowed_emails is_admin column', () => pool.query(`
     ALTER TABLE allowed_emails ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false
   `));
+
+  // Per-app access (approved 2026-11-11): everyone who can log in starts
+  // with the Project Board and Design (admins have everything anyway). A
+  // marker row makes this run ONCE, so it never re-grants something an
+  // admin later removed; people added afterwards start with nothing.
+  await runMigrationStep('app_access seed (board + design for everyone)', async () => {
+    await pool.query('CREATE TABLE IF NOT EXISTS app_access_seeds (seed VARCHAR(100) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rowCount } = await client.query(
+        "INSERT INTO app_access_seeds (seed) VALUES ('board-design-2026-11-11') ON CONFLICT DO NOTHING");
+      if (rowCount) {
+        const r = await client.query(`INSERT INTO app_access (email, app_key)
+          SELECT e.email, k FROM allowed_emails e CROSS JOIN UNNEST($1::text[]) AS k
+          WHERE NOT COALESCE(e.is_admin, false)
+          ON CONFLICT (email, app_key) DO NOTHING`, [SEED_APPS]);
+        console.log(`App access: granted ${SEED_APPS.join(' + ')} - ${r.rowCount} grant(s)`);
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
   await runMigrationStep('allowed_emails admin seed (chad, if no admin exists)', () => pool.query(`
     INSERT INTO allowed_emails (email, is_admin)
     SELECT 'chad@philo.ventures', true
@@ -443,8 +476,47 @@ app.post('/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-// Lets the client ask "can this user see app X" to decide nav visibility.
-// The real enforcement is requireAppAccess() on the app's own routes below.
+// Everything the signed-in person can see: { isAdmin, apps: [keys] } -
+// drives the sidebar and the page guards. Enforcement for apps with their
+// own data is requireAppAccess() on those routers.
+app.get('/api/my-access', requireAuth, async (req, res) => {
+  try {
+    res.json(await myAppAccess(req.user.email));
+  } catch (error) {
+    console.error('Access lookup failed:', error.message);
+    res.status(500).json({ error: 'Access lookup failed' });
+  }
+});
+
+// Settings -> App access. Anyone signed in can see who has what; only
+// admins can change it.
+app.get('/api/app-access', requireAuth, async (req, res) => {
+  try {
+    const [access, people] = await Promise.all([listAppAccess(), listAllowedEmails()]);
+    res.json({ groups: APP_GROUPS, access, people });
+  } catch (error) {
+    console.error('Failed to list app access:', error.message);
+    res.status(500).json({ error: 'Failed to list app access' });
+  }
+});
+
+// { email, appKeys: [...], granted: true|false }
+app.put('/api/app-access', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { email, appKeys, granted } = req.body || {};
+    if (typeof granted !== 'boolean' || !Array.isArray(appKeys) || !email) {
+      return res.status(400).json({ error: 'email, appKeys and granted are required' });
+    }
+    await setAppAccess(email, appKeys, granted);
+    res.json({ success: true, access: await listAppAccess() });
+  } catch (error) {
+    if (error instanceof AccessRuleError) return res.status(409).json({ error: error.message });
+    console.error('Failed to change app access:', error.message);
+    res.status(500).json({ error: 'Failed to change app access' });
+  }
+});
+
+// Lets the client ask "can this user see app X" (kept for older pages).
 app.get('/api/access/:appKey', requireAuth, async (req, res) => {
   try {
     const hasAccess = await hasAppAccess(req.user.email, req.params.appKey);

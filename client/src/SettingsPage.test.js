@@ -6,19 +6,28 @@ const PEOPLE = [
   { name: 'Chad', email: 'chad@philo.ventures' },
   { name: 'Greg', email: 'greg@philo.ventures' },
 ];
+const GROUPS = [
+  { id: 'labs', label: 'Labs', apps: [{ key: 'board', label: 'Project Board' }, { key: 'modeling', label: 'Modeling' }] },
+  { id: 'shared', label: 'Shared Service Tools', apps: [{ key: 'design', label: 'Design' }] },
+];
 const ACCESS = [
   { email: 'chad@philo.ventures', isAdmin: true },
   { email: 'greg@philo.ventures', isAdmin: false },
   { email: 'jeff@addaxoutdoors.com', isAdmin: false },
 ];
 
+let grants;
 function mockServer(extra = () => null) {
+  grants = { 'greg@philo.ventures': ['board', 'design'] };
   global.fetch = jest.fn((url, opts = {}) => {
     const custom = extra(url, opts);
     if (custom) return custom;
     if (url.endsWith('/api/people')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: PEOPLE }) });
     if (url.endsWith('/api/allowed-emails')) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ emails: ACCESS.map((a) => a.email), access: ACCESS }) });
+    }
+    if (url.endsWith('/api/app-access') && !opts.method) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ groups: GROUPS, access: grants, people: ACCESS }) });
     }
     throw new Error(`unexpected fetch ${url}`);
   });
@@ -87,4 +96,35 @@ test('a refusal from the server is shown, not silently treated as success', asyn
   expect(alert).toHaveBeenCalledWith("That's the last admin - make someone else an admin first.");
   expect(screen.getByDisplayValue('jeff@addaxoutdoors.com')).toBeInTheDocument(); // still listed
   alert.mockRestore();
+});
+
+// ---- App access (Settings -> App access) ----
+const appBox = (title) => screen.getByTitle(title);
+
+test('app access: shows grants; admins have everything; non-admins can\'t change anything', async () => {
+  mockServer();
+  render(<SettingsPage user={{ email: 'greg@philo.ventures', name: 'Greg' }} onLogout={() => {}} />);
+  await screen.findByTitle('Project Board for Greg');
+  expect(appBox('Project Board for Greg')).toBeChecked();
+  expect(appBox('Modeling for Greg')).not.toBeChecked();
+  expect(appBox('Modeling for Chad')).toBeChecked(); // admin: everything
+  expect(appBox('Modeling for jeff@addaxoutdoors.com')).not.toBeChecked(); // nothing until granted
+  expect(appBox('Modeling for Greg')).toBeDisabled(); // Greg isn't an admin
+});
+
+test('app access: an admin ticking a heading grants all of its apps in one call', async () => {
+  mockServer((url, opts) => {
+    if (!(url.endsWith('/api/app-access') && opts.method === 'PUT')) return null;
+    const { email, appKeys } = JSON.parse(opts.body);
+    grants = { ...grants, [email]: appKeys }; // the server now has it
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, access: grants }) });
+  });
+  render(<SettingsPage user={{ email: 'chad@philo.ventures', name: 'Chad' }} onLogout={() => {}} />);
+  await screen.findByTitle('Project Board for Greg');
+  const jeffLabs = within(appBox('Modeling for jeff@addaxoutdoors.com').closest('tr')).getAllByTitle('All of Labs')[0];
+  expect(appBox('Modeling for Chad')).toBeDisabled(); // admins can't be narrowed
+  fireEvent.click(jeffLabs);
+  await waitFor(() => expect(appBox('Modeling for jeff@addaxoutdoors.com')).toBeChecked());
+  const put = global.fetch.mock.calls.find(([url, o]) => url.endsWith('/api/app-access') && o.method === 'PUT');
+  expect(JSON.parse(put[1].body)).toEqual({ email: 'jeff@addaxoutdoors.com', appKeys: ['board', 'modeling'], granted: true });
 });

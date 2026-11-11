@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
-import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import './App.css';
 import './Loading.css';
@@ -22,6 +22,7 @@ import { deriveGridInputs } from './strategyGridMath';
 import AssigneeInput from './AssigneeInput';
 import { matchesPersonFilter, tasksShownFor } from './boardFilters';
 import { taskAge } from './taskAge';
+import { AccessProvider, Gate, HomeRedirect } from './access';
 import { ResourceIcon } from './ProjectResources';
 import { detectSource, kindLabel, quickOpenLinks } from './resources';
 
@@ -328,26 +329,28 @@ function App() {
   // Authenticated app shell
   return (
     <>
+      <AccessProvider>
       <Layout user={user} onLogout={handleLogout}>
         <Routes>
-          <Route path="/" element={<Navigate to="/labs/board" replace />} />
-          <Route path="/labs/board" element={<OriginationBoard user={user} />} />
-          <Route path="/labs/board/projects/:projectId" element={<ProjectDetailRoute user={user} />} />
-          <Route path="/labs/portfolio" element={<Portfolio />} />
-          <Route path="/labs/strategy-grid" element={<StrategyGrid />} />
-          <Route path="/labs/studio" element={<OriginationBoard user={user} studioMode={true} />} />
-          <Route path="/labs/orgcharts" element={<OrgCharts />} />
-          <Route path="/labs/cashflow" element={<Cashflow />} />
-          <Route path="/labs/improvements" element={<Improvements />} />
-          <Route path="/labs/modeling" element={<Suspense fallback={routeFallback}><Modeling /></Suspense>} />
-          <Route path="/labs/modeling/projects/:projectId" element={<Suspense fallback={routeFallback}><ModelingProjectPage /></Suspense>} />
-          <Route path="/shared/design" element={<DesignBoard user={user} />} />
-          <Route path="/dev/site-planner" element={<Suspense fallback={routeFallback}><SitePlanner /></Suspense>} />
-          <Route path="/dev/site-planner/:planId" element={<Suspense fallback={routeFallback}><SitePlanEditor /></Suspense>} />
+          <Route path="/" element={<HomeRedirect />} />
+          <Route path="/labs/board" element={<Gate app="board"><OriginationBoard user={user} /></Gate>} />
+          <Route path="/labs/board/projects/:projectId" element={<Gate app="board"><ProjectDetailRoute user={user} /></Gate>} />
+          <Route path="/labs/portfolio" element={<Gate app="portfolio"><Portfolio /></Gate>} />
+          <Route path="/labs/strategy-grid" element={<Gate app="strategy-grid"><StrategyGrid /></Gate>} />
+          <Route path="/labs/studio" element={<Gate app="studio"><OriginationBoard user={user} studioMode={true} /></Gate>} />
+          <Route path="/labs/orgcharts" element={<Gate app="orgcharts"><OrgCharts /></Gate>} />
+          <Route path="/labs/cashflow" element={<Gate app="cashflow"><Cashflow /></Gate>} />
+          <Route path="/labs/improvements" element={<Gate app="improvements"><Improvements /></Gate>} />
+          <Route path="/labs/modeling" element={<Gate app="modeling"><Suspense fallback={routeFallback}><Modeling /></Suspense></Gate>} />
+          <Route path="/labs/modeling/projects/:projectId" element={<Gate app="modeling"><Suspense fallback={routeFallback}><ModelingProjectPage /></Suspense></Gate>} />
+          <Route path="/shared/design" element={<Gate app="design"><DesignBoard user={user} /></Gate>} />
+          <Route path="/dev/site-planner" element={<Gate app="site-planner"><Suspense fallback={routeFallback}><SitePlanner /></Suspense></Gate>} />
+          <Route path="/dev/site-planner/:planId" element={<Gate app="site-planner"><Suspense fallback={routeFallback}><SitePlanEditor /></Suspense></Gate>} />
           <Route path="/settings" element={<SettingsPage user={user} onLogout={handleLogout} />} />
-          <Route path="*" element={<Navigate to="/labs/board" replace />} />
+          <Route path="*" element={<HomeRedirect />} />
         </Routes>
       </Layout>
+      </AccessProvider>
       {showDevTools && <DevTools user={user} onClose={() => setShowDevTools(false)} />}
       {!showDevTools && (
         <button className="devtools-toggle" onClick={() => setShowDevTools(true)}>

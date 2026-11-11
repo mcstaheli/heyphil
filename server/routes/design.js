@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth, makeRequireAdmin } from '../auth-middleware.js';
 import * as designDb from '../design-db.js';
-import { isAdmin } from '../permissions.js';
+import { isAdmin, requireAppAccess } from '../permissions.js';
 import {
   DesignValidationError,
   MAX_ATTACHMENT_BYTES,
@@ -17,7 +17,8 @@ const router = express.Router();
 // to a card's journal, add files and edit the type lists; deleting a card
 // is admin-only, and a journal entry or file can be removed by whoever
 // added it or an admin.
-router.use(requireAuth);
+// Only people granted this app (Settings -> App access); admins always.
+router.use(requireAuth, requireAppAccess('design'));
 const requireDesignAdmin = makeRequireAdmin(isAdmin, 'Only admins can delete design requests.');
 
 // A malformed id can't match anything; answer 404 before Postgres refuses it.

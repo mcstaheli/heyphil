@@ -1,5 +1,6 @@
 import pool from './db.js';
 import { checkRevokeLogin, checkSetAdmin } from './access-rules.js';
+import { APP_KEYS, SEED_APPS, isAppKey } from './app-catalog.js';
 
 // ========== LOGIN ACCESS ==========
 // Who can authenticate at all (checked in the Google OAuth verify
@@ -69,6 +70,9 @@ export async function revokeEmailLogin(actorEmail, email) {
     const reason = checkRevokeLogin({ actorEmail, targetEmail: email, targetIsAdmin: target.is_admin, adminCount });
     if (reason) throw new AccessRuleError(reason);
     await client.query('DELETE FROM allowed_emails WHERE email = $1', [email]);
+    // their app grants go too - if they're let back in later, they start
+    // from nothing like anyone new
+    await client.query('DELETE FROM app_access WHERE email = $1', [email]);
     return true;
   });
 }
@@ -81,16 +85,57 @@ export async function setAdmin(actorEmail, email, makeAdmin) {
     const reason = checkSetAdmin({ makeAdmin, targetIsAdmin: target.is_admin, adminCount });
     if (reason) throw new AccessRuleError(reason);
     await client.query('UPDATE allowed_emails SET is_admin = $2 WHERE email = $1', [email, !!makeAdmin]);
+    // an admin had every app without grants; on demotion they keep what
+    // everyone starts with (Project Board + Design) rather than nothing
+    if (!makeAdmin && target.is_admin) {
+      await client.query(`INSERT INTO app_access (email, app_key) SELECT $1, k FROM UNNEST($2::text[]) AS k
+        ON CONFLICT (email, app_key) DO NOTHING`, [email, SEED_APPS]);
+    }
     return true;
   });
 }
 
+// Admins have every app; everyone else only what they're granted.
 export async function hasAppAccess(email, appKey) {
   const result = await pool.query(
-    'SELECT 1 FROM app_access WHERE email = $1 AND app_key = $2',
-    [email, appKey]
+    `SELECT 1 FROM allowed_emails WHERE email = $1 AND is_admin
+     UNION ALL SELECT 1 FROM app_access WHERE email = $1 AND app_key = $2`,
+    [(email || '').toLowerCase(), appKey]
   );
   return result.rows.length > 0;
+}
+
+// { isAdmin, apps: [keys] } for one person (admins: every app).
+export async function myAppAccess(email) {
+  const e = (email || '').toLowerCase();
+  const [admin, { rows }] = await Promise.all([
+    isAdmin(e),
+    pool.query('SELECT app_key FROM app_access WHERE email = $1', [e]),
+  ]);
+  if (admin) return { isAdmin: true, apps: [...APP_KEYS] };
+  return { isAdmin: false, apps: rows.map((r) => r.app_key).filter(isAppKey) };
+}
+
+// Everyone's grants: { email: [keys] }.
+export async function listAppAccess() {
+  const { rows } = await pool.query('SELECT email, app_key FROM app_access ORDER BY email, app_key');
+  const out = {};
+  rows.forEach((r) => { (out[r.email] = out[r.email] || []).push(r.app_key); });
+  return out;
+}
+
+// Grant or remove apps for someone who can log in.
+export async function setAppAccess(email, appKeys, granted) {
+  const e = (email || '').toLowerCase();
+  const keys = (appKeys || []).filter(isAppKey);
+  if (!keys.length) throw new AccessRuleError('No known app given.');
+  if (!(await isEmailAllowedToLogin(e))) throw new AccessRuleError("That email can't log in - grant login first.");
+  if (granted) {
+    await pool.query(`INSERT INTO app_access (email, app_key) SELECT $1, k FROM UNNEST($2::text[]) AS k
+      ON CONFLICT (email, app_key) DO NOTHING`, [e, keys]);
+  } else {
+    await pool.query('DELETE FROM app_access WHERE email = $1 AND app_key = ANY($2::text[])', [e, keys]);
+  }
 }
 
 export function requireAppAccess(appKey) {

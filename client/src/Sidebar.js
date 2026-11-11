@@ -1,57 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import './Sidebar.css';
+import { APP_GROUPS } from './appCatalog';
+import { useAccess } from './access';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || '';
-
-const LABS_APPS = [
-  { path: '/labs/board', label: 'Project Board' },
-  { path: '/labs/portfolio', label: 'Portfolio' },
-  { path: '/labs/strategy-grid', label: 'Strategy Grid' },
-  { path: '/labs/studio', label: 'Studio Board' },
-  { path: '/labs/orgcharts', label: 'Org Charts' },
-  { path: '/labs/cashflow', label: 'Cashflow', accessKey: 'cashflow' },
-  { path: '/labs/improvements', label: 'Improvements' },
-  { path: '/labs/modeling', label: 'Modeling' },
-];
-
-// Each sidebar group: a heading that opens and closes its list of apps.
-// An app with an accessKey shows only to people granted it (Settings).
-const GROUPS = [
-  { id: 'labs', label: 'Labs', icon: '🧪', apps: LABS_APPS },
-  {
-    id: 'shared',
-    label: 'Shared Service Tools',
-    icon: '🤝',
-    apps: [{ path: '/shared/design', label: 'Design' }],
-  },
-  {
-    id: 'dev',
-    label: 'Dev Tools',
-    icon: '🏗️',
-    apps: [{ path: '/dev/site-planner', label: 'Site Planner' }],
-  },
-];
+// Each person sees only the apps they're granted (Settings -> App access);
+// admins see everything. A heading with none of your apps isn't shown.
+const GROUPS = APP_GROUPS;
 
 function Sidebar({ user, onLogout }) {
   const [openGroups, setOpenGroups] = useState(() => Object.fromEntries(GROUPS.map((g) => [g.id, true])));
   const [collapsed, setCollapsed] = useState(false);
-  const [access, setAccess] = useState({});
+  const { apps: myApps } = useAccess();
 
-  useEffect(() => {
-    const gatedKeys = [...new Set(GROUPS.flatMap((g) => g.apps).map((a) => a.accessKey).filter(Boolean))];
-    const token = localStorage.getItem('authToken');
-    gatedKeys.forEach((key) => {
-      fetch(`${API_BASE_URL}/api/access/${key}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => res.json())
-        .then((data) => setAccess((prev) => ({ ...prev, [key]: !!data.hasAccess })))
-        .catch(() => setAccess((prev) => ({ ...prev, [key]: false })));
-    });
-  }, []);
-
-  const visibleApps = (group) => group.apps.filter((app) => !app.accessKey || access[app.accessKey]);
+  const visibleApps = (group) => group.apps.filter((app) => myApps.includes(app.key));
 
   // Subcategories (a group's links) only ever show as text, so they're
   // meaningless in the icon-only collapsed rail - clicking a group

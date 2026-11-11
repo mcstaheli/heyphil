@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import './SettingsPage.css';
 import './Settings.css';
+import AppAccessSection from './AppAccessSection';
+import { ACCESS_CHANGED } from './accessEvents';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -45,6 +47,7 @@ function TeamSection({ currentUser }) {
         setPeople(peopleData.people || []);
         setAccess(accessData.access || (accessData.emails || []).map((email) => ({ email, isAdmin: false })));
         setLoading(false);
+        window.dispatchEvent(new Event(ACCESS_CHANGED)); // App access + sidebar refresh
       })
       .catch(() => setLoading(false));
   };
@@ -347,6 +350,11 @@ function SettingsPage({ user, onLogout }) {
         <div className="settings-card">
           <h2>Team</h2>
           <TeamSection currentUser={user} />
+        </div>
+
+        <div className="settings-card">
+          <h2>App access</h2>
+          <AppAccessSection currentUser={user} />
         </div>
 
         <div className="settings-card">

@@ -1,14 +1,15 @@
 import express from 'express';
 import { requireAuth } from '../auth-middleware.js';
 import * as sitePlansDb from '../site-plans-db.js';
-import { isAdmin } from '../permissions.js';
+import { isAdmin, requireAppAccess } from '../permissions.js';
 import { SitePlanValidationError, isUuid } from '../site-plan-rules.js';
 
 const router = express.Router();
 
 // Everyone who can sign in can create and edit sites; deleting is for the
 // person who created the site or an admin.
-router.use(requireAuth);
+// Only people granted this app (Settings -> App access); admins always.
+router.use(requireAuth, requireAppAccess('site-planner'));
 
 // A malformed id can't match a site; answer 404 before Postgres refuses it.
 router.param('id', (req, res, next, id) => (isUuid(id) ? next() : res.status(404).json({ error: 'Not found' })));

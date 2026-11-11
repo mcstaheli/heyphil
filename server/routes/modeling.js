@@ -7,6 +7,7 @@
 // the optional description given to a new model ("Higher ADR case").
 import express from 'express';
 import { requireAuth } from '../auth-middleware.js';
+import { requireAppAccess } from '../permissions.js';
 import { broadcastChange } from '../realtime.js';
 import * as db from '../modeling/db.js';
 import * as ops from '../modeling/operations.js';
@@ -15,7 +16,8 @@ import * as g from '../modeling/drive-guard.js';
 import { ModelingError, cleanName, cleanNote, nextVersion, nextRootVersion, versionTitle } from '../modeling/rules.js';
 
 const router = express.Router();
-router.use(requireAuth);
+// Only people granted this app (Settings -> App access); admins always.
+router.use(requireAuth, requireAppAccess('modeling'));
 
 const actorOf = (req) => ({ email: req.user.email, name: req.user.name || null });
 const intParam = (v) => {
