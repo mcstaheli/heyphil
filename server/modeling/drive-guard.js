@@ -231,6 +231,42 @@ export async function writeCells(spreadsheetId, { updates = [], appends = [], de
   }
 }
 
+// Template structure on a copy HeyPhil made: add a tab if it's missing and
+// add named ranges (never removes or renames anything). `named`:
+// [{ name, sheet, startRow, endRow, startCol, endCol }] (0-based, end
+// exclusive). Names that already exist are left alone and reported.
+export async function addTemplateStructure(spreadsheetId, { ensureSheets = [], named = [], ensureSize = {} }) {
+  await assertHeyPhilCopy(spreadsheetId);
+  const { sheets } = google_();
+  const { data } = await sheets.spreadsheets.get({ spreadsheetId, fields: 'namedRanges(name),sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))' });
+  const tabs = new Map(data.sheets.map((s) => [s.properties.title, s.properties.sheetId]));
+  const grid = new Map(data.sheets.map((s) => [s.properties.title, s.properties.gridProperties]));
+  const have = new Set((data.namedRanges || []).map((n) => n.name));
+  const add = ensureSheets.filter((t) => !tabs.has(t)).map((title) => ({ addSheet: { properties: { title } } }));
+  if (add.length) {
+    const { data: r } = await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: add } });
+    r.replies.forEach((rep) => tabs.set(rep.addSheet.properties.title, rep.addSheet.properties.sheetId));
+  }
+  // grow (never shrink) a tab so the rows/columns to be written exist
+  const grow = [];
+  for (const [title, want] of Object.entries(ensureSize)) {
+    const have0 = grid.get(title) || { rowCount: 1000, columnCount: 26 }; // a tab just added has the defaults
+    const sheetId = tabs.get(title);
+    if (want.rows > have0.rowCount) grow.push({ appendDimension: { sheetId, dimension: 'ROWS', length: want.rows - have0.rowCount } });
+    if (want.cols > have0.columnCount) grow.push({ appendDimension: { sheetId, dimension: 'COLUMNS', length: want.cols - have0.columnCount } });
+  }
+  if (grow.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: grow } });
+  const skipped = named.filter((n) => have.has(n.name)).map((n) => n.name);
+  const requests = named.filter((n) => !have.has(n.name)).map((n) => {
+    if (!tabs.has(n.sheet)) throw new ModelingError(`No "${n.sheet}" tab for ${n.name}.`);
+    return { addNamedRange: { namedRange: { name: n.name, range: {
+      sheetId: tabs.get(n.sheet), startRowIndex: n.startRow, endRowIndex: n.endRow, startColumnIndex: n.startCol, endColumnIndex: n.endCol,
+    } } } };
+  });
+  if (requests.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+  return { addedSheets: add.length, grew: grow.length, addedNames: requests.length, skipped };
+}
+
 export async function readCells(spreadsheetId, ranges) {
   await assertInside(spreadsheetId);
   const { data } = await google_().sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges });
