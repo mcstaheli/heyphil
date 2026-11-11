@@ -159,7 +159,11 @@ export default function ModelTree({ models, ownerName, onAction, onChanged, empt
               const parent = m.parentModelId ? byId.get(m.parentModelId) : null;
               const from = !parent && m.parentVersion ? `from ${m.parentTemplateName || 'template'} ${m.parentVersion}` : null;
               return (
-                <tr key={m.id} className={m.hiddenAt ? 'mdl-row-hidden' : ''}>
+                <tr key={m.id} className={[
+                  m.hiddenAt ? 'mdl-row-hidden' : '',
+                  // the whole row reads at a glance (#60): Active green, starred yellow
+                  m.isActive ? 'mdl-row-active' : m.starredAt && !m.hiddenAt ? 'mdl-row-starred' : '',
+                ].filter(Boolean).join(' ')}>
                   <td>
                     <div className="mdl-tree-name" style={{ paddingLeft: depth * 22 }}>
                       {depth > 0 && <span className="mdl-tree-branch">└</span>}

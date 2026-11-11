@@ -111,3 +111,9 @@
 .mdl-history-arrow { margin-left: auto; transition: transform 0.15s; color: #7a8194; }
 .mdl-history-arrow.open { transform: rotate(90deg); }
 .mdl-form textarea { padding: 8px 10px; border: 1px solid #cfd3e0; border-radius: 7px; font: inherit; font-size: 14px; resize: vertical; }
+
+/* #60: Active and starred rows highlighted across the whole line */
+.mdl-row-active td { background: #eef9f0; }
+.mdl-row-starred td { background: #fffbea; }
+.mdl-row-active td:first-child { box-shadow: inset 3px 0 0 #34a853; }
+.mdl-row-starred td:first-child { box-shadow: inset 3px 0 0 #e6c25a; }
