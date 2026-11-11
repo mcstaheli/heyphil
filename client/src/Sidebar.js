@@ -12,6 +12,7 @@ const LABS_APPS = [
   { path: '/labs/orgcharts', label: 'Org Charts' },
   { path: '/labs/cashflow', label: 'Cashflow', accessKey: 'cashflow' },
   { path: '/labs/improvements', label: 'Improvements' },
+  { path: '/labs/modeling', label: 'Modeling' },
 ];
 
 // Each sidebar group: a heading that opens and closes its list of apps.

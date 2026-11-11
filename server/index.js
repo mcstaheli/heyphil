@@ -31,6 +31,8 @@ import cashflowRouter from './routes/cashflow.js';
 import improvementsRouter from './routes/improvements.js';
 import designRouter from './routes/design.js';
 import sitePlansRouter from './routes/site-plans.js';
+import modelingRouter from './routes/modeling.js';
+import * as modelingDb from './modeling/db.js';
 import { initRealtime } from './realtime.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -208,6 +210,7 @@ async function autoMigrate() {
   // Shared Service Tools -> Design board.
   await runMigrationStep('design_requests table', () => designDb.createTables());
   await runMigrationStep('site_plans table', () => sitePlansDb.createTables());
+  await runMigrationStep('modeling tables', () => modelingDb.createTables());
 
   // Team management moved from the per-board Settings modal up to the
   // global Settings page (per request - "govern them across Apps" rather
@@ -456,6 +459,7 @@ app.use('/api/cashflow', cashflowRouter);
 app.use('/api/improvements', improvementsRouter);
 app.use('/api/design', designRouter);
 app.use('/api/site-plans', sitePlansRouter);
+app.use('/api/modeling', modelingRouter);
 
 // Google Sheets API with Service Account
 const getSheets = () => {

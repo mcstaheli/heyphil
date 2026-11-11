@@ -28,6 +28,8 @@ import { detectSource, kindLabel, quickOpenLinks } from './resources';
 // The Site Planner brings its own map libraries, so it loads only when opened.
 const SitePlanner = lazy(() => import('./siteplanner/SitePlanner'));
 const SitePlanEditor = lazy(() => import('./siteplanner/SitePlanEditor'));
+const Modeling = lazy(() => import('./modeling/Modeling'));
+const ModelingDealDetail = lazy(() => import('./modeling/DealDetail'));
 const routeFallback = <div className="loading">Loading...</div>;
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -337,6 +339,8 @@ function App() {
           <Route path="/labs/orgcharts" element={<OrgCharts />} />
           <Route path="/labs/cashflow" element={<Cashflow />} />
           <Route path="/labs/improvements" element={<Improvements />} />
+          <Route path="/labs/modeling" element={<Suspense fallback={routeFallback}><Modeling /></Suspense>} />
+          <Route path="/labs/modeling/deals/:dealId" element={<Suspense fallback={routeFallback}><ModelingDealDetail /></Suspense>} />
           <Route path="/shared/design" element={<DesignBoard user={user} />} />
           <Route path="/dev/site-planner" element={<Suspense fallback={routeFallback}><SitePlanner /></Suspense>} />
           <Route path="/dev/site-planner/:planId" element={<Suspense fallback={routeFallback}><SitePlanEditor /></Suspense>} />

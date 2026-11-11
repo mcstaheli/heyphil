@@ -1,0 +1,75 @@
+/* Labs -> Modeling. Same gradient banner as the other tools. */
+.mdl-page { height: 100%; overflow-y: auto; background: #f5f7fa; }
+.mdl-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; padding: 20px 30px; }
+.mdl-header h2 { margin: 0 0 4px; }
+.mdl-header a { color: #fff; }
+.mdl-subtitle { margin: 0; color: rgba(255, 255, 255, 0.85); font-size: 14px; }
+.mdl-back { background: none; border: none; color: rgba(255, 255, 255, 0.85); padding: 0; margin-bottom: 6px; cursor: pointer; font-size: 13px; }
+.mdl-tabs { display: flex; gap: 4px; padding: 0 30px; background: #fff; border-bottom: 1px solid #e3e6ee; }
+.mdl-tab { background: none; border: none; border-bottom: 3px solid transparent; padding: 12px 14px; font-weight: 600; color: #5b6275; cursor: pointer; }
+.mdl-tab.active { color: #5a4fcf; border-bottom-color: #5a4fcf; }
+.mdl-panel { padding: 20px 30px 40px; display: flex; flex-direction: column; gap: 16px; }
+.mdl-page-error { padding: 20px 30px; }
+.mdl-card { background: #fff; border: 1px solid #e3e6ee; border-radius: 10px; padding: 16px 18px; }
+.mdl-card p { margin: 4px 0; }
+.mdl-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mdl-toolbar h3 { margin: 0; }
+.mdl-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+.mdl-table th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #7a8194; padding: 8px; border-bottom: 1px solid #e3e6ee; }
+.mdl-table td { padding: 10px 8px; border-bottom: 1px solid #f0f2f6; vertical-align: top; }
+.mdl-panel > .mdl-table { background: #fff; border-radius: 10px; }
+.mdl-row-link { cursor: pointer; }
+.mdl-row-link:hover td { background: #f8f8fd; }
+.mdl-filename { font-size: 12px; color: #8a90a2; margin-top: 2px; word-break: break-word; }
+.mdl-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mdl-btn { display: inline-block; background: #fff; border: 1px solid #cfd3e0; color: #333a4d; border-radius: 7px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
+.mdl-btn:hover { border-color: #5a4fcf; color: #5a4fcf; }
+.mdl-btn-primary { background: #5a4fcf; border-color: #5a4fcf; color: #fff; }
+.mdl-btn-primary:hover { background: #4a40b8; color: #fff; }
+.mdl-btn:disabled { opacity: 0.5; cursor: default; }
+.mdl-linkbtn { background: none; border: none; padding: 0; color: #5a4fcf; text-decoration: underline; cursor: pointer; font: inherit; }
+.mdl-badge { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.mdl-badge-active { background: #e3f6e8; color: #1c7a3a; }
+.mdl-badge-locked { background: #eef0f6; color: #3f4660; }
+.mdl-badge-unlocked { background: #fff1d6; color: #9a5b00; }
+.mdl-badge-new { background: #e8e5ff; color: #5a4fcf; }
+.mdl-status-succeeded { background: #e3f6e8; color: #1c7a3a; }
+.mdl-status-failed { background: #ffe3e3; color: #b42318; }
+.mdl-status-running { background: #e8e5ff; color: #5a4fcf; }
+.mdl-muted { color: #7a8194; font-size: 13px; }
+.mdl-empty { color: #7a8194; font-style: italic; }
+.mdl-error { color: #b42318; }
+.mdl-ok { color: #1c7a3a; }
+.mdl-warn { color: #9a5b00; font-size: 13px; }
+.mdl-hint { display: block; font-size: 12px; color: #7a8194; margin-top: 4px; font-weight: 400; }
+.mdl-modal { max-width: 560px; }
+.mdl-form { display: flex; flex-direction: column; gap: 12px; }
+.mdl-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; }
+.mdl-form input:not([type="radio"]):not([type="checkbox"]), .mdl-form select { padding: 8px 10px; border: 1px solid #cfd3e0; border-radius: 7px; font-size: 14px; }
+.mdl-radio-row { display: flex; gap: 18px; }
+.mdl-radio-row label { flex-direction: row; align-items: center; gap: 6px; font-weight: 500; }
+.mdl-op { display: flex; flex-direction: column; gap: 10px; }
+.mdl-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.mdl-step { display: flex; gap: 8px; }
+.mdl-step-icon { width: 18px; text-align: center; flex-shrink: 0; }
+.mdl-step-pending { color: #9aa0b1; }
+.mdl-step-done .mdl-step-icon { color: #1c7a3a; font-weight: 700; }
+.mdl-step-failed { color: #b42318; }
+.mdl-step-running { font-weight: 600; }
+.mdl-step-detail { color: #7a8194; font-weight: 400; }
+.mdl-working { color: #5a4fcf; font-weight: 600; }
+.mdl-result { border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.mdl-result p { margin: 6px 0; }
+.mdl-result-ok { background: #e3f6e8; color: #145c2c; }
+.mdl-result-failed { background: #ffecec; color: #7a1a12; }
+.mdl-links { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.mdl-result a { margin-right: 10px; }
+.mdl-import-item { background: #fff; border: 1px solid #e3e6ee; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.mdl-check { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.mdl-sub { margin-left: 26px; font-size: 13px; }
+.mdl-import-footer { justify-content: flex-end; }
+.mdl-panel h4 { margin: 8px 0 0; }
+@media (max-width: 700px) {
+  .mdl-header, .mdl-panel, .mdl-tabs { padding-left: 16px; padding-right: 16px; }
+  .mdl-table { display: block; overflow-x: auto; }
+}
