@@ -1,75 +1,128 @@
-// Modeling (Labs) - the long actions (Release Template, Use Template,
-// Lock Version, Lock file, Export to Excel), run step by step in the
-// background. Every step is saved as it finishes, with what it created, so:
+// Modeling (Labs) - the long actions, run step by step in the background:
+//   copy         - a named, Unlocked copy of any model, in its owner's
+//                  Models folder (the source is only read)
+//   use-template - a copy of a template's Active model into a project
+//   lock         - lock a model in place (Drive Lock), optionally then
+//                  Make Active
+//   export       - Excel export of any model
+// Every step is saved as it finishes, with what it created, so:
 //   - the page shows live progress and a clear result,
-//   - a failure stops the action and records exactly which steps were and
+//   - a failure stops the action and records which steps were and
 //     weren't done (with links to anything already created),
-//   - Retry resumes from the first unfinished step. Steps are written to
-//     be safe to repeat: copies are found again by the operation id
-//     stamped on them, folders are found by name before being created, and
-//     database rows are keyed by Drive file id.
-// Nothing is ever deleted or overwritten.
+//   - Retry resumes from the first unfinished step. Steps are safe to
+//     repeat: copies are found again by the operation id stamped on them,
+//     folders are found by name before being created, rows are keyed by
+//     Drive file id, and a VERSIONS row is only added if it isn't there.
+// Nothing is ever deleted, moved, renamed or overwritten.
 import * as g from './drive-guard.js';
 import * as db from './db.js';
 import { broadcastChange } from '../realtime.js';
 import { financialModelOnly } from './export-xlsx.js';
 import {
-  ModelingError, releaseFileName, workingModelFileName, versionFileName, exportFileName,
-  releaseStamp, workingStamp, versionStamp, versionsRow, sheetUrl, hasAnyReadOnly, isLockedRestriction,
-  copyFileName, copyStamp, promotedStamp, versionLabel,
+  ModelingError, exportFileName, releaseStamp, workingStamp, versionStamp, copyStamp, versionsRow, sheetUrl,
+  hasAnyReadOnly, isLockedRestriction, modelFileName, nextVersion, nextRootVersion, versionTitle,
 } from './rules.js';
 
 const FM_FOLDER = 'Financial Modeling';
 
-// Folders inside a deal's Financial Modeling folder, made if missing.
-async function ensureDealSubfolders(deal, opId) {
+// ---------------------------------------------------------------- owners
+// A model belongs to a template or a project; this is where its copies and
+// exports go (folders made if missing, inside the owner's folder only).
+export async function ownerOf(model) {
+  if (model.templateId) {
+    const template = await db.getTemplate(model.templateId);
+    return { kind: 'template', id: template.id, key: `template:${template.id}`, template, name: template.name };
+  }
+  const project = await db.getProject(model.projectId);
+  return { kind: 'project', id: project.id, key: `project:${project.id}`, project, name: project.name };
+}
+
+export const ownerKey = (model) => (model.templateId ? `template:${model.templateId}` : `project:${model.projectId}`);
+
+async function ensureProjectFolders(project, opId) {
   const app = { heyphilOp: String(opId) };
-  const versions = deal.versionsFolderId ? await g.getFile(deal.versionsFolderId) : await g.findOrCreateFolder(deal.fmFolderId, 'Versions', app);
-  const exportsF = deal.exportsFolderId ? await g.getFile(deal.exportsFolderId) : await g.findOrCreateFolder(deal.fmFolderId, 'Exports', app);
-  await db.setDealFolders(deal.id, { versionsFolderId: versions.id, exportsFolderId: exportsF.id });
-  return { versionsFolderId: versions.id, exportsFolderId: exportsF.id };
+  let fmId = project.fmFolderId;
+  if (!fmId) {
+    const dealFolder = project.dealFolderId ? await g.getFile(project.dealFolderId) : await g.findOrCreateFolder(g.MODELING_PROJECTS_FOLDER_ID, project.name, app);
+    fmId = (await g.findOrCreateFolder(dealFolder.id, FM_FOLDER, app)).id;
+    await db.setProjectFolders(project.id, { dealFolderId: dealFolder.id, fmFolderId: fmId });
+  }
+  const models = project.modelsFolderId ? await g.getFile(project.modelsFolderId) : await g.findOrCreateFolder(fmId, 'Models', app);
+  const exportsF = project.exportsFolderId ? await g.getFile(project.exportsFolderId) : await g.findOrCreateFolder(fmId, 'Exports', app);
+  await db.setProjectFolders(project.id, { modelsFolderId: models.id, exportsFolderId: exportsF.id });
+  return { fmFolderId: fmId, modelsFolderId: models.id, exportsFolderId: exportsF.id };
 }
 
-async function ensureCopiesFolder(deal, opId) {
-  const folder = deal.copiesFolderId
-    ? await g.getFile(deal.copiesFolderId)
-    : await g.findOrCreateFolder(deal.fmFolderId, 'Copies', { heyphilOp: String(opId) });
-  await db.setDealFolders(deal.id, { copiesFolderId: folder.id });
-  return folder.id;
+async function ownerFolders(owner, opId) {
+  if (owner.kind === 'project') return ensureProjectFolders(await db.getProject(owner.id), opId);
+  const t = owner.template;
+  if (!t.modelsFolderId) throw new ModelingError(`${t.name} has no models folder registered.`);
+  const exportsF = t.exportsFolderId ? await g.getFile(t.exportsFolderId) : await g.findOrCreateFolder(t.folderId, 'Exports', { heyphilOp: String(opId) });
+  return { modelsFolderId: t.modelsFolderId, exportsFolderId: exportsF.id };
 }
 
-async function stampNewCopy(fileId, template, { stamp, row, removeProtections = false }) {
+// The template a model's family started from (walks up the tree).
+async function rootTemplate(model) {
+  let m = model;
+  for (let i = 0; i < 50 && m; i += 1) {
+    if (m.templateId) return db.getTemplate(m.templateId);
+    m = m.parentModelId ? await db.getModel(m.parentModelId) : null; // eslint-disable-line no-await-in-loop
+  }
+  return null;
+}
+
+// The Drive name for a new model of this owner.
+async function newFileName(owner, sourceModel, version, label) {
+  if (owner.kind === 'template') {
+    const src = await g.getFile(sourceModel.fileId);
+    return modelFileName({ templateFileName: src.name, version, label });
+  }
+  const t = await rootTemplate(sourceModel);
+  return modelFileName({ projectName: owner.name, templateName: t?.name, version, label });
+}
+
+// ---------------------------------------------------------------- sheet writes
+// Sheet writes happen only on copies HeyPhil made (the guard refuses
+// anything else); files registered by Import are left exactly as they are.
+async function stampCopy(fileId, template, { stamp, row, removeProtections = false }) {
   const updates = [{ range: template.stampCell, values: [[stamp]] }];
   let appends = row ? [{ range: template.versionsRange, values: [row] }] : [];
   if (row) {
-    // a retry must not add the row twice: the copy's link (column G) is unique to it
+    // a retry must not add the row twice: the file's own link (column G) is unique to it
     const [existing] = await g.readCells(fileId, [template.versionsRange]);
     if (existing.some((r) => r[5] === row[5])) appends = [];
   }
   let deleteProtectedRangeIds = [];
   if (removeProtections) {
     const sheets = await g.readSheetMeta(fileId);
-    const ranges = sheets.flatMap((s) => s.protectedRanges || []);
-    deleteProtectedRangeIds = ranges.map((r) => r.protectedRangeId);
+    deleteProtectedRangeIds = sheets.flatMap((s) => s.protectedRanges || []).map((r) => r.protectedRangeId);
   }
-  await g.writeCells(fileId, { updates, appends, deleteProtectedRangeIds });
+  try {
+    await g.writeCells(fileId, { updates, appends, deleteProtectedRangeIds });
+  } catch (error) {
+    if (deleteProtectedRangeIds.length && [400, 403].includes(error.code || error.response?.status)) {
+      throw new ModelingError("The copy was made, but it carries sheet protections from the old script that HeyPhil can't remove, so parts of it stay read-only.");
+    }
+    throw error;
+  }
 }
 
-// A release's lock is re-read from Drive (someone could have unlocked it
-// by hand); HeyPhil's record is corrected if so.
-export async function assertReleaseLockedInDrive(rel) {
-  const meta = await g.getFile(rel.fileId);
+// A locked model's lock is re-read from Drive (a Manager could have
+// unlocked it by hand); HeyPhil's record is corrected if so.
+export async function assertLockedInDrive(model) {
+  const meta = await g.getFile(model.fileId);
   if (!isLockedRestriction(meta.contentRestrictions)) {
-    await db.markReleaseUnlocked(rel.id);
-    throw new ModelingError(`${rel.version} is no longer locked in Drive (someone unlocked it). Lock it again from the Templates tab first.`);
+    await db.markUnlocked(model.id);
+    throw new ModelingError(`${model.version} is no longer locked in Drive (someone unlocked it by hand). Lock it again first.`);
   }
 }
 
-async function assertNoOtherWorkingModel(dealId, opId) {
-  const w = await db.workingVersion(dealId);
-  if (w && w.operationId !== opId) {
-    throw new ModelingError('This deal already has a working model (made by another action) - nothing more to do here.', 409);
-  }
+// A brand-new copy: unlock it if it inherited its source's Drive Lock,
+// then stamp it (and drop any sheet protections it inherited).
+async function prepareNewCopy(fileId, template, stamp) {
+  const meta = await g.getFile(fileId);
+  if (hasAnyReadOnly(meta.contentRestrictions)) await g.unlockNewCopy(fileId);
+  if (template) await stampCopy(fileId, template, { stamp, removeProtections: true });
 }
 
 // ---------------------------------------------------------------- kinds
@@ -77,254 +130,167 @@ async function assertNoOtherWorkingModel(dealId, opId) {
 // saved after every step; ctx.mem lives only for this run (rerun steps
 // rebuild it on retry).
 export const KINDS = {
-  release: {
-    title: (p) => `Release ${p.version}`,
+  copy: {
+    title: (p) => `Copy ${p.label}`,
     steps: [
-      { key: 'copy', label: 'Copy the Draft master into Releases' },
-      { key: 'register', label: 'Record the release in HeyPhil' },
-      { key: 'stamp', label: 'Stamp the status line and VERSIONS row in the copy' },
-      { key: 'lock', label: 'Lock the release (view-only)' },
+      { key: 'reserve', label: 'Assign the version number' },
+      { key: 'copy', label: 'Copy the file into Models' },
+      { key: 'register', label: 'Record the copy in HeyPhil' },
+      { key: 'prepare', label: 'Make the copy editable and stamp it' },
     ],
     run: {
+      // saved before anything is copied, so the file's name and its record
+      // always carry the same number, even across a retry
+      async reserve(ctx) {
+        const source = await db.getModel(ctx.params.modelId);
+        ctx.state.version = await db.reserveVersion(ctx.op.id, { templateId: source.templateId, projectId: source.projectId },
+          (taken) => nextVersion(source.version, taken));
+        Object.assign(ctx.state, { templateId: source.templateId || null, projectId: source.projectId || null });
+        return ctx.state.version;
+      },
       async copy(ctx) {
-        const t = await db.getTemplate(ctx.params.templateId);
-        const draft = await g.getFile(t.draftFileId);
-        const name = releaseFileName(draft.name, ctx.params.version);
-        const copy = await g.copyFile(t.draftFileId, t.releasesFolderId, name, { opId: ctx.op.id, step: 'copy' });
+        const source = await db.getModel(ctx.params.modelId);
+        const owner = await ownerOf(source);
+        const { modelsFolderId } = await ownerFolders(owner, ctx.op.id);
+        const name = await newFileName(owner, source, ctx.state.version, ctx.params.modelLabel);
+        const copy = await g.copyFile(source.fileId, modelsFolderId, name, { opId: ctx.op.id, step: 'copy' });
         Object.assign(ctx.state, { fileId: copy.id, fileName: copy.name });
-        if (hasAnyReadOnly(copy.contentRestrictions)) await g.unlockNewCopy(copy.id);
-        return `Created "${copy.name}"`;
+        return `${ctx.state.version}: created "${copy.name}"`;
       },
       async register(ctx) {
-        const rel = await db.insertRelease({
-          templateId: ctx.params.templateId, version: ctx.params.version, fileId: ctx.state.fileId, fileName: ctx.state.fileName,
-          note: ctx.params.note, releasedByEmail: ctx.actor.email, releasedByName: ctx.actor.name, operationId: ctx.op.id,
+        const source = await db.getModel(ctx.params.modelId);
+        const m = await db.insertModel({
+          templateId: source.templateId, projectId: source.projectId, version: ctx.state.version, label: ctx.params.modelLabel, fileId: ctx.state.fileId, fileName: ctx.state.fileName,
+          parentModelId: source.id, origin: 'copy', note: ctx.params.note,
+          createdByEmail: ctx.actor.email, createdByName: ctx.actor.name, operationId: ctx.op.id,
         });
-        ctx.state.releaseId = rel.id;
+        ctx.state.modelId = m.id;
       },
-      async stamp(ctx) {
-        const t = await db.getTemplate(ctx.params.templateId);
-        await stampNewCopy(ctx.state.fileId, t, {
-          stamp: releaseStamp({ version: ctx.params.version, email: ctx.actor.email, note: ctx.params.note }),
-          row: versionsRow({ version: ctx.params.version, type: 'Template release', email: ctx.actor.email, note: ctx.params.note, copyUrl: sheetUrl(ctx.state.fileId), sourceUrl: sheetUrl(t.draftFileId) }),
-        });
-      },
-      async lock(ctx) {
-        await g.lockFile(ctx.state.fileId);
-        await db.markReleaseLocked(ctx.state.releaseId, ctx.actor);
+      async prepare(ctx) {
+        const source = await db.getModel(ctx.params.modelId);
+        const template = await rootTemplate(source);
+        await prepareNewCopy(ctx.state.fileId, template, copyStamp({ sourceName: versionTitle(source), email: ctx.actor.email }));
       },
     },
   },
 
   'use-template': {
-    title: (p) => `Use Template for ${p.dealName}`,
+    title: (p) => `Use Template for ${p.projectName}`,
     steps: [
-      { key: 'check', label: 'Check the Active release', rerun: true },
-      { key: 'deal', label: 'Record the deal in HeyPhil' },
-      { key: 'folders', label: 'Find or create the deal folders' },
-      { key: 'copy', label: 'Copy the Active release as the working model' },
-      { key: 'prepare', label: 'Make the working model editable and stamp it' },
-      { key: 'register', label: 'Record the working model in HeyPhil' },
+      { key: 'check', label: "Check the template's Active model", rerun: true },
+      { key: 'project', label: 'Record the project in HeyPhil' },
+      { key: 'folders', label: 'Find or create the project folders' },
+      { key: 'reserve', label: 'Assign the version number' },
+      { key: 'copy', label: 'Copy the Active model into the project' },
+      { key: 'register', label: 'Record the new model in HeyPhil' },
+      { key: 'prepare', label: 'Make it editable and stamp it' },
     ],
     run: {
       // Runs again on every retry: things may have changed since.
       async check(ctx) {
-        const rel = await db.getRelease(ctx.params.releaseId);
-        if (!rel || rel.status !== 'active') throw new ModelingError('The Active release changed - start Use Template again.');
-        await assertReleaseLockedInDrive(rel);
-        const dealId = ctx.state.dealId || ctx.params.dealId;
-        if (dealId) await assertNoOtherWorkingModel(dealId, ctx.op.id);
-        const sheets = await g.readSheetMeta(rel.fileId);
-        const ranges = sheets.flatMap((s) => s.protectedRanges || []);
-        if (ranges.length) {
-          throw new ModelingError(`${rel.version} has sheet protections made by the old script that HeyPhil can't remove, so a working model copied from it would stay uneditable. Release a new version from HeyPhil and make it Active, then try again.`);
+        const source = await db.getModel(ctx.params.sourceModelId);
+        if (!source || !source.isActive) throw new ModelingError("The template's Active model changed - start Use Template again.");
+        await assertLockedInDrive(source);
+        const sheets = await g.readSheetMeta(source.fileId);
+        if (sheets.some((s) => (s.protectedRanges || []).length)) {
+          throw new ModelingError(`${source.version} has sheet protections made by the old script that HeyPhil can't remove, so a copy would stay read-only. Make a copy of the template's Draft master, lock it and make it Active, then try again.`);
         }
-        return `${rel.version}`;
+        return source.version;
       },
-      async deal(ctx) {
-        if (ctx.params.dealId) { ctx.state.dealId = ctx.params.dealId; return 'Existing deal'; }
-        const existing = await db.findDealByName(ctx.params.dealName);
-        const madeByThisAction = existing && existing.createdByEmail === ctx.op.actorEmail
-          && existing.templateId === ctx.params.templateId && new Date(existing.createdAt) >= new Date(ctx.op.startedAt);
-        if (existing && !madeByThisAction) throw new ModelingError(`Someone else has since created a deal named "${existing.name}" - use Use Template on that deal instead.`, 409);
-        const deal = existing // made by this action before a retry
-          || await db.insertDeal({ name: ctx.params.dealName, templateId: ctx.params.templateId }, ctx.actor);
-        ctx.state.dealId = deal.id;
-        return 'New deal';
+      async project(ctx) {
+        if (ctx.params.projectId) { ctx.state.projectId = ctx.params.projectId; return 'Existing project'; }
+        const existing = await db.findProjectByName(ctx.params.projectName);
+        const madeByThisAction = existing && existing.createdByEmail === ctx.op.actorEmail && new Date(existing.createdAt) >= new Date(ctx.op.startedAt);
+        if (existing && !madeByThisAction) throw new ModelingError(`Someone else has since created a project named "${existing.name}" - use Use Template on it instead.`, 409);
+        const p = existing || await db.insertProject({ name: ctx.params.projectName }, ctx.actor);
+        ctx.state.projectId = p.id;
+        return 'New project';
       },
       async folders(ctx) {
-        const deal = await db.getDeal(ctx.state.dealId);
-        const app = { heyphilOp: String(ctx.op.id) };
-        const dealFolder = deal.dealFolderId ? await g.getFile(deal.dealFolderId) : await g.findOrCreateFolder(g.MODELING_PROJECTS_FOLDER_ID, deal.name, app);
-        const reused = !deal.dealFolderId && dealFolder.appProperties?.heyphilOp !== String(ctx.op.id);
-        const fm = deal.fmFolderId ? await g.getFile(deal.fmFolderId) : await g.findOrCreateFolder(dealFolder.id, FM_FOLDER, app);
-        await db.setDealFolders(deal.id, { dealFolderId: dealFolder.id, fmFolderId: fm.id });
-        await ensureDealSubfolders({ ...deal, fmFolderId: fm.id }, ctx.op.id);
-        Object.assign(ctx.state, { dealFolderId: dealFolder.id, fmFolderId: fm.id });
-        return reused ? `Used the existing "${deal.name}" folder` : `Created "${deal.name}/${FM_FOLDER}"`;
+        const project = await db.getProject(ctx.state.projectId);
+        const reusedDeal = !project.dealFolderId && await g.findChildFolder(g.MODELING_PROJECTS_FOLDER_ID, project.name);
+        const f = await ensureProjectFolders(project, ctx.op.id);
+        ctx.state.modelsFolderId = f.modelsFolderId;
+        return reusedDeal ? `Used the existing "${project.name}" folder` : `"${project.name}/${FM_FOLDER}/Models"`;
+      },
+      async reserve(ctx) {
+        ctx.state.version = await db.reserveVersion(ctx.op.id, { projectId: ctx.state.projectId }, (taken) => nextRootVersion(taken));
+        return ctx.state.version;
       },
       async copy(ctx) {
-        const deal = await db.getDeal(ctx.state.dealId);
-        await assertNoOtherWorkingModel(deal.id, ctx.op.id);
-        const rel = await db.getRelease(ctx.params.releaseId);
-        const copy = await g.copyFile(rel.fileId, ctx.state.fmFolderId, workingModelFileName(deal.name, deal.templateName), { opId: ctx.op.id, step: 'copy' });
+        const project = await db.getProject(ctx.state.projectId);
+        const source = await db.getModel(ctx.params.sourceModelId);
+        const template = await db.getTemplate(source.templateId);
+        const name = modelFileName({ projectName: project.name, templateName: template.name, version: ctx.state.version, label: ctx.params.modelLabel });
+        const copy = await g.copyFile(source.fileId, ctx.state.modelsFolderId, name, { opId: ctx.op.id, step: 'copy' });
         Object.assign(ctx.state, { fileId: copy.id, fileName: copy.name });
-        return `Created "${copy.name}"`;
-      },
-      async prepare(ctx) {
-        const meta = await g.getFile(ctx.state.fileId);
-        if (hasAnyReadOnly(meta.contentRestrictions)) await g.unlockNewCopy(ctx.state.fileId); // came out locked like its release
-        const t = await db.getTemplate(ctx.params.templateId);
-        const rel = await db.getRelease(ctx.params.releaseId);
-        await stampNewCopy(ctx.state.fileId, t, { stamp: workingStamp({ releaseVersion: rel.version }), removeProtections: true });
+        return `${ctx.state.version}: created "${copy.name}"`;
       },
       async register(ctx) {
-        const v = await db.insertVersion({
-          dealId: ctx.state.dealId, status: 'working', name: 'Working model', fileId: ctx.state.fileId, fileName: ctx.state.fileName,
-          fromReleaseId: ctx.params.releaseId, createdByEmail: ctx.actor.email, createdByName: ctx.actor.name, operationId: ctx.op.id,
+        const m = await db.insertModel({
+          projectId: ctx.state.projectId, version: ctx.state.version, label: ctx.params.modelLabel, fileId: ctx.state.fileId, fileName: ctx.state.fileName,
+          parentModelId: ctx.params.sourceModelId, origin: 'template-use', createdByEmail: ctx.actor.email, createdByName: ctx.actor.name, operationId: ctx.op.id,
         });
-        ctx.state.versionId = v.id;
+        ctx.state.modelId = m.id;
+      },
+      async prepare(ctx) {
+        const source = await db.getModel(ctx.params.sourceModelId);
+        const template = await db.getTemplate(source.templateId);
+        await prepareNewCopy(ctx.state.fileId, template, workingStamp({ releaseVersion: source.version }));
       },
     },
   },
 
-  'lock-version': {
-    title: (p) => `Lock version ${p.name}`,
+  // Lock in place (and optionally Make Active). The model's sheet gets the
+  // LOCKED stamp and a VERSIONS row first - only if HeyPhil made the file -
+  // then Drive's Lock (only drive Managers can remove it).
+  lock: {
+    title: (p) => `${p.activate ? 'Make Active' : 'Lock'} ${p.label}`,
     steps: [
-      { key: 'copy', label: 'Copy the working model into Versions' },
-      { key: 'register', label: 'Record the version in HeyPhil' },
-      { key: 'stamp', label: 'Stamp the status line and VERSIONS row in the copy' },
-      { key: 'lock', label: 'Lock the version (view-only)' },
+      { key: 'stamp', label: 'Stamp it LOCKED in the sheet' },
+      { key: 'lock', label: 'Lock it in Drive (view-only)' },
+      { key: 'activate', label: 'Make it the Active model' },
     ],
     run: {
-      async copy(ctx) {
-        const deal = await db.getDeal(ctx.params.dealId);
-        const working = await db.workingVersion(deal.id);
-        if (!working) throw new ModelingError('This deal has no working model to lock.');
-        const { versionsFolderId } = await ensureDealSubfolders(deal, ctx.op.id);
-        const copy = await g.copyFile(working.fileId, versionsFolderId,
-          versionFileName(deal.name, deal.templateName, ctx.params.name), { opId: ctx.op.id, step: 'copy' });
-        Object.assign(ctx.state, { fileId: copy.id, fileName: copy.name, workingId: working.id, workingFileId: working.fileId });
-        if (hasAnyReadOnly(copy.contentRestrictions)) await g.unlockNewCopy(copy.id);
-        return `Created "${copy.name}"`;
-      },
-      async register(ctx) {
-        const v = await db.insertVersion({
-          dealId: ctx.params.dealId, status: 'locked', name: ctx.params.name, fileId: ctx.state.fileId, fileName: ctx.state.fileName,
-          fromVersionId: ctx.state.workingId, note: ctx.params.note, createdByEmail: ctx.actor.email, createdByName: ctx.actor.name, operationId: ctx.op.id,
-        });
-        ctx.state.versionId = v.id;
-      },
       async stamp(ctx) {
-        const deal = await db.getDeal(ctx.params.dealId);
-        const t = await db.getTemplate(deal.templateId);
-        await stampNewCopy(ctx.state.fileId, t, {
-          stamp: versionStamp({ versionName: ctx.params.name, email: ctx.actor.email, note: ctx.params.note }),
-          row: versionsRow({ version: ctx.params.name, type: 'Deal snapshot', email: ctx.actor.email, note: ctx.params.note, copyUrl: sheetUrl(ctx.state.fileId), sourceUrl: sheetUrl(ctx.state.workingFileId) }),
+        const m = await db.getModel(ctx.params.modelId);
+        const meta = await g.getFile(m.fileId);
+        // decided by Drive, not HeyPhil's record: a file locked by hand (or
+        // by an earlier attempt) can't be written, and needs no stamp
+        if (hasAnyReadOnly(meta.contentRestrictions)) return 'Already locked in Drive';
+        if (meta.appProperties?.heyphilCreated !== 'true') return 'Not stamped (a file HeyPhil didn\'t make is left as it is)';
+        const template = await rootTemplate(m);
+        if (!template) return 'Not stamped (no template)';
+        const parent = m.parentModelId ? await db.getModel(m.parentModelId) : null;
+        const isTemplate = !!m.templateId;
+        await stampCopy(m.fileId, template, {
+          stamp: isTemplate
+            ? releaseStamp({ version: versionTitle(m), email: ctx.actor.email, note: m.note })
+            : versionStamp({ versionName: versionTitle(m), email: ctx.actor.email, note: m.note }),
+          row: versionsRow({
+            version: versionTitle(m), type: isTemplate ? 'Template release' : 'Deal snapshot', email: ctx.actor.email, note: m.note,
+            copyUrl: sheetUrl(m.fileId), sourceUrl: parent ? sheetUrl(parent.fileId) : '',
+          }),
         });
       },
       async lock(ctx) {
-        await g.lockFile(ctx.state.fileId);
-        await db.markVersionLocked(ctx.state.versionId, ctx.actor);
+        const m = await db.getModel(ctx.params.modelId);
+        const meta = await g.getFile(m.fileId);
+        if (!isLockedRestriction(meta.contentRestrictions)) await g.lockFile(m.fileId);
+        await db.markLocked(m.id, ctx.actor);
       },
-    },
-  },
-
-  // An editable copy of any version (working, locked or another copy), in
-  // Financial Modeling/Copies - for changes and scenarios. The source is
-  // only read.
-  copy: {
-    title: (p) => `Copy ${p.label}`,
-    steps: [
-      { key: 'copy', label: 'Copy the file into Copies' },
-      { key: 'register', label: 'Record the copy in HeyPhil' },
-      { key: 'prepare', label: 'Make the copy editable and stamp it' },
-    ],
-    run: {
-      async copy(ctx) {
-        const source = await db.getVersion(ctx.params.versionId);
-        const deal = await db.getDeal(source.dealId);
-        const folderId = await ensureCopiesFolder(deal, ctx.op.id);
-        const copy = await g.copyFile(source.fileId, folderId, copyFileName(deal.name, deal.templateName, ctx.params.name), { opId: ctx.op.id, step: 'copy' });
-        Object.assign(ctx.state, { fileId: copy.id, fileName: copy.name, dealId: deal.id });
-        return `Created "${copy.name}"`;
-      },
-      async register(ctx) {
-        const v = await db.insertVersion({
-          dealId: ctx.state.dealId, status: 'copy', name: ctx.params.name, fileId: ctx.state.fileId, fileName: ctx.state.fileName,
-          fromVersionId: ctx.params.versionId, note: ctx.params.note, createdByEmail: ctx.actor.email, createdByName: ctx.actor.name, operationId: ctx.op.id,
-        });
-        ctx.state.versionId = v.id;
-      },
-      async prepare(ctx) {
-        const meta = await g.getFile(ctx.state.fileId);
-        if (hasAnyReadOnly(meta.contentRestrictions)) await g.unlockNewCopy(ctx.state.fileId); // a locked source's copy comes out locked
-        const source = await db.getVersion(ctx.params.versionId);
-        const deal = await db.getDeal(ctx.state.dealId);
-        const t = await db.getTemplate(deal.templateId);
-        try {
-          await stampNewCopy(ctx.state.fileId, t, { stamp: copyStamp({ sourceName: versionLabel(source), email: ctx.actor.email }), removeProtections: true });
-        } catch (error) {
-          if ([400, 403].includes(error.code || error.response?.status)) {
-            throw new ModelingError(`The copy was made, but it carries sheet protections from the old script that HeyPhil can't remove, so parts of it stay read-only. It's in the Copies folder.`);
-          }
-          throw error;
+      async activate(ctx) {
+        if (!ctx.params.activate) return 'Not requested';
+        const m = await db.getModel(ctx.params.modelId);
+        // a retry must not undo a newer choice: the Active model has to be
+        // the one it was when this action was started
+        const current = await db.activeModel({ templateId: m.templateId, projectId: m.projectId });
+        if ((current?.id || null) !== (ctx.params.previousActiveId ?? null) && current?.id !== m.id) {
+          throw new ModelingError(`${current ? current.version : 'Another model'} was made Active after this action started - nothing changed. Start Make Active again if ${m.version} should replace it.`);
         }
-      },
-    },
-  },
-
-  // Make a copy the deal's working model. The previous working model is
-  // kept (status 'retired') and Drive-locked so nobody keeps editing it.
-  // Switch first: the copy is only stamped "working copy" once HeyPhil
-  // actually treats it as the working model.
-  promote: {
-    title: (p) => `Make ${p.label} the working model`,
-    steps: [
-      { key: 'switch', label: 'Switch the working model in HeyPhil' },
-      { key: 'stamp', label: 'Stamp it as the working model' },
-      { key: 'lockOld', label: 'Lock the previous working model (view-only)' },
-    ],
-    run: {
-      async switch(ctx) {
-        await db.promoteCopy(ctx.params.versionId); // a no-op if a retry finds it already done
-        ctx.state.switched = true;
-      },
-      async stamp(ctx) {
-        const v = await db.getVersion(ctx.params.versionId);
-        if (v.status !== 'working') return 'Skipped - it is no longer the working model';
-        const deal = await db.getDeal(v.dealId);
-        const t = await db.getTemplate(deal.templateId);
-        await stampNewCopy(v.fileId, t, { stamp: promotedStamp({ copyName: v.name, email: ctx.actor.email }) });
-      },
-      // Every retired model of the deal that isn't locked yet - found from
-      // the database, so a retry works even if the switch step's result
-      // was never saved.
-      async lockOld(ctx) {
-        const v = await db.getVersion(ctx.params.versionId);
-        const olds = await db.unlockedRetired(v.dealId);
-        for (const old of olds) {
-          const meta = await g.getFile(old.fileId); // eslint-disable-line no-await-in-loop
-          if (!isLockedRestriction(meta.contentRestrictions)) await g.lockFile(old.fileId); // eslint-disable-line no-await-in-loop
-          await db.markVersionLocked(old.id, ctx.actor); // eslint-disable-line no-await-in-loop
-        }
-        return olds.length ? `Locked ${olds.map((o) => `"${o.fileName}"`).join(', ')}` : 'Nothing left to lock';
-      },
-    },
-  },
-
-  // Locks a registered release or locked version that isn't locked in
-  // Drive yet (e.g. found by Import).
-  'lock-file': {
-    title: (p) => `Lock ${p.label}`,
-    steps: [{ key: 'lock', label: 'Lock the file (view-only)' }],
-    run: {
-      async lock(ctx) {
-        const { kind, id } = ctx.params;
-        const rec = kind === 'release' ? await db.getRelease(id) : await db.getVersion(id);
-        await g.lockFile(rec.fileId);
-        if (kind === 'release') await db.markReleaseLocked(id, ctx.actor);
-        else await db.markVersionLocked(id, ctx.actor);
+        await assertLockedInDrive(m);
+        const r = await db.activateModel(m.id, ctx.actor);
+        return r.previous ? `${m.version} is Active (was ${r.previous})` : `${m.version} is Active`;
       },
     },
   },
@@ -340,28 +306,30 @@ export const KINDS = {
     run: {
       async download(ctx) {
         if (ctx.state.exportFileId) return 'Already saved';
-        const src = await exportSource(ctx.params);
-        ctx.mem.xlsx = await g.exportXlsx(src.fileId);
+        const m = await db.getModel(ctx.params.modelId);
+        ctx.mem.xlsx = await g.exportXlsx(m.fileId);
         return `${Math.round(ctx.mem.xlsx.length / 1024)} KB`;
       },
       async trim(ctx) {
         if (ctx.state.exportFileId) return 'Already saved';
-        const src = await exportSource(ctx.params);
-        const { buffer, frozen } = await financialModelOnly(ctx.mem.xlsx, src.template.exportSheet);
+        const m = await db.getModel(ctx.params.modelId);
+        const template = await rootTemplate(m);
+        const { buffer, frozen } = await financialModelOnly(ctx.mem.xlsx, template?.exportSheet || 'Financial Model');
         ctx.mem.out = buffer;
         return `${frozen} cells frozen to values`;
       },
       async save(ctx) {
-        const src = await exportSource(ctx.params);
-        const folderId = await exportFolder(src, ctx.op.id);
-        const file = await g.uploadFile(folderId, exportFileName(src.fileName), ctx.mem.out, { opId: ctx.op.id, step: 'save' });
-        Object.assign(ctx.state, { exportFileId: file.id, exportFileName: file.name, folderId });
+        const m = await db.getModel(ctx.params.modelId);
+        const owner = await ownerOf(m);
+        const { exportsFolderId } = await ownerFolders(owner, ctx.op.id);
+        const current = await g.getFile(m.fileId); // the file's name in Drive now
+        const file = await g.uploadFile(exportsFolderId, exportFileName(current.name), ctx.mem.out, { opId: ctx.op.id, step: 'save' });
+        Object.assign(ctx.state, { exportFileId: file.id, exportFileName: file.name, folderId: exportsFolderId });
         return `Saved "${file.name}"`;
       },
       async register(ctx) {
         const e = await db.insertExport({
-          versionId: ctx.params.kind === 'version' ? ctx.params.id : null, releaseId: ctx.params.kind === 'release' ? ctx.params.id : null,
-          fileId: ctx.state.exportFileId, fileName: ctx.state.exportFileName, folderId: ctx.state.folderId,
+          modelId: ctx.params.modelId, fileId: ctx.state.exportFileId, fileName: ctx.state.exportFileName, folderId: ctx.state.folderId,
           email: ctx.actor.email, name: ctx.actor.name, operationId: ctx.op.id,
         });
         ctx.state.exportId = e.id;
@@ -369,24 +337,6 @@ export const KINDS = {
     },
   },
 };
-
-async function exportSource({ kind, id }) {
-  if (kind === 'release') {
-    const rel = await db.getRelease(id);
-    const template = await db.getTemplate(rel.templateId);
-    return { fileId: rel.fileId, fileName: rel.fileName, template };
-  }
-  const v = await db.getVersion(id);
-  const deal = await db.getDeal(v.dealId);
-  const template = await db.getTemplate(deal.templateId);
-  return { fileId: v.fileId, fileName: v.fileName, template, deal };
-}
-
-async function exportFolder(src, opId) {
-  if (src.deal) return (await ensureDealSubfolders(src.deal, opId)).exportsFolderId;
-  if (src.template.exportsFolderId) return src.template.exportsFolderId;
-  throw new ModelingError('This template has no Exports folder registered.');
-}
 
 // ---------------------------------------------------------------- runner
 // Each run has its own id; progress is saved only while the database
@@ -406,6 +356,13 @@ export async function start(kind, { targetKey, params }, actor) {
 }
 
 export async function retry(opId, actor) {
+  const existing = await db.getOperation(opId);
+  // step-1 actions share some kind names (copy, use-template, export) but
+  // not their shape - they can't be resumed by this code
+  const SHAPE = { copy: 'modelId', 'use-template': 'sourceModelId', lock: 'modelId', export: 'modelId' };
+  if (existing && (!KINDS[existing.kind] || existing.params?.[SHAPE[existing.kind]] === undefined)) {
+    throw new ModelingError('This action is from the earlier version of Modeling and can\'t be retried - start it again from the page.', 409);
+  }
   const runnerId = newRunnerId();
   const op = await db.reopenOperation(opId, actor, runnerId);
   if (!op) throw new ModelingError('Only a failed action can be retried.', 409);

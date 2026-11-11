@@ -1,10 +1,8 @@
-import { test } from 'node:test';
+import {
+  test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ModelingError, assertInsideRoot, cleanName, dateStamp, templateBaseName, releaseFileName,
-  workingModelFileName, versionFileName, exportFileName, releaseVersionFromName, nameSaysActive,
-  suggestNextVersion, releaseStamp, workingStamp, versionStamp, versionsRow, sheetSafe,
-  isLockedRestriction, hasAnyReadOnly, copyFileName, copyStamp, promotedStamp, templateForFileName, classifyDealFiles, SPREADSHEET_MIME, slugKey,
+  ModelingError, assertInsideRoot, cleanName, dateStamp, exportFileName, nameSaysActive, releaseStamp, workingStamp, versionStamp, versionsRow, sheetSafe, isLockedRestriction, hasAnyReadOnly, modelFileName, copyStamp, nextVersion, nextRootVersion, parseVersion, versionTitle, slugKey,
 } from '../../server/modeling/rules.js';
 
 // A fake Drive: HeyPhil root R inside shared drive D, with the live
@@ -66,28 +64,6 @@ test('cleanName: trims, refuses empty, slashes and overlong', () => {
   assert.throws(() => cleanName('x'.repeat(121), 'deal name'), /too long/);
 });
 
-test('names follow the existing Drive patterns (Utah date)', () => {
-  const now = new Date('2026-11-12T05:30:00Z'); // still Nov 11 in Utah
-  assert.equal(dateStamp(now), '2026-11-11');
-  assert.equal(templateBaseName('Philo - Hospitality Model [TEMPLATE] — DRAFT'), 'Philo - Hospitality Model [TEMPLATE]');
-  assert.equal(releaseFileName('Philo - Hospitality Model [TEMPLATE] — DRAFT', 'v1.2', now), 'Philo - Hospitality Model [TEMPLATE] — v1.2 — LOCKED 2026-11-11');
-  assert.equal(workingModelFileName('Zion Promenade', 'Hospitality Model'), 'Zion Promenade — Hospitality Model');
-  assert.equal(versionFileName('Zion Promenade', 'Hospitality Model', 'v2', now), 'Zion Promenade — Hospitality Model — v2 — LOCKED 2026-11-11');
-  assert.match(exportFileName('Zion Promenade — Hospitality Model', now), /^Zion Promenade — Hospitality Model — Export 2026-11-11 \d{4}\.xlsx$/);
-});
-
-test('release names: version, ACTIVE marker, next version', () => {
-  const v11 = 'Philo - Hospitality Model [TEMPLATE] — v1.1 — ACTIVE — LOCKED 2026-11-09';
-  assert.equal(releaseVersionFromName(v11), 'v1.1');
-  assert.equal(releaseVersionFromName('Philo - Hospitality Model [TEMPLATE] — v1.0 — LOCKED 2026-09-30'), 'v1.0');
-  assert.equal(releaseVersionFromName('no version here'), null);
-  assert.equal(nameSaysActive(v11), true);
-  assert.equal(nameSaysActive('Philo — v1.0 — LOCKED 2026-09-30'), false);
-  assert.equal(suggestNextVersion(['v1.0', 'v1.1']), 'v1.2');
-  assert.equal(suggestNextVersion(['v1.9', 'v2']), 'v2.1');
-  assert.equal(suggestNextVersion([]), 'v1.0');
-});
-
 test('stamps match the script formats', () => {
   const now = new Date('2026-11-11T18:00:00Z');
   assert.equal(releaseStamp({ version: 'v1.2', email: 'chad@philo.ventures', note: '' }, now), 'LOCKED · Template v1.2 · locked 2026-11-11 by chad@philo.ventures');
@@ -113,23 +89,37 @@ test('lock state from Drive contentRestrictions', () => {
   assert.equal(hasAnyReadOnly([{ readOnly: false }]), false);
 });
 
-test('import: template from file name, working-model ambiguity is flagged', () => {
-  const templates = [{ id: 1, name: 'Hospitality Model' }, { id: 2, name: 'Senior Living CCRC Model' }];
-  assert.equal(templateForFileName('Zion Promenade — Hospitality Model', templates), 1);
-  assert.equal(templateForFileName('St George — Senior Living CCRC Model — v1 — LOCKED 2026-01-01', templates), 2);
-  assert.equal(templateForFileName('Random sheet', templates), null);
-  const s = (id) => ({ id, name: id, mimeType: SPREADSHEET_MIME });
-  const out = classifyDealFiles({ workingFiles: [s('a'), s('b'), { id: 'pdf', mimeType: 'application/pdf' }], versionFiles: [s('v1')] }, new Set(['v1']));
-  assert.equal(out.working.length, 2);
-  assert.equal(out.problems.length, 1);
-  assert.equal(out.versions[0].alreadyRegistered, true);
-  assert.equal(slugKey('Senior Living CCRC Model'), 'senior-living-ccrc-model');
+test('copies: file names and stamps never read as LOCKED', () => {
+  const now = new Date('2026-11-11T18:00:00Z');
+  assert.equal(modelFileName({ projectName: 'Test', templateName: 'Hospitality Model', version: 'v3', label: 'Higher ADR case' }), 'Test — Hospitality Model — v3 (Higher ADR case)');
+  assert.equal(modelFileName({ projectName: 'Test', templateName: 'Hospitality Model', version: 'v1' }), 'Test — Hospitality Model — v1');
+  assert.equal(modelFileName({ templateFileName: 'Philo - Hospitality Model [TEMPLATE] — v1.2 — LOCKED 2026-11-11', version: 'v1.3' }), 'Philo - Hospitality Model [TEMPLATE] — v1.3');
+  assert.equal(copyStamp({ sourceName: 'v1', email: 'c@x' }, now), 'Copy of v1 · started 2026-11-11 by c@x');
+  assert.ok(!copyStamp({ sourceName: 'LOCKED thing', email: 'e' }, now).startsWith('LOCKED'));
 });
 
-test('copies: name and stamps never read as LOCKED', () => {
-  const now = new Date('2026-11-11T18:00:00Z');
-  assert.equal(copyFileName('Test', 'Hospitality Model', 'Higher ADR case'), 'Test — Hospitality Model — Higher ADR case');
-  assert.equal(copyStamp({ sourceName: 'v1', email: 'c@x' }, now), 'Copy of v1 · started 2026-11-11 by c@x');
-  assert.equal(promotedStamp({ copyName: 'Higher ADR case', email: 'c@x' }, now), 'Deal model · working copy · from copy "Higher ADR case" · 2026-11-11 by c@x');
-  assert.ok(!copyStamp({ sourceName: 'LOCKED thing', email: 'e' }, now).startsWith('LOCKED'));
+test('versions: next on the line, else branch with a dot', () => {
+  assert.equal(nextVersion('v2', ['v1', 'v2']), 'v3');
+  assert.equal(nextVersion('v1.2', ['v1', 'v1.0', 'v1.1', 'v1.2']), 'v1.3');
+  assert.equal(nextVersion('v2', ['v1', 'v2', 'v3']), 'v2.1');          // branch
+  assert.equal(nextVersion('v2', ['v1', 'v2', 'v3', 'v2.1']), 'v2.2');  // another branch off v2
+  assert.equal(nextVersion('v2.1', ['v2', 'v3', 'v2.1']), 'v2.2');      // continue the branch
+  assert.equal(nextVersion('v2.1', ['v2', 'v3', 'v2.1', 'v2.2']), 'v2.1.1');
+  assert.equal(nextVersion('V2', ['v2', 'V3']), 'v2.1');                // case-insensitive
+  assert.equal(nextRootVersion([]), 'v1');
+  assert.equal(nextRootVersion(['v1', 'v1.1', 'v2.3']), 'v3');
+  assert.equal(nextVersion('Draft master', ['v1']), 'v2');              // unparseable parent -> next top level
+  assert.deepEqual(parseVersion('v1.10'), [1, 10]);
+  assert.equal(parseVersion('Working model'), null);
+  assert.equal(versionTitle({ version: 'v3', label: 'Higher ADR case' }), 'v3 · Higher ADR case');
+  assert.equal(versionTitle({ version: 'v3', label: null }), 'v3');
+});
+
+test('dates and ACTIVE marker (Utah date)', () => {
+  const now = new Date('2026-11-12T05:30:00Z'); // still Nov 11 in Utah
+  assert.equal(dateStamp(now), '2026-11-11');
+  assert.match(exportFileName('Test — Hospitality Model — v1', now), /^Test — Hospitality Model — v1 — Export 2026-11-11 \d{4}\.xlsx$/);
+  assert.equal(nameSaysActive('Philo - Hospitality Model [TEMPLATE] — v1.1 — ACTIVE — LOCKED 2026-11-09'), true);
+  assert.equal(nameSaysActive('Philo — v1.0 — LOCKED 2026-09-30'), false);
+  assert.equal(slugKey('Senior Living CCRC Model'), 'senior-living-ccrc-model');
 });

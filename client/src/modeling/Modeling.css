@@ -73,3 +73,18 @@
   .mdl-header, .mdl-panel, .mdl-tabs { padding-left: 16px; padding-right: 16px; }
   .mdl-table { display: block; overflow-x: auto; }
 }
+
+/* family tree, stars, hidden */
+.mdl-badges { display: flex; gap: 4px; flex-wrap: wrap; }
+.mdl-badge-star { background: #fff4cc; color: #8a6200; }
+.mdl-badge-hidden { background: #eceef2; color: #7a8194; }
+.mdl-row-hidden td { opacity: 0.55; }
+.mdl-tree-name { display: flex; gap: 6px; align-items: flex-start; }
+.mdl-tree-branch { color: #b6bccb; flex-shrink: 0; }
+.mdl-star { font-size: 15px; line-height: 1; padding: 4px 9px; }
+.mdl-star.on { color: #c98a00; border-color: #e6c25a; background: #fffaeb; }
+.mdl-btn-quiet { border-color: transparent; color: #7a8194; }
+.mdl-chip { display: inline-block; background: #fff4cc; color: #6b4d00; border-radius: 999px; padding: 2px 10px; margin: 2px 4px 2px 0; font-size: 13px; text-decoration: none; }
+.mdl-starred { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+.mdl-howto { background: #f3f2ff; border-radius: 8px; padding: 8px 12px; }
+.mdl-show-hidden { margin-top: 8px; color: #7a8194; }

@@ -68,54 +68,60 @@ export function timeStamp(now = new Date()) {
   return `${dateStamp(now)} ${t.replace(':', '')}`;
 }
 
-// "Philo - Hospitality Model [TEMPLATE] — DRAFT" -> "Philo - Hospitality Model [TEMPLATE]"
-export function templateBaseName(draftFileName) {
-  return String(draftFileName || '').replace(/\s*—\s*DRAFT\s*$/i, '').trim();
-}
-
-export function releaseFileName(draftFileName, version, now = new Date()) {
-  return [templateBaseName(draftFileName), version, `LOCKED ${dateStamp(now)}`].join(DASH);
-}
-
-export function workingModelFileName(dealName, templateName) {
-  return [dealName, templateName].join(DASH);
-}
-
-export function versionFileName(dealName, templateName, versionName, now = new Date()) {
-  return [dealName, templateName, versionName, `LOCKED ${dateStamp(now)}`].join(DASH);
-}
-
-// How a version is named in messages: the working model, else its name.
-export const versionLabel = (v) => (v.status === 'working' ? 'the working model' : v.name);
-
-export function copyFileName(dealName, templateName, copyName) {
-  return [dealName, templateName, copyName].join(DASH);
-}
-
 export function exportFileName(sourceFileName, now = new Date()) {
   return `${sourceFileName}${DASH}Export ${timeStamp(now)}.xlsx`;
-}
-
-// "v1.1" out of "Philo - Hospitality Model [TEMPLATE] — v1.1 — ACTIVE — LOCKED 2026-11-09"
-export function releaseVersionFromName(fileName) {
-  const m = /—\s*(v\d+(?:\.\d+)*)\s*(?:—|$)/i.exec(String(fileName || ''));
-  return m ? m[1] : null;
 }
 
 export function nameSaysActive(fileName) {
   return /—\s*ACTIVE\s*(—|$)/i.test(String(fileName || ''));
 }
 
-// The next release number after the highest one so far: v1.1 -> v1.2.
-export function suggestNextVersion(versions) {
-  const parsed = (versions || [])
-    .map((v) => /^v(\d+)(?:\.(\d+))?/i.exec(v || ''))
-    .filter(Boolean)
-    .map((m) => [Number(m[1]), Number(m[2] || 0)]);
-  if (!parsed.length) return 'v1.0';
-  parsed.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
-  const [major, minor] = parsed[parsed.length - 1];
-  return `v${major}.${minor + 1}`;
+// ---------------------------------------------------------------- versions
+// Every model has a version number, unique within its template/project.
+//   - a copy takes the next number on its parent's line (v2 -> v3,
+//     v1.2 -> v1.3, v2.1 -> v2.2);
+//   - if that's taken, it branches with a dot: the first free v2.1, v2.2…
+//     (from v2.1: v2.1.1…);
+//   - a model with no parent in its owner (Use Template, imports without a
+//     number) takes the next free top-level number: v1, v2…
+export function parseVersion(v) {
+  const m = /^v?(\d+(?:\.\d+)*)$/i.exec(String(v || '').trim());
+  return m ? m[1].split('.').map(Number) : null;
+}
+const fmt = (segs) => `v${segs.join('.')}`;
+
+export function nextRootVersion(existing) {
+  const tops = (existing || []).map(parseVersion).filter(Boolean).map((seg) => seg[0]);
+  const taken = new Set((existing || []).map((v) => String(v).toLowerCase()));
+  for (let n = 1; n < 10000; n += 1) if (!taken.has(`v${n}`) && !tops.includes(n)) return `v${n}`;
+  throw new ModelingError('No free version number.');
+}
+
+export function nextVersion(parentVersion, existing) {
+  const taken = new Set((existing || []).map((v) => String(v).toLowerCase()));
+  const free = (segs) => !taken.has(fmt(segs).toLowerCase());
+  const p = parseVersion(parentVersion);
+  if (!p) return nextRootVersion(existing);
+  const inc = [...p.slice(0, -1), p[p.length - 1] + 1];
+  if (free(inc)) return fmt(inc);
+  for (let n = 1; n < 10000; n += 1) if (free([...p, n])) return fmt([...p, n]);
+  throw new ModelingError('No free version number.');
+}
+
+// "v3" or "v3 · Higher ADR case"
+export const versionTitle = (m) => (m.label ? `${m.version} · ${m.label}` : m.version);
+
+// The Drive name for a new model:
+//   template model: "<template file base> — <version>", the base being the
+//     source file's name up to its first " — " ("Philo - Hospitality
+//     Model [TEMPLATE] — v1.3")
+//   project model: "<project> — <template> — <version> (<label>)"
+// Names never change afterwards (HeyPhil never renames), so lock state and
+// Active live in HeyPhil, not in the name.
+export function modelFileName({ templateFileName, projectName, templateName, version, label }) {
+  const v = label ? `${version} (${label})` : version;
+  if (templateFileName !== undefined) return [String(templateFileName).split(DASH)[0].trim(), v].join(DASH);
+  return [projectName, templateName, v].filter(Boolean).join(DASH);
 }
 
 // ---------------------------------------------------------------- stamps
@@ -140,11 +146,6 @@ export function versionStamp({ versionName, email, note }, now = new Date()) {
 // treats it as editable).
 export function copyStamp({ sourceName, email }, now = new Date()) {
   return `Copy of ${sourceName} · started ${dateStamp(now)} by ${email}`;
-}
-
-// A copy made the deal's working model.
-export function promotedStamp({ copyName, email }, now = new Date()) {
-  return `Deal model · working copy · from copy "${copyName}" · ${dateStamp(now)} by ${email}`;
 }
 
 // Text typed by a person never becomes a formula in the sheet.
@@ -176,29 +177,4 @@ export const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 export function slugKey(name) {
   return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'template';
-}
-
-// Which template a deal's model belongs to, from its file name
-// ("Zion Promenade — Hospitality Model ..."), else null.
-export function templateForFileName(fileName, templates) {
-  const name = String(fileName || '').toLowerCase();
-  const hit = (templates || [])
-    .filter((t) => name.includes(`— ${t.name.toLowerCase()}`))
-    .sort((a, b) => b.name.length - a.name.length)[0];
-  return hit ? hit.id : null;
-}
-
-// One spreadsheet found during an import scan, with what it would be
-// registered as. `registeredIds` = Drive file ids HeyPhil already knows.
-export function classifyDealFiles({ workingFiles, versionFiles }, registeredIds) {
-  const known = (f) => registeredIds.has(f.id);
-  const working = workingFiles.filter((f) => f.mimeType === SPREADSHEET_MIME);
-  const versions = versionFiles.filter((f) => f.mimeType === SPREADSHEET_MIME);
-  const problems = [];
-  if (working.length > 1) problems.push(`${working.length} spreadsheets directly in Financial Modeling - pick the working model.`);
-  return {
-    working: working.map((f) => ({ ...f, alreadyRegistered: known(f) })),
-    versions: versions.map((f) => ({ ...f, alreadyRegistered: known(f) })),
-    problems,
-  };
 }
