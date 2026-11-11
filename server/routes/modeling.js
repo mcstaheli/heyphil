@@ -107,7 +107,7 @@ router.get('/projects/:id/results', handle('read the results', async (req, res) 
 router.get('/models/:id/inputs', handle('read the inputs', async (req, res) => {
   const m = await modelOr404(req.params.id);
   const { readInputs } = await import('../modeling/model-inputs.js');
-  res.json({ inputs: await readInputs(m), model: { id: m.id, version: m.version, label: m.label, locked: m.locked, fileId: m.fileId } });
+  res.json({ inputs: await readInputs(m), model: { id: m.id, version: m.version, label: m.label, locked: m.locked, fileId: m.fileId, projectId: m.projectId || null, templateId: m.templateId || null } });
 }));
 
 // Save answers: { answers: { key: value | rows }, overrides: { key: true } }.

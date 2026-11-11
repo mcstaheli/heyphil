@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { modelingApi, sheetUrl } from './api';
 import OperationStatus from './OperationStatus';
 import { outputDelta } from './resultsFormat';
@@ -99,9 +99,16 @@ function cellInput(type, value, onChange, disabled, choices = null, className = 
 export default function InputsPage() {
   const { modelId } = useParams();
   const navigate = useNavigate();
+  // guided: a new deal just made by Use Template - Quick questions, step by
+  // step, ending in "Finish and see results"
+  const guided = new URLSearchParams(useLocation().search).get('guided') === '1';
+  const [finishing, setFinishing] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [level, setLevel] = useState(() => { try { return localStorage.getItem('modeling:level') || 'quick'; } catch { return 'quick'; } });
+  const [level, setLevel] = useState(() => {
+    if (new URLSearchParams(window.location.search).get('guided') === '1') return 'quick';
+    try { return localStorage.getItem('modeling:level') || 'quick'; } catch { return 'quick'; }
+  });
   const [stepKey, setStepKey] = useState(null);
   const [edits, setEdits] = useState({}); // key -> edit value (display units)
   const [overrides, setOverrides] = useState({});
@@ -142,6 +149,29 @@ export default function InputsPage() {
   const readOnly = data.model.locked;
   const idx = steps.indexOf(active);
 
+  // guided finish: save what was answered, then the project page's results
+  async function finish() {
+    const goToProject = () => navigate(data.model.projectId ? `/labs/modeling/projects/${data.model.projectId}` : '/labs/modeling');
+    if (!changedKeys.length) { goToProject(); return; }
+    setFinishing(true);
+    const answers = {};
+    for (const k of changedKeys) answers[k] = answerFor(fields.find((f) => f.key === k), edits[k]);
+    try {
+      const r = await modelingApi('POST', `/models/${modelId}/inputs`, { answers, overrides });
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop
+        const { operation } = await modelingApi('GET', `/operations/${r.operation.id}`);
+        if (operation.status === 'succeeded') { goToProject(); return; }
+        if (operation.status === 'failed') { setResult({ error: operation.error }); setFinishing(false); return; }
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((res) => setTimeout(res, 1200));
+      }
+    } catch (err) {
+      setResult({ error: err.message });
+      setFinishing(false);
+    }
+  }
+
   async function save() {
     setResult(null);
     const answers = {};
@@ -171,6 +201,12 @@ export default function InputsPage() {
           <button key={l.id} type="button" role="tab" aria-selected={level === l.id} className={`mdl-tab ${level === l.id ? 'active' : ''}`} onClick={() => setLevel(l.id)} title={l.help}>{l.label}</button>
         ))}
       </div>
+      {guided && (
+        <div className="mdl-guided">
+          <strong>New deal: answer the Quick questions.</strong> Everything else starts from the template's defaults - you can add detail any time from Standard or Everything.
+          {' '}Step {Math.max(idx, 0) + 1} of {steps.length}.
+        </div>
+      )}
       {data.inputs.problems?.length > 0 && <p className="mdl-warn mdl-page-error">⚠ {data.inputs.problems.join(' ')}</p>}
       {!fields.length ? <p className="mdl-empty mdl-page-error">This model has no input map yet.</p> : (
         <div className="mdl-wizard">
@@ -202,7 +238,13 @@ export default function InputsPage() {
                 ))}
                 <div className="mdl-step-nav">
                   <button type="button" className="mdl-btn" disabled={idx <= 0} onClick={() => setStepKey(steps[idx - 1].key)}>← Back</button>
-                  <button type="button" className="mdl-btn" disabled={idx >= steps.length - 1} onClick={() => setStepKey(steps[idx + 1].key)}>Next →</button>
+                  {guided && idx >= steps.length - 1 ? (
+                    <button type="button" className="mdl-btn mdl-btn-primary" disabled={finishing || !!saving} onClick={finish}>
+                      {finishing ? 'Saving…' : 'Finish and see results →'}
+                    </button>
+                  ) : (
+                    <button type="button" className={`mdl-btn ${guided ? 'mdl-btn-primary' : ''}`} disabled={idx >= steps.length - 1} onClick={() => setStepKey(steps[idx + 1].key)}>Next →</button>
+                  )}
                 </div>
               </>
             )}

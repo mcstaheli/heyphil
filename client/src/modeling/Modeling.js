@@ -32,6 +32,7 @@ export function useOverview() {
 
 // ---------------------------------------------------------------- Use Template
 export function UseTemplateModal({ templates, projects, presetProjectId, onClose, onFinished }) {
+  const navigate = useNavigate();
   const usable = templates.filter((t) => t.models.some((m) => m.isActive));
   const [templateId, setTemplateId] = useState(usable[0]?.id || '');
   const [mode, setMode] = useState(presetProjectId ? 'existing' : 'new');
@@ -56,7 +57,11 @@ export function UseTemplateModal({ templates, projects, presetProjectId, onClose
       submitLabel={`Create ${nextVersion}`}
       canSubmit={!!template && (mode === 'new' ? !!projectName.trim() : !!projectId)}
       onClose={onClose}
-      onFinished={onFinished}
+      onFinished={(op) => {
+        if (onFinished) onFinished(op);
+        // the new deal's model is ready: straight into its Quick questions
+        if (op?.status === 'succeeded' && op.state?.modelId) navigate(`/labs/modeling/models/${op.state.modelId}/inputs?guided=1`);
+      }}
       onSubmit={() => modelingApi('POST', '/use-template', mode === 'new'
         ? { templateId: Number(templateId), projectName, label }
         : { templateId: Number(templateId), projectId: Number(projectId), label })}
