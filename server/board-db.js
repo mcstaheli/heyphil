@@ -622,6 +622,28 @@ export async function setTaskAssignee(projectId, taskId, assignee) {
   return tasks.some((t) => Number(t.id) === taskId);
 }
 
+// A task's follow-up date (#44): "YYYY-MM-DD" or null to clear. Same
+// COALESCE guards as setTaskAssignee. Returns whether the task existed.
+export async function setTaskFollowUp(projectId, taskId, followUpOn) {
+  const result = await pool.query(`
+    UPDATE projects
+    SET tasks = COALESCE((
+      SELECT jsonb_agg(
+        CASE
+          WHEN (task->>'id')::int = $2
+          THEN jsonb_set(task, '{followUpOn}', COALESCE(to_jsonb($3::text), 'null'::jsonb))
+          ELSE task
+        END
+      )
+      FROM jsonb_array_elements(tasks) task
+    ), '[]'::jsonb)
+    WHERE id = $1
+    RETURNING tasks
+  `, [projectId, taskId, followUpOn || null]);
+  const tasks = result.rows[0]?.tasks || [];
+  return tasks.some((t) => Number(t.id) === taskId);
+}
+
 export async function toggleTaskStar(projectId, taskId, starred) {
   await pool.query(`
     UPDATE projects

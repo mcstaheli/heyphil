@@ -53,3 +53,19 @@ test('person filter ignores case/extra spaces (same as the server\'s LOWER(name)
   assert.deepEqual(tasksShownFor(c, ' TRACY SMITH ').map((a) => a.id), [1]);
   assert.equal(matchesPersonFilter({ owner: 'greg', actions: [] }, 'Greg'), true);
 });
+
+test('follow-up badge: later, soon, today, overdue; nothing when done or unset (#44)', async () => {
+  const { followUpBadge } = await import('../../client/src/followUp.js');
+  const now = new Date(2026, 10, 11, 15, 0); // Nov 11, 3pm local
+  assert.equal(followUpBadge({ followUpOn: '2026-11-11' }, now).level, 'today');
+  assert.equal(followUpBadge({ followUpOn: '2026-11-13' }, now).label, 'Follow up in 2d');
+  assert.equal(followUpBadge({ followUpOn: '2026-11-09' }, now).label, 'Follow up 2d overdue');
+  assert.equal(followUpBadge({ followUpOn: '2026-11-09' }, now).level, 'overdue');
+  assert.equal(followUpBadge({ followUpOn: '2026-11-20' }, now).level, 'later');
+  assert.match(followUpBadge({ followUpOn: '2026-11-20' }, now).label, /^Follow up \w{3}, Nov 20$/);
+  assert.equal(followUpBadge({ followUpOn: '2026-11-09', completedOn: '2026-11-10' }, now), null);
+  assert.equal(followUpBadge({}, now), null);
+  assert.equal(followUpBadge({ followUpOn: 'garbage' }, now), null);
+  // midnight boundaries: late on the 11th it's still "today"
+  assert.equal(followUpBadge({ followUpOn: '2026-11-11' }, new Date(2026, 10, 11, 23, 59)).level, 'today');
+});

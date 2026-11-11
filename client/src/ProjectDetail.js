@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
+import { openLiveSocket } from './liveSocket';
 import './ProjectDetail.css';
 import ProjectResources from './ProjectResources';
 import LedgerModule, { BUDGET_LEDGER_CONFIG, VALUE_LEDGER_CONFIG } from './LedgerModule';
@@ -34,8 +34,8 @@ function ProjectDetail({ projectId, onClose, currentUser }) {
   // CustomTimeline mutates timeline.
   useEffect(() => {
     if (!projectId) return;
-    socketRef.current = io(WS_URL, {
-      transports: ['websocket', 'polling'],
+    socketRef.current = openLiveSocket(WS_URL, {
+transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10

@@ -2337,3 +2337,16 @@ body {
 /* A page this person hasn't been given (access.js Gate) */
 .no-access { padding: 48px 32px; color: #5b6275; }
 .no-access h2 { color: #222; margin: 0 0 8px; }
+
+/* Follow-up date on a task (#44) */
+.task-followup-chip { margin-top: 3px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 14px; white-space: nowrap; border: none; font-family: inherit; }
+button.task-followup-chip { cursor: pointer; }
+.task-followup-chip.fu-later { background: #eef1f6; color: #4a5168; }
+.task-followup-chip.fu-soon { background: #fff7d6; color: #8a6d00; }
+.task-followup-chip.fu-today { background: #ffe8cc; color: #a34700; }
+.task-followup-chip.fu-overdue { background: #ffe0e0; color: #b42318; }
+.task-followup-btn { margin-top: 3px; border: 1px dashed #cfd3e0; background: transparent; border-radius: 999px; padding: 0 6px; font-size: 11px; cursor: pointer; opacity: 0.55; }
+.task-followup-btn:hover { opacity: 1; }
+.task-followup-input { margin-top: 3px; font-size: 12px; padding: 1px 4px; border: 1px solid #cfd3e0; border-radius: 6px; }
+.task-followup-editor { display: inline-flex; gap: 4px; align-items: center; margin-top: 3px; }
+.task-followup-clear, .task-followup-done { font-size: 11px; border: 1px solid #cfd3e0; background: #fff; border-radius: 6px; padding: 1px 6px; cursor: pointer; }

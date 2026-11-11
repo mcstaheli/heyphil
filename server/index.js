@@ -34,7 +34,7 @@ import designRouter from './routes/design.js';
 import sitePlansRouter from './routes/site-plans.js';
 import modelingRouter from './routes/modeling.js';
 import * as modelingDb from './modeling/db.js';
-import { initRealtime } from './realtime.js';
+import { initRealtime, joinAppRooms, refreshUserRooms, broadcastChange } from './realtime.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -396,7 +396,43 @@ app.get('/health', async (req, res) => {
 });
 
 // ========== WEBSOCKET CONNECTION ==========
+// Only signed-in people get live updates: the connection carries the same
+// token as API calls (socket.handshake.auth.token) and must still be
+// allowed to log in. It then joins a room per app it can use (realtime.js).
+// Only a bad token or a removed login is refused; a database error while
+// checking isn't (a blip during a deploy mustn't cut everyone off) - the
+// person's app rooms are then joined once the database answers.
+io.use(async (socket, next) => {
+  let user;
+  try {
+    const token = socket.handshake.auth?.token;
+    user = token ? jwt.verify(token, JWT_SECRET) : null;
+  } catch {
+    user = null;
+  }
+  if (!user?.email) return next(new Error('unauthorized'));
+  socket.data.user = user;
+  try {
+    if (!(await isEmailAllowedToLogin(user.email.toLowerCase()))) return next(new Error('unauthorized'));
+  } catch (error) {
+    console.error('WebSocket login check failed (letting the signed-in token through):', error.message);
+  }
+  return next();
+});
+
+// Rooms are joined after the connection exists, so an access change made
+// meanwhile (refreshUserRooms only sees connected sockets) can't be missed.
+async function joinRoomsWithRetry(socket, attempt = 0) {
+  try {
+    await joinAppRooms(socket);
+  } catch (error) {
+    if (attempt < 5 && socket.connected) setTimeout(() => joinRoomsWithRetry(socket, attempt + 1), 2000 * (attempt + 1));
+    else console.error('WebSocket: could not join app rooms:', error.message);
+  }
+}
+
 io.on('connection', (socket) => {
+  joinRoomsWithRetry(socket);
   console.log('✅ WebSocket client connected:', socket.id, 'from', socket.handshake.address);
   console.log('   Total clients:', io.engine.clientsCount);
   
@@ -418,12 +454,7 @@ io.on('connection', (socket) => {
   // - action:deleted
 });
 
-// Helper: Broadcast change to all connected clients
-function broadcastChange(event, data) {
-  const clientCount = io.engine.clientsCount;
-  console.log(`📡 Broadcasting ${event} to ${clientCount} clients:`, data.id || data.cardId || data.actionId || '');
-  io.emit(event, data);
-}
+// Broadcasts go through realtime.js (who hears what is decided there).
 
 // Routes
 app.get('/auth/google', passport.authenticate('google'));
@@ -508,6 +539,7 @@ app.put('/api/app-access', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'email, appKeys and granted are required' });
     }
     await setAppAccess(email, appKeys, granted);
+    refreshUserRooms(email).catch((e) => console.error('Live-update rooms refresh failed:', e.message));
     res.json({ success: true, access: await listAppAccess() });
   } catch (error) {
     if (error instanceof AccessRuleError) return res.status(409).json({ error: error.message });
@@ -1539,6 +1571,47 @@ async function resolveAssignee(assignee) {
   return match.name;
 }
 
+// A task's follow-up date (#44): { actionId, cardId, followUpOn: "YYYY-MM-DD" | null }.
+app.post('/api/origination/action/follow-up', requireAuth, async (req, res) => {
+  try {
+    const { actionId, cardId } = req.body;
+    if (!cardId || actionId === undefined) {
+      return res.status(400).json({ error: 'Project ID and task ID are required' });
+    }
+    const raw = req.body.followUpOn;
+    const followUpOn = raw === null || raw === '' || raw === undefined ? null : String(raw);
+    const realDate = (d) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+      if (!m) return false;
+      const t = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+      return t.getUTCFullYear() === +m[1] && t.getUTCMonth() === +m[2] - 1 && t.getUTCDate() === +m[3]; // no Feb 31
+    };
+    if (followUpOn && !realDate(followUpOn)) {
+      return res.status(400).json({ error: 'followUpOn must be a date (YYYY-MM-DD) or empty' });
+    }
+    const taskId = parseInt(actionId, 10);
+    const found = await boardDb.setTaskFollowUp(cardId, taskId, followUpOn);
+    if (!found) {
+      return res.status(404).json({ error: 'That task no longer exists - it may have been deleted.' });
+    }
+    const project = await boardDb.getProjectById(cardId);
+    const task = (project?.tasks || []).find((t) => t.id === taskId);
+    if (task) {
+      try {
+        await boardDb.addLog(cardId, followUpOn ? 'Follow-up Set' : 'Follow-up Cleared', noteAuthorName(req.user),
+          followUpOn ? `${task.text} → follow up ${followUpOn}` : task.text);
+      } catch (logError) {
+        console.error('Follow-up saved but its activity log entry failed:', logError);
+      }
+    }
+    broadcastChange('action:followup', { actionId: taskId, cardId, followUpOn });
+    res.json({ success: true, followUpOn });
+  } catch (error) {
+    console.error('Failed to set follow-up:', error);
+    res.status(500).json({ error: 'Failed to set the follow-up date' });
+  }
+});
+
 // Assign / reassign / unassign a task (assignee: a team member's name, or
 // null to unassign).
 app.post('/api/origination/action/assign', requireAuth, async (req, res) => {
@@ -2123,6 +2196,7 @@ app.delete('/api/allowed-emails/:email', requireAuth, requireAdmin, async (req, 
   try {
     const ok = await revokeEmailLogin(req.user.email, req.params.email.toLowerCase());
     if (!ok) return res.status(404).json({ error: 'Not found' });
+    refreshUserRooms(req.params.email, { disconnect: true }).catch((e) => console.error('Live-update disconnect failed:', e.message));
     res.json({ success: true });
   } catch (error) {
     if (error instanceof AccessRuleError) return res.status(409).json({ error: error.message });
@@ -2140,6 +2214,7 @@ app.put('/api/allowed-emails/:email/admin', requireAuth, requireAdmin, async (re
     }
     const ok = await setAdmin(req.user.email, req.params.email.toLowerCase(), req.body.isAdmin);
     if (!ok) return res.status(404).json({ error: "That email can't log in - grant login first" });
+    refreshUserRooms(req.params.email).catch((e) => console.error('Live-update rooms refresh failed:', e.message));
     res.json({ success: true });
   } catch (error) {
     if (error instanceof AccessRuleError) return res.status(409).json({ error: error.message });

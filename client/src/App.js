@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
-import { io } from 'socket.io-client';
+import { openLiveSocket } from './liveSocket';
 import './App.css';
 import './Loading.css';
 import Landing from './Landing';
@@ -22,6 +22,7 @@ import { deriveGridInputs } from './strategyGridMath';
 import AssigneeInput from './AssigneeInput';
 import { matchesPersonFilter, tasksShownFor } from './boardFilters';
 import { taskAge } from './taskAge';
+import { followUpBadge, localToday } from './followUp';
 import { AccessProvider, Gate, HomeRedirect } from './access';
 import { ResourceIcon } from './ProjectResources';
 import { detectSource, kindLabel, quickOpenLinks } from './resources';
@@ -176,6 +177,24 @@ function TaskAgeChip({ task }) {
     <span className={`task-age-chip age-${age.level}`} title={title}>
       {age.weeks}w{age.known ? '' : '+'}
     </span>
+  );
+}
+
+// A task's follow-up date as a badge (#44): quiet when it's a way off,
+// amber when it's close or today, red once it's passed.
+function FollowUpChip({ task, onClick }) {
+  const b = followUpBadge(task);
+  if (!b) return null;
+  const Tag = onClick ? 'button' : 'span';
+  return (
+    <Tag
+      type={onClick ? 'button' : undefined}
+      className={`task-followup-chip fu-${b.level}`}
+      title={`Follow up on ${task.followUpOn}${onClick ? ' - click to change' : ''}`}
+      onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
+    >
+      📅 {b.label}
+    </Tag>
   );
 }
 
@@ -581,8 +600,8 @@ function OriginationBoard({ user, studioMode = false }) {
     const wsUrl = WS_URL || API_BASE_URL;
     console.log('🔌 Connecting to WebSocket server:', wsUrl);
     
-    socketRef.current = io(wsUrl, {
-      transports: ['websocket', 'polling'],
+    socketRef.current = openLiveSocket(wsUrl, {
+transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10
@@ -788,6 +807,14 @@ function OriginationBoard({ user, studioMode = false }) {
         }
         return c;
       }));
+    });
+
+    socketRef.current.on('action:followup', ({ actionId, cardId, followUpOn }) => {
+      setCards(prevCards => prevCards.map(c => (
+        c.id === cardId
+          ? { ...c, actions: (c.actions || []).map(a => (a.id === actionId ? { ...a, followUpOn } : a)) }
+          : c
+      )));
     });
 
     socketRef.current.on('action:assigned', ({ actionId, cardId, assignee }) => {
@@ -1174,6 +1201,29 @@ function OriginationBoard({ user, studioMode = false }) {
       console.error('Failed to add action:', error);
       alert('Failed to add task - check console for details');
       return false;
+    }
+  };
+
+  // Follow-up date on a task (#44). Applied here as soon as the server
+  // says yes (so it shows even if live updates are down), and from the
+  // action:followup broadcast in other tabs.
+  const setActionFollowUp = async (actionId, cardId, followUpOn) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/origination/action/follow-up`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ actionId, cardId, followUpOn: followUpOn || null })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(`Could not set the follow-up date:\n\n${result.error || 'Unknown error'}`);
+        return;
+      }
+      setCards(prev => prev.map(c => (c.id === cardId
+        ? { ...c, actions: (c.actions || []).map(a => (a.id === actionId ? { ...a, followUpOn: result.followUpOn || null } : a)) }
+        : c)));
+    } catch (error) {
+      console.error('Failed to set follow-up:', error);
     }
   };
 
@@ -1737,6 +1787,7 @@ function OriginationBoard({ user, studioMode = false }) {
                                     </span>
                                   )}
                                   <TaskAgeChip task={action} />
+                                  <FollowUpChip task={action} />
                                 </span>
                               </span>
                             )}
@@ -1808,6 +1859,7 @@ function OriginationBoard({ user, studioMode = false }) {
           onUpdateAction={updateAction}
           onDeleteAction={deleteAction}
           onSetActionAssignee={setActionAssignee}
+          onSetActionFollowUp={setActionFollowUp}
           teamMembers={teamMembers}
           onAddLog={addLogEntry}
           onUpdateLog={updateLogEntry}
@@ -2174,7 +2226,7 @@ function HandoffPanel({ card, sortedPeople, onHandoffAction }) {
   );
 }
 
-function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onSetActionAssignee, teamMembers, onAddLog, onUpdateLog, onDeleteLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onHandoffAction }) {
+function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, toggleAction, onToggleActionStar, onAddAction, onUpdateAction, onDeleteAction, onSetActionAssignee, onSetActionFollowUp, teamMembers, onAddLog, onUpdateLog, onDeleteLog, projectTypeColors, people, studioMode, onViewProject, currentUser, onHandoffAction }) {
   const [formData, setFormData] = useState({
     title: card?.title || '',
     description: card?.description || '',
@@ -2193,6 +2245,7 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
   const [newActionText, setNewActionText] = useState('');
   const [newActionAssignee, setNewActionAssignee] = useState(null); // from the "@" picker
   const [assigningActionId, setAssigningActionId] = useState(null); // task whose reassign picker is open
+  const [followUpActionId, setFollowUpActionId] = useState(null); // task whose follow-up date picker is open
   const [pendingActions, setPendingActions] = useState([]); // new card only: [{ text, assignee }]
   const [newLogText, setNewLogText] = useState('');
   const [addingLog, setAddingLog] = useState(false);
@@ -2594,6 +2647,37 @@ function CardModal({ card, onClose, onSave, onDelete, columns, initialColumn, to
                         <span className="task-meta-line">
                           {onSetActionAssignee && action.assignee && renderAssignControl(action)}
                           <TaskAgeChip task={action} />
+                          {onSetActionFollowUp && !action.completedOn && (followUpActionId === action.id ? (
+                            <span className="task-followup-editor" onClick={(e) => e.stopPropagation()}>
+                              {/* saves when a whole valid date is picked (a date input
+                                  only fires change then); Done/Escape just close */}
+                              <input
+                                type="date"
+                                className="task-followup-input"
+                                autoFocus
+                                defaultValue={action.followUpOn || localToday()}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (v && v !== action.followUpOn) onSetActionFollowUp(action.id, action.cardId, v);
+                                }}
+                                onKeyDown={(e) => { if (e.key === 'Escape') setFollowUpActionId(null); }}
+                                title="Follow-up date"
+                              />
+                              {action.followUpOn && (
+                                <button type="button" className="task-followup-clear" onClick={() => { onSetActionFollowUp(action.id, action.cardId, null); setFollowUpActionId(null); }}>Clear</button>
+                              )}
+                              <button type="button" className="task-followup-done" onClick={() => setFollowUpActionId(null)}>Done</button>
+                            </span>
+                          ) : action.followUpOn ? (
+                            <FollowUpChip task={action} onClick={() => setFollowUpActionId(action.id)} />
+                          ) : (
+                            <button
+                              type="button"
+                              className="task-followup-btn"
+                              title="Add a follow-up date"
+                              onClick={(e) => { e.stopPropagation(); setFollowUpActionId(action.id); }}
+                            >📅</button>
+                          ))}
                         </span>
                       </span>
                     )}

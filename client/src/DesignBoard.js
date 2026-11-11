@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { io } from 'socket.io-client';
+import { openLiveSocket } from './liveSocket';
 import { designDaysBadge } from './designDays';
 import { PRIORITIES, compareRequests } from './designOptions';
 import RequestModal from './DesignRequestModal';
@@ -166,7 +166,8 @@ function DesignBoard({ user }) {
   const editingIdRef = useRef(null);
   editingIdRef.current = editing && editing !== 'new' ? editing.id : null;
   useEffect(() => {
-    socketRef.current = io(WS_URL, { transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
+    socketRef.current = openLiveSocket(WS_URL, {
+transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 });
     socketRef.current.on('design:created', ({ request }) => upsert(request));
     socketRef.current.on('design:updated', ({ request }) => {
       upsert(request);

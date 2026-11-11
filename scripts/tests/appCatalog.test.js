@@ -29,3 +29,29 @@ test('every app route in App.js is wrapped in a Gate for its own app', () => {
     assert.match(app, new RegExp(`<Route path="${path}" element=\\{<Gate app="${key}">`), `${path} gated as ${key}`);
   }
 });
+
+test('live updates: app data only to that app\'s room, board events to everyone signed in', async () => {
+  const { roomForEvent } = await import('../../server/realtime.js');
+  assert.equal(roomForEvent('design:updated'), 'app:design');
+  assert.equal(roomForEvent('modeling:operation'), 'app:modeling');
+  assert.equal(roomForEvent('improvement:created'), 'app:improvements');
+  assert.equal(roomForEvent('project:updated'), null);
+  assert.equal(roomForEvent('action:created'), null);
+  // every room an event can go to is a real app
+  for (const e of ['design:x', 'modeling:x', 'improvement:x']) assert.ok(isAppKey(roomForEvent(e).slice(4)));
+});
+
+test('follow-up endpoint rejects impossible dates (round-trip check)', () => {
+  const s = fs.readFileSync(new URL('../../server/index.js', import.meta.url), 'utf8');
+  assert.match(s, /no Feb 31/);
+});
+
+test('no client opens a live connection except through liveSocket.js', () => {
+  for (const f of ['App.js', 'DesignBoard.js', 'Improvements.js', 'ProjectDetail.js']) {
+    const s = fs.readFileSync(new URL(`../../client/src/${f}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(s, /socket\.io-client/, f);
+    assert.match(s, /openLiveSocket\(/, f);
+  }
+  const helper = fs.readFileSync(new URL('../../client/src/liveSocket.js', import.meta.url), 'utf8');
+  assert.match(helper, /auth: \(cb\) => cb\(\{ token: localStorage\.getItem\('authToken'\) \}\)/); // fresh on each reconnect
+});

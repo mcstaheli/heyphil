@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { io } from 'socket.io-client';
+import { openLiveSocket } from './liveSocket';
 import './Improvements.css';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -187,8 +187,8 @@ function Improvements() {
   // isn't part of that component tree.
   const socketRef = useRef(null);
   useEffect(() => {
-    socketRef.current = io(WS_URL, {
-      transports: ['websocket', 'polling'],
+    socketRef.current = openLiveSocket(WS_URL, {
+transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10,
