@@ -95,7 +95,7 @@ function DealsTab({ data, reload }) {
         <p className="mdl-empty">No deals yet. Use Template starts one; Import registers deals already in the HeyPhil Projects folder.</p>
       ) : (
         <table className="mdl-table">
-          <thead><tr><th>Deal</th><th>Template</th><th>Working model</th><th>Locked versions</th><th>Last locked</th></tr></thead>
+          <thead><tr><th>Deal</th><th>Template</th><th>Working model</th><th>Locked versions</th><th>Copies</th><th>Last locked</th></tr></thead>
           <tbody>
             {data.deals.map((d) => (
               <tr key={d.id} className="mdl-row-link" onClick={() => navigate(`/labs/modeling/deals/${d.id}`)}>
@@ -105,6 +105,7 @@ function DealsTab({ data, reload }) {
                   {d.workingFileId ? <a href={sheetUrl(d.workingFileId)} target="_blank" rel="noreferrer">Open in Sheets ↗</a> : <span className="mdl-muted">None</span>}
                 </td>
                 <td>{d.lockedCount}</td>
+                <td>{d.copyCount}</td>
                 <td>{when(d.lastLockedAt)}</td>
               </tr>
             ))}
@@ -227,7 +228,7 @@ export function StartedAction({ action, onClose, onFinished }) {
 }
 
 // ---------------------------------------------------------------- Activity
-const KIND_LABEL = { release: 'Release Template', 'use-template': 'Use Template', 'lock-version': 'Lock Version', 'lock-file': 'Lock file', export: 'Export to Excel' };
+const KIND_LABEL = { release: 'Release Template', 'use-template': 'Use Template', 'lock-version': 'Lock Version', 'lock-file': 'Lock file', export: 'Export to Excel', copy: 'Make a copy', promote: 'Make working model' };
 
 function ActivityTab() {
   const [ops, setOps] = useState(null);

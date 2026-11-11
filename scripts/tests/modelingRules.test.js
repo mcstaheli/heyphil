@@ -4,7 +4,7 @@ import {
   ModelingError, assertInsideRoot, cleanName, dateStamp, templateBaseName, releaseFileName,
   workingModelFileName, versionFileName, exportFileName, releaseVersionFromName, nameSaysActive,
   suggestNextVersion, releaseStamp, workingStamp, versionStamp, versionsRow, sheetSafe,
-  isLockedRestriction, hasAnyReadOnly, templateForFileName, classifyDealFiles, SPREADSHEET_MIME, slugKey,
+  isLockedRestriction, hasAnyReadOnly, copyFileName, copyStamp, promotedStamp, templateForFileName, classifyDealFiles, SPREADSHEET_MIME, slugKey,
 } from '../../server/modeling/rules.js';
 
 // A fake Drive: HeyPhil root R inside shared drive D, with the live
@@ -124,4 +124,12 @@ test('import: template from file name, working-model ambiguity is flagged', () =
   assert.equal(out.problems.length, 1);
   assert.equal(out.versions[0].alreadyRegistered, true);
   assert.equal(slugKey('Senior Living CCRC Model'), 'senior-living-ccrc-model');
+});
+
+test('copies: name and stamps never read as LOCKED', () => {
+  const now = new Date('2026-11-11T18:00:00Z');
+  assert.equal(copyFileName('Test', 'Hospitality Model', 'Higher ADR case'), 'Test — Hospitality Model — Higher ADR case');
+  assert.equal(copyStamp({ sourceName: 'v1', email: 'c@x' }, now), 'Copy of v1 · started 2026-11-11 by c@x');
+  assert.equal(promotedStamp({ copyName: 'Higher ADR case', email: 'c@x' }, now), 'Deal model · working copy · from copy "Higher ADR case" · 2026-11-11 by c@x');
+  assert.ok(!copyStamp({ sourceName: 'LOCKED thing', email: 'e' }, now).startsWith('LOCKED'));
 });

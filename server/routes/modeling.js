@@ -9,7 +9,7 @@ import * as db from '../modeling/db.js';
 import * as ops from '../modeling/operations.js';
 import * as importer from '../modeling/import.js';
 import * as g from '../modeling/drive-guard.js';
-import { ModelingError, cleanName, cleanNote, suggestNextVersion } from '../modeling/rules.js';
+import { ModelingError, cleanName, cleanNote, suggestNextVersion, versionLabel } from '../modeling/rules.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -126,6 +126,30 @@ router.post('/deals/:id/lock', handle('lock the version', async (req, res) => {
   await startOp(res, 'lock-version', `deal:${deal.id}`, { dealId: deal.id, name, note: cleanNote(req.body?.note), label: `${deal.name} ${name}` }, actorOf(req));
 }));
 
+router.post('/versions/:id/copy', handle('make the copy', async (req, res) => {
+  const source = await db.getVersion(intParam(req.params.id));
+  if (!source) throw new ModelingError('Not found', 404); // any status - copying only reads the source
+  const deal = await db.getDeal(source.dealId);
+  if (!deal.fmFolderId) throw new ModelingError('This deal has no Financial Modeling folder recorded.');
+  const name = cleanName(req.body?.name, 'name for the copy', 60);
+  const detail = await db.getDealDetail(deal.id);
+  // copies share a namespace with promoted/retired copies and unfinished copy actions
+  const taken = [...detail.versions.filter((v) => v.status !== 'locked').map((v) => v.name), ...(await db.unfinishedCopyNames(deal.id))];
+  if (taken.some((n) => (n || '').toLowerCase() === name.toLowerCase())) {
+    throw new ModelingError(`"${deal.name}" already has a copy (or a working model) named ${name}.`, 409);
+  }
+  const from = versionLabel(source);
+  await startOp(res, 'copy', `deal:${deal.id}`, { versionId: source.id, name, note: cleanNote(req.body?.note), label: `${deal.name}: ${name} (from ${from})` }, actorOf(req));
+}));
+
+router.post('/versions/:id/promote', handle('make it the working model', async (req, res) => {
+  const copy = await db.getVersion(intParam(req.params.id));
+  if (!copy) throw new ModelingError('Not found', 404);
+  if (copy.status !== 'copy') throw new ModelingError('Only a copy can be made the working model.');
+  const deal = await db.getDeal(copy.dealId);
+  await startOp(res, 'promote', `deal:${deal.id}`, { versionId: copy.id, label: `${deal.name}: ${copy.name}` }, actorOf(req));
+}));
+
 // Lock a registered release / locked version that isn't locked in Drive
 // yet (found by Import).
 router.post('/lock-file', handle('lock the file', async (req, res) => {
@@ -133,7 +157,7 @@ router.post('/lock-file', handle('lock the file', async (req, res) => {
   const id = intParam(req.body?.id);
   const rec = kind === 'release' ? await db.getRelease(id) : kind === 'version' ? await db.getVersion(id) : null;
   if (!rec) throw new ModelingError('Not found', 404);
-  if (kind === 'version' && rec.status !== 'locked') throw new ModelingError('A working model stays editable - use Lock Version to make a locked copy.');
+  if (kind === 'version' && !['locked', 'retired'].includes(rec.status)) throw new ModelingError('Working models and copies stay editable - use Lock Version to make a locked version.');
   if (rec.locked) throw new ModelingError('Already locked.', 409);
   await startOp(res, 'lock-file', `file:${rec.fileId}`, { kind, id, label: rec.fileName }, actorOf(req));
 }));

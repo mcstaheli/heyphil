@@ -85,6 +85,13 @@ export function versionFileName(dealName, templateName, versionName, now = new D
   return [dealName, templateName, versionName, `LOCKED ${dateStamp(now)}`].join(DASH);
 }
 
+// How a version is named in messages: the working model, else its name.
+export const versionLabel = (v) => (v.status === 'working' ? 'the working model' : v.name);
+
+export function copyFileName(dealName, templateName, copyName) {
+  return [dealName, templateName, copyName].join(DASH);
+}
+
 export function exportFileName(sourceFileName, now = new Date()) {
   return `${sourceFileName}${DASH}Export ${timeStamp(now)}.xlsx`;
 }
@@ -127,6 +134,17 @@ export function workingStamp({ releaseVersion }, now = new Date()) {
 
 export function versionStamp({ versionName, email, note }, now = new Date()) {
   return withNote(`LOCKED · Deal model ${versionName} · locked ${dateStamp(now)} by ${email}`, note);
+}
+
+// An editable copy of a version (never starts with LOCKED, so the sheet
+// treats it as editable).
+export function copyStamp({ sourceName, email }, now = new Date()) {
+  return `Copy of ${sourceName} · started ${dateStamp(now)} by ${email}`;
+}
+
+// A copy made the deal's working model.
+export function promotedStamp({ copyName, email }, now = new Date()) {
+  return `Deal model · working copy · from copy "${copyName}" · ${dateStamp(now)} by ${email}`;
 }
 
 // Text typed by a person never becomes a formula in the sheet.

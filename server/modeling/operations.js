@@ -16,6 +16,7 @@ import { financialModelOnly } from './export-xlsx.js';
 import {
   ModelingError, releaseFileName, workingModelFileName, versionFileName, exportFileName,
   releaseStamp, workingStamp, versionStamp, versionsRow, sheetUrl, hasAnyReadOnly, isLockedRestriction,
+  copyFileName, copyStamp, promotedStamp, versionLabel,
 } from './rules.js';
 
 const FM_FOLDER = 'Financial Modeling';
@@ -27,6 +28,14 @@ async function ensureDealSubfolders(deal, opId) {
   const exportsF = deal.exportsFolderId ? await g.getFile(deal.exportsFolderId) : await g.findOrCreateFolder(deal.fmFolderId, 'Exports', app);
   await db.setDealFolders(deal.id, { versionsFolderId: versions.id, exportsFolderId: exportsF.id });
   return { versionsFolderId: versions.id, exportsFolderId: exportsF.id };
+}
+
+async function ensureCopiesFolder(deal, opId) {
+  const folder = deal.copiesFolderId
+    ? await g.getFile(deal.copiesFolderId)
+    : await g.findOrCreateFolder(deal.fmFolderId, 'Copies', { heyphilOp: String(opId) });
+  await db.setDealFolders(deal.id, { copiesFolderId: folder.id });
+  return folder.id;
 }
 
 async function stampNewCopy(fileId, template, { stamp, row, removeProtections = false }) {
@@ -217,6 +226,89 @@ export const KINDS = {
       async lock(ctx) {
         await g.lockFile(ctx.state.fileId);
         await db.markVersionLocked(ctx.state.versionId, ctx.actor);
+      },
+    },
+  },
+
+  // An editable copy of any version (working, locked or another copy), in
+  // Financial Modeling/Copies - for changes and scenarios. The source is
+  // only read.
+  copy: {
+    title: (p) => `Copy ${p.label}`,
+    steps: [
+      { key: 'copy', label: 'Copy the file into Copies' },
+      { key: 'register', label: 'Record the copy in HeyPhil' },
+      { key: 'prepare', label: 'Make the copy editable and stamp it' },
+    ],
+    run: {
+      async copy(ctx) {
+        const source = await db.getVersion(ctx.params.versionId);
+        const deal = await db.getDeal(source.dealId);
+        const folderId = await ensureCopiesFolder(deal, ctx.op.id);
+        const copy = await g.copyFile(source.fileId, folderId, copyFileName(deal.name, deal.templateName, ctx.params.name), { opId: ctx.op.id, step: 'copy' });
+        Object.assign(ctx.state, { fileId: copy.id, fileName: copy.name, dealId: deal.id });
+        return `Created "${copy.name}"`;
+      },
+      async register(ctx) {
+        const v = await db.insertVersion({
+          dealId: ctx.state.dealId, status: 'copy', name: ctx.params.name, fileId: ctx.state.fileId, fileName: ctx.state.fileName,
+          fromVersionId: ctx.params.versionId, note: ctx.params.note, createdByEmail: ctx.actor.email, createdByName: ctx.actor.name, operationId: ctx.op.id,
+        });
+        ctx.state.versionId = v.id;
+      },
+      async prepare(ctx) {
+        const meta = await g.getFile(ctx.state.fileId);
+        if (hasAnyReadOnly(meta.contentRestrictions)) await g.unlockNewCopy(ctx.state.fileId); // a locked source's copy comes out locked
+        const source = await db.getVersion(ctx.params.versionId);
+        const deal = await db.getDeal(ctx.state.dealId);
+        const t = await db.getTemplate(deal.templateId);
+        try {
+          await stampNewCopy(ctx.state.fileId, t, { stamp: copyStamp({ sourceName: versionLabel(source), email: ctx.actor.email }), removeProtections: true });
+        } catch (error) {
+          if ([400, 403].includes(error.code || error.response?.status)) {
+            throw new ModelingError(`The copy was made, but it carries sheet protections from the old script that HeyPhil can't remove, so parts of it stay read-only. It's in the Copies folder.`);
+          }
+          throw error;
+        }
+      },
+    },
+  },
+
+  // Make a copy the deal's working model. The previous working model is
+  // kept (status 'retired') and Drive-locked so nobody keeps editing it.
+  // Switch first: the copy is only stamped "working copy" once HeyPhil
+  // actually treats it as the working model.
+  promote: {
+    title: (p) => `Make ${p.label} the working model`,
+    steps: [
+      { key: 'switch', label: 'Switch the working model in HeyPhil' },
+      { key: 'stamp', label: 'Stamp it as the working model' },
+      { key: 'lockOld', label: 'Lock the previous working model (view-only)' },
+    ],
+    run: {
+      async switch(ctx) {
+        await db.promoteCopy(ctx.params.versionId); // a no-op if a retry finds it already done
+        ctx.state.switched = true;
+      },
+      async stamp(ctx) {
+        const v = await db.getVersion(ctx.params.versionId);
+        if (v.status !== 'working') return 'Skipped - it is no longer the working model';
+        const deal = await db.getDeal(v.dealId);
+        const t = await db.getTemplate(deal.templateId);
+        await stampNewCopy(v.fileId, t, { stamp: promotedStamp({ copyName: v.name, email: ctx.actor.email }) });
+      },
+      // Every retired model of the deal that isn't locked yet - found from
+      // the database, so a retry works even if the switch step's result
+      // was never saved.
+      async lockOld(ctx) {
+        const v = await db.getVersion(ctx.params.versionId);
+        const olds = await db.unlockedRetired(v.dealId);
+        for (const old of olds) {
+          const meta = await g.getFile(old.fileId); // eslint-disable-line no-await-in-loop
+          if (!isLockedRestriction(meta.contentRestrictions)) await g.lockFile(old.fileId); // eslint-disable-line no-await-in-loop
+          await db.markVersionLocked(old.id, ctx.actor); // eslint-disable-line no-await-in-loop
+        }
+        return olds.length ? `Locked ${olds.map((o) => `"${o.fileName}"`).join(', ')}` : 'Nothing left to lock';
       },
     },
   },

@@ -88,7 +88,7 @@ export async function createTables() {
     CREATE TABLE IF NOT EXISTS modeling_versions (
       id SERIAL PRIMARY KEY,
       deal_id INTEGER NOT NULL REFERENCES modeling_deals(id),
-      status VARCHAR(20) NOT NULL CHECK (status IN ('working', 'locked')),
+      status VARCHAR(20) NOT NULL,
       name VARCHAR(200) NOT NULL,
       file_id VARCHAR(100) NOT NULL UNIQUE,
       file_name TEXT NOT NULL,
@@ -131,6 +131,22 @@ export async function createTables() {
       exported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       operation_id INTEGER REFERENCES modeling_operations(id)
     );
+  `);
+  // Copies (approved 2026-11-11): editable copies of any version, kept in
+  // Financial Modeling/Copies; one can become the working model, and the
+  // previous working model is then 'retired' (kept, Drive-locked).
+  // (the constraint is replaced only while it's still the old one, so a
+  // normal boot doesn't lock or re-scan the table)
+  await pool.query(`
+    ALTER TABLE modeling_deals ADD COLUMN IF NOT EXISTS copies_folder_id VARCHAR(100);
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'modeling_versions_status_check'
+                     AND pg_get_constraintdef(oid) LIKE '%retired%') THEN
+        ALTER TABLE modeling_versions DROP CONSTRAINT IF EXISTS modeling_versions_status_check;
+        ALTER TABLE modeling_versions ADD CONSTRAINT modeling_versions_status_check
+          CHECK (status IN ('working', 'locked', 'copy', 'retired'));
+      END IF;
+    END $$;
   `);
   await failStaleOperations();
 }
@@ -179,6 +195,7 @@ export async function listDeals() {
     SELECT d.*, t.name AS template_name,
       w.id AS working_id, w.name AS working_name, w.file_id AS working_file_id,
       (SELECT COUNT(*)::int FROM modeling_versions v WHERE v.deal_id = d.id AND v.status = 'locked') AS locked_count,
+      (SELECT COUNT(*)::int FROM modeling_versions v WHERE v.deal_id = d.id AND v.status = 'copy') AS copy_count,
       (SELECT MAX(v.locked_at) FROM modeling_versions v WHERE v.deal_id = d.id AND v.status = 'locked') AS last_locked_at
     FROM modeling_deals d
     JOIN modeling_templates t ON t.id = d.template_id
@@ -203,11 +220,21 @@ export async function findDealByName(name) {
 export async function getDealDetail(id) {
   const deal = await getDeal(id);
   if (!deal) return null;
+  // promoted/retired: who and when, from the Make-working-model action
   const { rows: versions } = await pool.query(`
-    SELECT v.*, r.version AS from_release_version, pv.name AS from_version_name
+    SELECT v.*, r.version AS from_release_version, pv.name AS from_version_name,
+      pr.actor_email AS promoted_by_email, pr.actor_name AS promoted_by_name, pr.started_at AS promoted_at,
+      rt.actor_email AS retired_by_email, rt.actor_name AS retired_by_name, rt.started_at AS retired_at
     FROM modeling_versions v
     LEFT JOIN modeling_template_releases r ON r.id = v.from_release_id
     LEFT JOIN modeling_versions pv ON pv.id = v.from_version_id
+    LEFT JOIN LATERAL (SELECT o.actor_email, o.actor_name, o.started_at FROM modeling_operations o
+      WHERE o.kind = 'promote' AND (o.params->>'versionId')::int = v.id AND o.state ? 'switched'
+      ORDER BY o.id DESC LIMIT 1) pr ON v.status IN ('working', 'retired')
+    LEFT JOIN LATERAL (SELECT o.actor_email, o.actor_name, o.started_at FROM modeling_operations o
+      WHERE o.kind = 'promote' AND o.target_key = 'deal:' || v.deal_id AND o.state ? 'switched'
+        AND o.started_at >= v.created_at AND (o.params->>'versionId')::int <> v.id
+      ORDER BY o.id ASC LIMIT 1) rt ON v.status = 'retired'
     WHERE v.deal_id = $1 ORDER BY (v.status = 'working') DESC, COALESCE(v.locked_at, v.created_at) DESC, v.id DESC`, [id]);
   const { rows: exports } = await pool.query(`
     SELECT e.* FROM modeling_exports e JOIN modeling_versions v ON v.id = e.version_id
@@ -314,8 +341,47 @@ export async function insertDeal(d, actor) {
 
 export async function setDealFolders(id, f) {
   await pool.query(`UPDATE modeling_deals SET deal_folder_id = COALESCE($2, deal_folder_id), fm_folder_id = COALESCE($3, fm_folder_id),
-    versions_folder_id = COALESCE($4, versions_folder_id), exports_folder_id = COALESCE($5, exports_folder_id) WHERE id = $1`,
-  [id, f.dealFolderId || null, f.fmFolderId || null, f.versionsFolderId || null, f.exportsFolderId || null]);
+    versions_folder_id = COALESCE($4, versions_folder_id), exports_folder_id = COALESCE($5, exports_folder_id),
+    copies_folder_id = COALESCE($6, copies_folder_id) WHERE id = $1`,
+  [id, f.dealFolderId || null, f.fmFolderId || null, f.versionsFolderId || null, f.exportsFolderId || null, f.copiesFolderId || null]);
+}
+
+// Make a copy the deal's working model: in one transaction the current
+// working model becomes 'retired' and the copy becomes 'working'.
+// Names of copies that were started but not finished (a Retry would
+// still register them), so a new copy can't reuse the name.
+export async function unfinishedCopyNames(dealId) {
+  const { rows } = await pool.query(`SELECT params->>'name' AS name FROM modeling_operations
+    WHERE kind = 'copy' AND target_key = $1 AND status <> 'succeeded'`, [`deal:${dealId}`]);
+  return rows.map((r) => r.name);
+}
+
+// Retired working models still not locked in Drive.
+export async function unlockedRetired(dealId) {
+  const { rows } = await pool.query("SELECT * FROM modeling_versions WHERE deal_id = $1 AND status = 'retired' AND NOT locked", [dealId]);
+  return rows.map(camel);
+}
+
+export async function promoteCopy(copyId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM modeling_versions WHERE id = $1 FOR UPDATE', [copyId]);
+    const copy = rows[0];
+    if (!copy) throw new ModelingError('That copy no longer exists.', 404);
+    if (copy.status === 'working') { await client.query('COMMIT'); return { alreadyDone: true }; }
+    if (copy.status !== 'copy') throw new ModelingError('Only a copy can be made the working model.');
+    const { rows: old } = await client.query(
+      "UPDATE modeling_versions SET status = 'retired' WHERE deal_id = $1 AND status = 'working' RETURNING id", [copy.deal_id]);
+    await client.query("UPDATE modeling_versions SET status = 'working' WHERE id = $1", [copyId]);
+    await client.query('COMMIT');
+    return { retiredId: old[0]?.id || null };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function insertVersion(v) {
