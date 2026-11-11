@@ -103,6 +103,25 @@ router.get('/projects/:id/results', handle('read the results', async (req, res) 
   res.json({ results: list });
 }));
 
+// A model's inputs: every mapped question with its current values.
+router.get('/models/:id/inputs', handle('read the inputs', async (req, res) => {
+  const m = await modelOr404(req.params.id);
+  const { readInputs } = await import('../modeling/model-inputs.js');
+  res.json({ inputs: await readInputs(m), model: { id: m.id, version: m.version, label: m.label, locked: m.locked, fileId: m.fileId } });
+}));
+
+// Save answers: { answers: { key: value | rows }, overrides: { key: true } }.
+router.post('/models/:id/inputs', handle('save the inputs', async (req, res) => {
+  const m = await modelOr404(req.params.id);
+  if (m.locked) throw new ModelingError(`${m.version} is locked - make a copy to change it.`, 409);
+  const answers = req.body?.answers;
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) throw new ModelingError('No answers given.');
+  if (Object.keys(answers).length > 200) throw new ModelingError('Too many answers at once.');
+  await startOp(res, 'set-inputs', `inputs:${m.id}`, {
+    modelId: m.id, answers, overrides: req.body?.overrides || {}, label: versionTitle(m),
+  }, actorOf(req));
+}));
+
 router.get('/operations', handle('load activity', async (req, res) => {
   res.json({ operations: await db.listOperations(100) });
 }));

@@ -105,3 +105,14 @@ test('financialModelOnly: own-tab references stay live; names on other tabs are 
   assert.equal(ws.getCell('C4').formula, 'C1*Local');
   assert.deepEqual(out.definedNames.model.map((n) => n.name), ['Local']);
 });
+
+test('input writes: only through writeInputCells, which re-checks Drive\'s lock; only the set-inputs action calls it, after checking the registry', () => {
+  const guard = src('drive-guard.js');
+  assert.match(guard, /export async function writeInputCells[\s\S]*?const meta = await getFile\(spreadsheetId\);[\s\S]*?readOnly[\s\S]*?locked in Drive/);
+  const ops = src('operations.js');
+  const callers = files.filter((f) => f !== 'drive-guard.js' && /writeInputCells\(/.test(src(f)));
+  assert.deepEqual(callers, ['operations.js']);
+  const setInputs = ops.slice(ops.indexOf("'set-inputs': {"), ops.indexOf('  export: {'));
+  assert.match(setInputs, /if \(m\.locked\) throw/);
+  assert.ok(setInputs.indexOf('if (m.locked) throw') < setInputs.indexOf('writeInputCells'));
+});

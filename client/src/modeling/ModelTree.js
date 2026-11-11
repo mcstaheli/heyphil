@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { modelingApi, sheetUrl, when, who } from './api';
 import ActionModal from './ActionModal';
 
@@ -58,6 +59,7 @@ function SummaryCard({ m, kind, onCopy, onMakeActive }) {
       </dl>
       <div className="mdl-actions">
         <a className="mdl-btn" href={sheetUrl(m.fileId)} target="_blank" rel="noreferrer">Open in Sheets ↗</a>
+        <Link className="mdl-btn" to={`/labs/modeling/models/${m.id}/inputs`}>{m.locked ? 'View inputs' : 'Edit inputs'}</Link>
         <button type="button" className="mdl-btn" onClick={() => onCopy(m)}>Copy</button>
         {!m.isActive && <button type="button" className="mdl-btn mdl-btn-primary" onClick={() => onMakeActive(m)}>Make Active</button>}
       </div>
@@ -184,6 +186,7 @@ export default function ModelTree({ models, ownerName, onAction, onChanged, empt
                     <a href={sheetUrl(m.fileId)} target="_blank" rel="noreferrer">Open ↗</a>
                     {!m.hiddenAt && (
                       <>
+                        <Link className="mdl-btn" to={`/labs/modeling/models/${m.id}/inputs`}>Inputs</Link>
                         <button type="button" className="mdl-btn" onClick={() => startCopy(m)}>Copy</button>
                         {!m.locked && <button type="button" className="mdl-btn" onClick={() => lock(m)}>Lock</button>}
                         {!m.isActive && <button type="button" className="mdl-btn mdl-btn-primary" onClick={() => makeActive(m)}>Make Active</button>}

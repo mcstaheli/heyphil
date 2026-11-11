@@ -311,6 +311,116 @@ export const KINDS = {
     },
   },
 
+  // Save answers into a model's input cells (step 2). Only an Unlocked
+  // model registered in HeyPhil; only its mapped input cells; formulas
+  // kept unless overridden. Records each change and the results before and
+  // after, so the page can show what moved.
+  'set-inputs': {
+    title: (p) => `Update inputs on ${p.label}`,
+    steps: [
+      { key: 'check', label: 'Check the model is editable', rerun: true },
+      { key: 'write', label: 'Write the changed inputs' },
+      { key: 'results', label: 'Read the new results' },
+    ],
+    run: {
+      async check(ctx) {
+        const m = await db.getModel(ctx.params.modelId);
+        if (!m) throw new ModelingError('That model no longer exists.', 404);
+        if (m.locked) throw new ModelingError(`${m.version} is locked - make a copy to change it.`, 409);
+        if (m.hiddenAt) throw new ModelingError(`${m.version} is hidden - unhide it first.`, 409);
+        const meta = await g.getFile(m.fileId);
+        if (hasAnyReadOnly(meta.contentRestrictions)) throw new ModelingError(`${m.version} is locked in Drive - make a copy to change it.`, 409);
+        if (!ctx.state.before) {
+          try {
+            const { resultsFor } = await import('./results.js');
+            const r = await resultsFor(m.id, { refresh: true });
+            ctx.state.before = r.headline.map((h) => ({ key: h.key, label: h.label, display: h.display, raw: h.raw, type: h.type }));
+          } catch { ctx.state.before = []; }
+        }
+        return m.version;
+      },
+      // Planned once and kept: a retry writes exactly the same cells again
+      // (harmless) and keeps the record of what changed from what.
+      async write(ctx) {
+        const m = await db.getModel(ctx.params.modelId);
+        if (!ctx.state.plan) {
+          const { readInputs } = await import('./model-inputs.js');
+          const { planWrites, targetAdjustment, closeEnough } = await import('./inputs.js');
+          const { fields } = await readInputs(m);
+          const answers = ctx.params.answers || {};
+          const overrides = ctx.params.overrides || {};
+          const plan = planWrites(fields, answers, overrides);
+          // the Quick targets: the adjustment that makes the average hit the answer
+          for (const f of fields.filter((x) => x.kind === 'target' && answers[x.key] !== undefined && answers[x.key] !== '')) {
+            const raw = fields.find((x) => x.kind === 'input' && x.target === f.target);
+            if (raw && answers[raw.key] !== undefined) {
+              throw new ModelingError(`Set either "${f.question}" or "${raw.question}" - they change the same cell.`);
+            }
+            if (f.adjIsFormula && !overrides[f.key]) throw new ModelingError(`${f.question}: the adjustment it sets is calculated by the model.`);
+            const target = Number(answers[f.key]);
+            if (closeEnough(target, Number(f.raw)) && !Object.keys(answers).some((k) => k !== f.key)) continue;
+            const adj = targetAdjustment(target, f.adjRaw, f.raw);
+            plan.cells.push({ range: f.cells[0].range, value: adj });
+            plan.changes.push({ key: f.key, label: f.question, from: f.display, to: answers[f.key] });
+            plan.targets = [...(plan.targets || []), {
+              key: f.key, label: f.question, target, range: f.cells[0].range, outName: f.options,
+              adjBefore: Number(f.adjRaw) || 0, outBefore: Number(f.raw), firstAdj: adj,
+            }];
+          }
+          ctx.state.plan = plan;
+        }
+        const { cells, changes } = ctx.state.plan;
+        await g.writeInputCells(m.fileId, cells);
+        // Quick targets: the model isn't linear, so goal-seek the adjustment
+        // until the average lands within 0.05% (a few writes to that one cell)
+        const notes = [];
+        const { nextGuess, closeEnough } = await import('./inputs.js');
+        for (const t of ctx.state.plan.targets || []) {
+          const points = [{ adj: t.adjBefore, out: t.outBefore }];
+          let adj = t.firstAdj;
+          let out = null;
+          for (let i = 0; i < 8; i += 1) {
+            const v = await g.readNamedValues(m.fileId, [t.outName]); // eslint-disable-line no-await-in-loop
+            out = Number(v[t.outName].raw);
+            points.push({ adj, out });
+            if (!Number.isFinite(out) || closeEnough(t.target, out)) break;
+            const next = nextGuess(t.target, points);
+            if (!Number.isFinite(next) || Math.abs(next - adj) < 1e-9) break;
+            adj = next;
+            await g.writeInputCells(m.fileId, [{ range: t.range, value: adj }]); // eslint-disable-line no-await-in-loop
+          }
+          // the result didn't respond to the adjustment at all: this map's
+          // target doesn't drive that cell - put the adjustment back
+          const moved = points.some((p) => Number.isFinite(p.out) && Math.abs(p.out - t.outBefore) > Math.max(Math.abs(t.outBefore) * 1e-6, 1e-9));
+          if (!moved) {
+            await g.writeInputCells(m.fileId, [{ range: t.range, value: t.adjBefore }]);
+            const i = changes.findIndex((c) => c.key === t.key);
+            if (i >= 0) changes.splice(i, 1);
+            notes.push(`${t.label}: not applied - this model's map doesn't connect that target to its result (the adjustment was put back)`);
+            continue;
+          }
+          const change = changes.find((c) => c.key === t.key);
+          if (change) change.adjustment = adj;
+          if (out !== null && !closeEnough(t.target, out)) notes.push(`${t.label}: got as close as ${out} (the model can't reach ${t.target} by scaling the curve)`);
+        }
+        ctx.state.changes = changes;
+        const msg = cells.length ? `${changes.length} input${changes.length === 1 ? '' : 's'} changed (${cells.length} cell${cells.length === 1 ? '' : 's'})` : 'Nothing changed';
+        return notes.length ? `${msg}. ${notes.join('; ')}` : msg;
+      },
+      async results(ctx) {
+        try {
+          const { resultsFor } = await import('./results.js');
+          const r = await resultsFor(ctx.params.modelId, { refresh: true });
+          ctx.state.after = r.headline.map((h) => ({ key: h.key, label: h.label, display: h.display, raw: h.raw, type: h.type }));
+          return 'Results updated';
+        } catch (error) {
+          ctx.state.after = [];
+          return `Saved, but the new results couldn't be read (${g.describeGoogleError(error)}) - refresh to see them`;
+        }
+      },
+    },
+  },
+
   export: {
     title: (p) => `Export ${p.label}`,
     steps: [
@@ -375,7 +485,7 @@ export async function retry(opId, actor) {
   const existing = await db.getOperation(opId);
   // step-1 actions share some kind names (copy, use-template, export) but
   // not their shape - they can't be resumed by this code
-  const SHAPE = { copy: 'modelId', 'use-template': 'sourceModelId', lock: 'modelId', export: 'modelId' };
+  const SHAPE = { copy: 'modelId', 'use-template': 'sourceModelId', lock: 'modelId', export: 'modelId', 'set-inputs': 'modelId' };
   if (existing && (!KINDS[existing.kind] || existing.params?.[SHAPE[existing.kind]] === undefined)) {
     throw new ModelingError('This action is from the earlier version of Modeling and can\'t be retried - start it again from the page.', 409);
   }

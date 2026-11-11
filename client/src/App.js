@@ -32,6 +32,7 @@ const SitePlanner = lazy(() => import('./siteplanner/SitePlanner'));
 const SitePlanEditor = lazy(() => import('./siteplanner/SitePlanEditor'));
 const Modeling = lazy(() => import('./modeling/Modeling'));
 const ModelingProjectPage = lazy(() => import('./modeling/ProjectPage'));
+const ModelingInputsPage = lazy(() => import('./modeling/InputsPage'));
 const routeFallback = <div className="loading">Loading...</div>;
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -362,6 +363,7 @@ function App() {
           <Route path="/labs/improvements" element={<Gate app="improvements"><Improvements /></Gate>} />
           <Route path="/labs/modeling" element={<Gate app="modeling"><Suspense fallback={routeFallback}><Modeling /></Suspense></Gate>} />
           <Route path="/labs/modeling/projects/:projectId" element={<Gate app="modeling"><Suspense fallback={routeFallback}><ModelingProjectPage /></Suspense></Gate>} />
+          <Route path="/labs/modeling/models/:modelId/inputs" element={<Gate app="modeling"><Suspense fallback={routeFallback}><ModelingInputsPage /></Suspense></Gate>} />
           <Route path="/shared/design" element={<Gate app="design"><DesignBoard user={user} /></Gate>} />
           <Route path="/dev/site-planner" element={<Gate app="site-planner"><Suspense fallback={routeFallback}><SitePlanner /></Suspense></Gate>} />
           <Route path="/dev/site-planner/:planId" element={<Gate app="site-planner"><Suspense fallback={routeFallback}><SitePlanEditor /></Suspense></Gate>} />

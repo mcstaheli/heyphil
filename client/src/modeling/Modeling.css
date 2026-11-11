@@ -143,3 +143,37 @@
 .mdl-results-group dt { color: #5b6275; }
 .mdl-results-group dd { margin: 0; font-weight: 600; text-align: right; }
 .mdl-results-headline dt { color: #1f2433; font-weight: 600; }
+
+/* Inputs (step 2): TurboTax-style steps */
+.mdl-wizard { display: grid; grid-template-columns: 240px 1fr; gap: 20px; padding: 20px 30px 120px; }
+.mdl-steps-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 12px; align-self: start; }
+.mdl-step-link { display: flex; align-items: center; gap: 10px; text-align: left; background: none; border: none; border-radius: 8px; padding: 9px 10px; font-size: 14px; color: #333a4d; cursor: pointer; }
+.mdl-step-link:hover { background: #f0f1f7; }
+.mdl-step-link.active { background: #ece9ff; color: #3d32a8; font-weight: 700; }
+.mdl-step-num { width: 22px; height: 22px; border-radius: 50%; background: #e3e6ee; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+.mdl-step-link.active .mdl-step-num { background: #5a4fcf; color: #fff; }
+.mdl-step-changed { margin-left: auto; background: #5a4fcf; color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; }
+.mdl-step-body { background: #fff; border: 1px solid #e3e6ee; border-radius: 12px; padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.mdl-step-body h3 { margin: 0; }
+.mdl-field { display: flex; flex-direction: column; gap: 6px; }
+.mdl-field-q { font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mdl-field-help { margin: 0; color: #7a8194; font-size: 13px; }
+.mdl-field-tag { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+.mdl-field-tag.quick { background: #e8e5ff; color: #5a4fcf; }
+.mdl-field-tag.calc { background: #eef1f6; color: #4a5168; }
+.mdl-input-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.mdl-input-affix { color: #7a8194; }
+.mdl-input { padding: 8px 10px; border: 1px solid #cfd3e0; border-radius: 7px; font-size: 15px; min-width: 200px; }
+.mdl-input-cell { padding: 4px 6px; font-size: 13px; min-width: 70px; width: 100%; box-sizing: border-box; }
+.mdl-input:disabled, .mdl-input-cell:disabled { background: #f5f6f9; color: #5b6275; }
+.mdl-input-table { border-collapse: collapse; font-size: 13px; }
+.mdl-input-table th { text-align: left; font-weight: 500; color: #5b6275; padding: 3px 10px 3px 0; white-space: nowrap; }
+.mdl-input-table td { padding: 2px 4px 2px 0; }
+.mdl-grid-scroll { overflow-x: auto; max-width: 100%; }
+.mdl-grid-label { white-space: nowrap; color: #333a4d; }
+.mdl-override { font-size: 13px; color: #5b6275; }
+.mdl-step-nav { display: flex; justify-content: space-between; border-top: 1px solid #eceef3; padding-top: 14px; }
+.mdl-savebar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #fff; border: 1px solid #d9dcf0; box-shadow: 0 6px 24px rgba(30, 30, 80, 0.18); border-radius: 12px; padding: 12px 16px; display: flex; gap: 12px; align-items: center; z-index: 50; max-width: min(900px, 92vw); }
+.mdl-save-result { display: flex; flex-direction: column; gap: 8px; }
+.mdl-moved { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+@media (max-width: 800px) { .mdl-wizard { grid-template-columns: 1fr; padding: 16px; } .mdl-steps-nav { position: static; flex-direction: row; overflow-x: auto; } }

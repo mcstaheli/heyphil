@@ -283,14 +283,56 @@ export async function readStructure(spreadsheetId) {
   return { names: new Set((data.namedRanges || []).map((n) => n.name)), tabs: new Set(data.sheets.map((t) => t.properties.title)) };
 }
 
+// Where each named range is: { name: { sheet, startRow, endRow, startCol,
+// endCol } } (0-based, end exclusive).
+export async function readNamedRangeDefs(spreadsheetId) {
+  await assertInside(spreadsheetId);
+  const { data } = await google_().sheets.spreadsheets.get({
+    spreadsheetId, fields: 'namedRanges(name,range),sheets(properties(sheetId,title))',
+  });
+  const tab = Object.fromEntries(data.sheets.map((t) => [t.properties.sheetId, t.properties.title]));
+  return Object.fromEntries((data.namedRanges || []).map((n) => [n.name, {
+    sheet: tab[n.range.sheetId || 0], startRow: n.range.startRowIndex || 0, endRow: n.range.endRowIndex,
+    startCol: n.range.startColumnIndex || 0, endCol: n.range.endColumnIndex,
+  }]));
+}
+
+// Which cells in these A1 ranges hold formulas: { range: [[bool]] }.
+export async function readFormulaFlags(spreadsheetId, ranges) {
+  if (!ranges.length) return {};
+  const rows = await readCells(spreadsheetId, ranges, { render: 'FORMULA' });
+  return Object.fromEntries(ranges.map((r, i) => [r, rows[i].map((row) => row.map((v) => typeof v === 'string' && v.startsWith('=')))]));
+}
+
+// Writing a model's INPUTS (step 2): allowed on any model HeyPhil has
+// registered as Unlocked - the caller (operations.js) checks the registry;
+// this re-checks Drive's lock itself, and writes only the exact cells
+// given. `cells`: [{ range: "'Tab'!E16", value }], one cell each.
+export async function writeInputCells(spreadsheetId, cells) {
+  const meta = await getFile(spreadsheetId);
+  if (meta.mimeType !== SPREADSHEET_MIME) throw new ModelingError('That file is not a Google Sheet.', 400);
+  if ((meta.contentRestrictions || []).some((r) => r && r.readOnly)) {
+    throw new ModelingError('That model is locked in Drive - make a copy to change it.', 409);
+  }
+  if (cells.some((c) => /:/.test(c.range))) throw new ModelingError('Inputs are written one cell at a time.', 400);
+  if (!cells.length) return;
+  await google_().sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: { valueInputOption: 'USER_ENTERED', data: cells.map((c) => ({ range: c.range, values: [[c.value]] })) },
+  });
+}
+
 // Values of named ranges as { name: { display, raw } } - display as the
 // sheet formats it, raw unformatted (numbers stay numbers). Single cells
 // give scalars; multi-cell ranges give arrays of rows.
 export async function readNamedValues(spreadsheetId, names) {
   if (!names.length) return {};
   await assertInside(spreadsheetId);
+  // raw dates come back as serial numbers (days since 1899-12-30), so
+  // they compare and convert; display keeps the sheet's own formatting
   const get = (render) => google_().sheets.spreadsheets.values.batchGet({
-    spreadsheetId, ranges: names, valueRenderOption: render, dateTimeRenderOption: 'FORMATTED_STRING',
+    spreadsheetId, ranges: names, valueRenderOption: render,
+    dateTimeRenderOption: render === 'UNFORMATTED_VALUE' ? 'SERIAL_NUMBER' : 'FORMATTED_STRING',
   }).then((r) => r.data.valueRanges);
   const [shown, raw] = await Promise.all([get('FORMATTED_VALUE'), get('UNFORMATTED_VALUE')]);
   // The shape comes from the range itself (the API trims empty trailing

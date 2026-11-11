@@ -11,13 +11,13 @@ test('parseMap: the real Hospitality map parses cleanly', () => {
   assert.equal(m.steps.length, 12);
   assert.equal(m.steps[0].key, 'basics');
   assert.ok(m.inputs.length >= 80);
-  assert.equal(m.outputs.length, 44);
+  assert.equal(m.outputs.length, 46);
   assert.equal(m.inputs[0].step, 'basics'); // inputs follow step order
   assert.equal(m.outputs.filter((o) => o.level === 'headline').length, 13);
   assert.deepEqual([...new Set(m.outputs.map((o) => o.group))], ['Returns', 'Capital', 'Operations', 'Debt', 'Exit', 'Checks']);
   const target = m.inputs.find((i) => i.kind === 'target' && i.key === 'target_adr');
   assert.equal(target.target, 'in_adr_adjustment');
-  assert.equal(target.options, 'out_stab_adr');
+  assert.equal(target.options, 'out_adjusted_adr');
 });
 
 test('parseMap: blank rows skipped; bad kinds, bad targets and duplicates reported', () => {
