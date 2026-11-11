@@ -366,8 +366,10 @@ export class LostOwnershipError extends Error {}
 
 // Saves progress - only while this runner still owns the operation.
 export async function saveOperation(op, runnerId) {
-  const { rowCount } = await pool.query(`UPDATE modeling_operations SET status = $2, state = $3, steps = $4, error = $5,
-    finished_at = CASE WHEN $2 = 'running' THEN NULL ELSE NOW() END, heartbeat_at = NOW()
+  // $2 is cast: used both as the column value and in the CASE, Postgres
+  // can't infer one type for it otherwise
+  const { rowCount } = await pool.query(`UPDATE modeling_operations SET status = $2::varchar, state = $3, steps = $4, error = $5,
+    finished_at = CASE WHEN $2::varchar = 'running' THEN NULL ELSE NOW() END, heartbeat_at = NOW()
     WHERE id = $1 AND runner_id = $6`,
   [op.id, op.status, JSON.stringify(op.state || {}), JSON.stringify(op.steps || []), op.error || null, runnerId]);
   if (!rowCount) throw new LostOwnershipError(`Operation ${op.id} is no longer run by ${runnerId}`);

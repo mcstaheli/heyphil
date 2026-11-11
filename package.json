@@ -19,7 +19,8 @@
     "start": "node server/index.js",
     "smoke": "node scripts/smoke.js",
     "test": "node --test scripts/tests/*.test.js",
-    "improvements": "node scripts/improvements.js"
+    "improvements": "node scripts/improvements.js",
+    "check:modeling-sql": "node scripts/check-modeling-sql.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
