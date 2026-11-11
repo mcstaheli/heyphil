@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { modelingApi, sheetUrl, folderUrl, fileUrl, when, who, downloadExport } from './api';
-import ModelTree, { title } from './ModelTree';
+import { modelingApi, folderUrl, fileUrl, when, who, downloadExport } from './api';
+import ModelTree from './ModelTree';
 import { StartedAction, UseTemplateModal, useOverview } from './Modeling';
 import './Modeling.css';
 
@@ -30,9 +30,6 @@ export default function ProjectPage() {
   if (error) return <div className="mdl-page"><p className="mdl-error mdl-page-error">{error}</p></div>;
   if (!project) return <div className="mdl-page"><p className="mdl-muted mdl-page-error">Loading…</p></div>;
 
-  const active = project.models.find((m) => m.isActive);
-  const starred = project.models.filter((m) => m.starredAt && !m.hiddenAt);
-
   return (
     <div className="mdl-page">
       <div className="mdl-header">
@@ -49,32 +46,11 @@ export default function ProjectPage() {
       <div className="mdl-panel">
         <section className="mdl-card">
           <div className="mdl-toolbar">
-            <h3>★ Active model</h3>
+            <h3>Models</h3>
             <button type="button" className="mdl-btn" onClick={() => setUseTemplate(true)} disabled={!overview.data}>+ New model from a template</button>
           </div>
-          {active ? (
-            <p>
-              <b>{title(active)}</b> · made Active by {who(active.activatedByEmail, active.activatedByName)} {when(active.activatedAt)}
-              {' · '}<a href={sheetUrl(active.fileId)} target="_blank" rel="noreferrer">Open in Sheets ↗</a>
-            </p>
-          ) : (
-            <p className="mdl-empty">None yet. When a model is ready, use Make Active on it below - it gets locked and becomes the project's official model.</p>
-          )}
-          <p className="mdl-muted mdl-howto">
-            To change a locked model: <b>Copy</b> it, edit the copy in Sheets, then <b>Make Active</b> when it's the one.
-            ☆ Star the copies you're working with so the team can see them.
-          </p>
-          {starred.length > 0 && (
-            <div className="mdl-starred">
-              <span className="mdl-muted">☆ Being worked with:</span>
-              {starred.map((m) => <a key={m.id} className="mdl-chip" href={sheetUrl(m.fileId)} target="_blank" rel="noreferrer">{title(m)} ↗</a>)}
-            </div>
-          )}
-        </section>
-
-        <section className="mdl-card">
-          <div className="mdl-toolbar"><h3>Models</h3></div>
-          <ModelTree models={project.models} ownerName={project.name} onAction={setAction} onChanged={load} emptyText="No models yet - start one from a template." />
+          <p className="mdl-muted">To change a locked model: <b>Copy</b> it, edit the copy in Sheets, then <b>Make Active</b> when it's the one. ☆ Star the copies you're working with so the team can see them.</p>
+          <ModelTree models={project.models} ownerName={project.name} historyKey={`project:${project.id}`} onAction={setAction} onChanged={load} emptyText="No models yet - start one from a template." />
         </section>
 
         <section className="mdl-card">

@@ -144,14 +144,11 @@ function TemplatesTab({ data, reload }) {
   }
   return (
     <div className="mdl-panel">
-      <p className="mdl-muted mdl-howto">
-        To change a template: <b>Copy</b> its Active model, edit the copy in Sheets, then <b>Make Active</b> (it locks it first).
-        New projects start from the Active model.
-      </p>
       {data.templates.map((t) => (
         <section key={t.id} className="mdl-card">
           <div className="mdl-toolbar"><h3>{t.name}</h3></div>
-          <ModelTree models={t.models} ownerName={t.name} onAction={setAction} onChanged={reload} emptyText="No models yet." />
+          <p className="mdl-muted">To change it: <b>Copy</b> the Active model, edit the copy in Sheets, then <b>Make Active</b> (it locks it first). New projects start from the Active model.</p>
+          <ModelTree models={t.models} ownerName={t.name} historyKey={`template:${t.id}`} onAction={setAction} onChanged={reload} emptyText="No models yet." />
         </section>
       ))}
       {action && <StartedAction action={action} onClose={() => { setAction(null); reload(); }} onFinished={reload} />}

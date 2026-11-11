@@ -277,7 +277,7 @@ function DesignBoard({ user }) {
                 return (
                   <div
                     key={r.id}
-                    className={`design-card design-card-priority-${priority}`}
+                    className={`design-card design-card-priority-${priority}${r.status === 'delivered' ? ' design-card-done' : ''}`}
                     draggable
                     onDragStart={() => setDraggedId(r.id)}
                     onDragEnd={() => setDraggedId(null)}

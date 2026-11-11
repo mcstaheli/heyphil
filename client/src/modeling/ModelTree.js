@@ -30,7 +30,6 @@ function Badges({ m }) {
   return (
     <span className="mdl-badges">
       {m.isActive && <span className="mdl-badge mdl-badge-active" title={`Active since ${when(m.activatedAt)} (${who(m.activatedByEmail, m.activatedByName)})`}>★ Active</span>}
-      {m.starredAt && <span className="mdl-badge mdl-badge-star" title={`Starred by ${who(m.starredByEmail, m.starredByName)} ${when(m.starredAt)}`}>☆ Starred</span>}
       {m.locked
         ? <span className="mdl-badge mdl-badge-locked" title={m.lockedAt ? `Locked ${when(m.lockedAt)}${m.lockedByEmail ? ` by ${who(m.lockedByEmail, m.lockedByName)}` : ''}` : 'Locked'}>🔒 Locked</span>
         : <span className="mdl-badge mdl-badge-unlocked" title="Editable">✎ Unlocked</span>}
@@ -39,7 +38,45 @@ function Badges({ m }) {
   );
 }
 
-export default function ModelTree({ models, ownerName, onAction, onChanged, emptyText }) {
+// One card in the summary box: the Active model or a starred one.
+function SummaryCard({ m, kind, onCopy, onMakeActive }) {
+  return (
+    <div className={`mdl-summary-card mdl-summary-${kind}`}>
+      <div className="mdl-summary-head">
+        <span className="mdl-summary-kind">{kind === 'active' ? '★ Active' : '☆ Starred'}</span>
+        <span className="mdl-summary-version">{m.version}</span>
+        {m.label && <span className="mdl-summary-label">{m.label}</span>}
+        <span className="mdl-summary-state">{m.locked ? '🔒 Locked' : '✎ Unlocked'}</span>
+      </div>
+      {m.note && <p className="mdl-summary-note">{m.note}</p>}
+      <dl className="mdl-summary-facts">
+        <div><dt>Made</dt><dd>{m.origin === 'import' ? 'Imported' : who(m.createdByEmail, m.createdByName)} · {when(m.createdAt)}</dd></div>
+        {m.parentVersion && <div><dt>From</dt><dd>{m.parentTemplateName ? `${m.parentTemplateName} ` : ''}{m.parentVersion}</dd></div>}
+        {m.locked && m.lockedAt && <div><dt>Locked</dt><dd>{m.lockedByEmail ? `${who(m.lockedByEmail, m.lockedByName)} · ` : ''}{when(m.lockedAt)}</dd></div>}
+        {kind === 'active' && m.activatedAt && <div><dt>Active since</dt><dd>{who(m.activatedByEmail, m.activatedByName)} · {when(m.activatedAt)}</dd></div>}
+        {kind === 'starred' && m.starredAt && <div><dt>Starred</dt><dd>{who(m.starredByEmail, m.starredByName)} · {when(m.starredAt)}</dd></div>}
+      </dl>
+      <div className="mdl-actions">
+        <a className="mdl-btn" href={sheetUrl(m.fileId)} target="_blank" rel="noreferrer">Open in Sheets ↗</a>
+        <button type="button" className="mdl-btn" onClick={() => onCopy(m)}>Copy</button>
+        {!m.isActive && <button type="button" className="mdl-btn mdl-btn-primary" onClick={() => onMakeActive(m)}>Make Active</button>}
+      </div>
+    </div>
+  );
+}
+
+// The summary box (Active + starred) and, below it, the full family tree
+// in a "<name> History" section that opens and closes (remembered per
+// template/project in this browser).
+export default function ModelTree({ models, ownerName, onAction, onChanged, emptyText, historyKey }) {
+  const storageKey = `modeling:history-open:${historyKey || ownerName}`;
+  const [historyOpen, setHistoryOpen] = useState(() => {
+    try { return localStorage.getItem(storageKey) === '1'; } catch { return false; }
+  });
+  const toggleHistory = () => setHistoryOpen((o) => {
+    try { localStorage.setItem(storageKey, o ? '0' : '1'); } catch { /* private mode */ }
+    return !o;
+  });
   const [showHidden, setShowHidden] = useState(false);
   const [copying, setCopying] = useState(null);
   const [nextVersion, setNextVersion] = useState('');
@@ -95,9 +132,25 @@ export default function ModelTree({ models, ownerName, onAction, onChanged, empt
     if (window.confirm(msg)) quick(m, 'hide', { hidden: true }, `Couldn't hide ${m.version}`);
   }
 
+  const active = models.find((m) => m.isActive);
+  const starred = models.filter((m) => m.starredAt && !m.hiddenAt && !m.isActive);
+
   return (
     <div className="mdl-tree">
       {error && <p className="mdl-error">{error}</p>}
+      <div className="mdl-summary">
+        {active
+          ? <SummaryCard m={active} kind="active" onCopy={startCopy} onMakeActive={makeActive} />
+          : <p className="mdl-empty">No Active model yet. When one is ready, Make Active locks it and makes it the official model.</p>}
+        {starred.map((m) => <SummaryCard key={m.id} m={m} kind="starred" onCopy={startCopy} onMakeActive={makeActive} />)}
+      </div>
+
+      <button type="button" className="mdl-history-toggle" onClick={toggleHistory} aria-expanded={historyOpen}>
+        <span>{ownerName} History</span>
+        <span className="mdl-history-count">{models.filter((m) => !m.hiddenAt).length} model{models.length === 1 ? '' : 's'}</span>
+        <span className={`mdl-history-arrow ${historyOpen ? 'open' : ''}`} aria-hidden>▸</span>
+      </button>
+      {historyOpen && (<>
       {!rows.length ? <p className="mdl-empty">{emptyText}</p> : (
         <table className="mdl-table">
           <thead><tr><th>Version</th><th>Status</th><th>Made</th><th /></tr></thead>
@@ -133,7 +186,7 @@ export default function ModelTree({ models, ownerName, onAction, onChanged, empt
                         <button
                           type="button"
                           className={`mdl-btn mdl-star ${m.starredAt ? 'on' : ''}`}
-                          title={m.starredAt ? 'Unstar' : 'Star: being worked with now'}
+                          title={m.starredAt ? `Starred by ${who(m.starredByEmail, m.starredByName)} ${when(m.starredAt)} - click to unstar` : 'Star: being worked with now'}
                           disabled={busyId === m.id}
                           onClick={() => quick(m, 'star', { starred: !m.starredAt }, `Couldn't change the star on ${m.version}`)}
                         >{m.starredAt ? '★' : '☆'}</button>
@@ -154,6 +207,7 @@ export default function ModelTree({ models, ownerName, onAction, onChanged, empt
           <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Show hidden ({hiddenCount})
         </label>
       )}
+      </>)}
 
       {copying && (
         <ActionModal
@@ -168,7 +222,7 @@ export default function ModelTree({ models, ownerName, onAction, onChanged, empt
             {nextVersion && nextVersion !== '?' && <> The copy will be <b>{nextVersion}</b>.</>}
           </p>
           <label>Label (optional)<input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={80} placeholder="e.g. Higher ADR case" autoFocus /></label>
-          <label>Note (optional)<input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} /></label>
+          <label>Note (optional)<textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} rows={4} placeholder="What's different about this copy, what you're testing, why it exists…" /></label>
         </ActionModal>
       )}
     </div>

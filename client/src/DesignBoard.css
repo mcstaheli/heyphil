@@ -518,3 +518,16 @@
   cursor: pointer;
   font-size: 15px;
 }
+
+/* Delivered requests read as finished (#53): greyed out, full color again on hover */
+.design-card.design-card-done {
+  opacity: 0.55;
+  filter: grayscale(1);
+  box-shadow: none;
+  background: #f7f8fa;
+  transition: opacity 0.15s, filter 0.15s;
+}
+.design-card.design-card-done:hover {
+  opacity: 1;
+  filter: none;
+}
