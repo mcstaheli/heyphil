@@ -13,12 +13,12 @@ Project management app for Chad's team (Kanban board, timeline, org charts).
 
 ## Environment variables
 
-Root `.env` (copy from `.env.example` — **but the example is missing `DATABASE_URL`**, which `server/db.js` requires):
+Root `.env` (copy from `.env.example`, which lists every variable the server and client read):
 - `PORT`, `NODE_ENV`, `API_URL`, `APP_URL`
-- `DATABASE_URL` — Postgres connection string (not in `.env.example`)
+- `DATABASE_URL` — Postgres connection string (required by `server/db.js`)
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`
 - `ORIGINATION_SHEET_ID` — only used by legacy/setup scripts, not the running app
-- Optional: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (chat notifications), `DEBUG_SQL` (logs every query)
+- Optional: `GOOGLE_SERVICE_ACCOUNT_JSON` (Drive/Modeling), `RESEND_API_KEY` (email), `DEBUG_SQL` (logs every query)
 
 `client/.env`: `REACT_APP_API_URL` (localhost:3002 in dev; api.heyphil.bot in the production env file)
 

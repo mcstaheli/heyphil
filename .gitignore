@@ -12,6 +12,11 @@ client/node_modules
 service-account.json
 test
 
+# Editor/manual backups and runtime state
+*.bak
+*.backup
+server/.typing-status.json
+
 # Auto-fix workflow scratch state (ephemeral per CI run - never meant to be committed)
 .auto-fix-state.json
 
